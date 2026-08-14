@@ -20,7 +20,7 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 builder.Services.AddControllers();
 
-builder.Services.AddHttpClient("Llama");
+builder.Services.AddHttpClient<ILlamaHttpClient, LlamaHttpClient>();
 builder.Services.AddHttpClient("RadioBrowser", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10);
@@ -41,6 +41,8 @@ builder.Services.AddSingleton<IIntentService, IntentService>();
 builder.Services.AddSingleton<IRadioManagerService, RadioManagerService>();
 
 builder.Services.AddSingleton<ISoundEffectManager, SoundEffectManager>();
+builder.Services.AddSingleton<IPipeWireNativeClient, PipeWireNativeClient>();
+builder.Services.AddSingleton<IPipeWireAudioClient, PipeWireAudioClient>();
 builder.Services.AddSingleton<IMpvTransport, MpvTransport>();
 builder.Services.AddSingleton<IRadioMetadataTranslator, RadioMetadataTranslator>();
 builder.Services.AddSingleton<IMpvClient, MpvClient>();
@@ -80,6 +82,7 @@ await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(
     configuration["Application:SoundsDirectory"]
         ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured."));
 
+await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
 await app.Services.GetRequiredService<ILlamaIntentClient>().InitializeAsync();
 await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
 
