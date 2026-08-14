@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="airadio.client/airadio.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="AIRadio.Server/AIRadio.Server.csproj" />
+</Solution>

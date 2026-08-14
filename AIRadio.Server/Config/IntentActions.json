@@ -1,0 +1,365 @@
+[
+  {
+    "Name": "PlayRadio",
+    "Category": "Audio",
+    "Aliases": [
+      "PlayStation",
+      "TuneStation",
+      "ListenToRadio",
+      "FindRadio"
+    ],
+    "Description": "Play an internet radio station selected from a station search or a specific station request.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "Play WRLT",
+      "Play jazz",
+      "Find a classical station",
+      "Play news radio"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Users may request a station by name or describe the type of station they want. Requests containing genres, moods, languages, locations, artists, or content categories should be treated as station discovery requests.",
+      "ExtractionRules": "Extract all useful station search criteria including station name, call sign, genre, artist, language, country, city, mood, decade, and network.",
+      "ClarificationRules": "Only request clarification when no useful station search criteria are provided.",
+      "CompletionRules": "The request is complete when at least one station search criterion or station identifier is available. The application will perform station discovery and ranking.",
+      "AdditionalGuidance": "Do not select a station. The application will rank stations using popularity, location, availability, and stream quality."
+    },
+    "Parameters": [
+      {
+        "Name": "Station",
+        "Description": "Specific station name or identifier.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "WRLT",
+          "Lightning 100"
+        ]
+      },
+      {
+        "Name": "Genre",
+        "Description": "Music or content genre.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Jazz",
+          "Classical",
+          "Rock"
+        ]
+      },
+      {
+        "Name": "Location",
+        "Description": "Desired station location.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Miami",
+          "Nashville"
+        ]
+      },
+      {
+        "Name": "Language",
+        "Description": "Broadcast language.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "French",
+          "Spanish"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "MediaControl",
+    "Category": "Audio",
+    "Aliases": [
+      "VolumeControl",
+      "PlaybackControl",
+      "MusicControl"
+    ],
+    "Description": "Control currently playing media.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "Pause",
+      "Resume playing",
+      "Turn it up",
+      "Set volume to 50 percent",
+      "Skip this station"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize requests that modify current playback or audio settings.",
+      "ExtractionRules": "Extract playback action and audio adjustment values.",
+      "ClarificationRules": "Ask for clarification only when the requested control action cannot be determined.",
+      "CompletionRules": "The request is complete when the playback action or audio adjustment is identified.",
+      "AdditionalGuidance": "References such as 'it', 'that', or 'the music' usually refer to the currently playing media."
+    },
+    "Parameters": [
+      {
+        "Name": "Action",
+        "Description": "Playback operation.",
+        "Required": true,
+        "Normalize": true,
+        "Examples": [
+          "Play",
+          "Pause",
+          "Stop",
+          "Next"
+        ]
+      },
+      {
+        "Name": "Volume",
+        "Description": "Audio volume percentage.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "40 percent",
+          "louder"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "GetWeather",
+    "Category": "Weather",
+    "Aliases": [
+      "WeatherForecast",
+      "WeatherReport"
+    ],
+    "Description": "Retrieve current or forecast weather information.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "What's the weather?",
+      "Will it rain tomorrow?",
+      "Temperature in Miami"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize questions about temperature, rain, humidity, wind, forecasts, or weather conditions.",
+      "ExtractionRules": "Extract location, date, forecast period, and requested weather information.",
+      "ClarificationRules": "Ask for location only when no default location is available.",
+      "CompletionRules": "The request is complete when the weather criteria can be queried.",
+      "AdditionalGuidance": "Do not provide weather information. The application weather tool supplies the results."
+    },
+    "Parameters": [
+      {
+        "Name": "Location",
+        "Description": "Weather location.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Palm City",
+          "Miami"
+        ]
+      },
+      {
+        "Name": "Date",
+        "Description": "Requested forecast date or time.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Today",
+          "Tomorrow"
+        ]
+      },
+      {
+        "Name": "Condition",
+        "Description": "Requested weather metric.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Rain",
+          "Humidity",
+          "Temperature"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "SetAlarm",
+    "Category": "Alarm",
+    "Aliases": [
+      "CreateAlarm",
+      "WakeUpAlarm"
+    ],
+    "Description": "Create a scheduled alarm.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "Set an alarm for 7 AM",
+      "Wake me up tomorrow"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize requests to create a future alarm.",
+      "ExtractionRules": "Extract alarm time, date, recurrence, and label.",
+      "ClarificationRules": "Ask for missing alarm time before completion.",
+      "CompletionRules": "The request is complete only when a valid alarm time is available.",
+      "AdditionalGuidance": "Normalize times into a format suitable for the application."
+    },
+    "Parameters": [
+      {
+        "Name": "Time",
+        "Description": "Alarm time.",
+        "Required": true,
+        "Normalize": true,
+        "Examples": [
+          "7 AM",
+          "06:30"
+        ]
+      },
+      {
+        "Name": "Date",
+        "Description": "Alarm date.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Tomorrow"
+        ]
+      },
+      {
+        "Name": "Repeat",
+        "Description": "Alarm recurrence.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Daily",
+          "Weekdays"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "CreateReminder",
+    "Category": "Reminder",
+    "Aliases": [
+      "SetReminder",
+      "RememberThis"
+    ],
+    "Description": "Create a reminder for a future event.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "Remind me to call John tomorrow",
+      "Remember to check the pool filter"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize requests to remember future actions.",
+      "ExtractionRules": "Extract reminder text, date, and time.",
+      "ClarificationRules": "Ask for missing reminder information if required.",
+      "CompletionRules": "The request is complete when the reminder message and schedule are available.",
+      "AdditionalGuidance": ""
+    },
+    "Parameters": [
+      {
+        "Name": "Message",
+        "Description": "Reminder content.",
+        "Required": true,
+        "Normalize": false,
+        "Examples": [
+          "Call John"
+        ]
+      },
+      {
+        "Name": "DateTime",
+        "Description": "Reminder schedule.",
+        "Required": true,
+        "Normalize": true,
+        "Examples": [
+          "Tomorrow at noon"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "GetNews",
+    "Category": "News",
+    "Aliases": [
+      "NewsFeed",
+      "Headlines"
+    ],
+    "Description": "Retrieve news headlines or stories.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "What's the news?",
+      "Give me technology news",
+      "Local headlines"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize requests for current events, headlines, and news categories.",
+      "ExtractionRules": "Extract topic, category, location, source, and language.",
+      "ClarificationRules": "Do not ask for details if general news is requested.",
+      "CompletionRules": "The request is complete when a news category or general news request is identified.",
+      "AdditionalGuidance": "The application retrieves current news content."
+    },
+    "Parameters": [
+      {
+        "Name": "Category",
+        "Description": "News category.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Technology",
+          "Sports",
+          "World"
+        ]
+      },
+      {
+        "Name": "Location",
+        "Description": "Local news location.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Miami"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "FindLocalEvents",
+    "Category": "Events",
+    "Aliases": [
+      "LocalEvents",
+      "ThingsToDo"
+    ],
+    "Description": "Find local events and activities.",
+    "RequiresToolExecution": true,
+    "Examples": [
+      "What's happening this weekend?",
+      "Find concerts near me",
+      "Local festivals"
+    ],
+    "Prompt": {
+      "RecognitionHints": "Recognize requests for nearby activities, entertainment, and events.",
+      "ExtractionRules": "Extract event type, location, date, and interests.",
+      "ClarificationRules": "Ask for location only when no default location exists.",
+      "CompletionRules": "The request is complete when enough criteria exist to search events.",
+      "AdditionalGuidance": "The application performs event discovery."
+    },
+    "Parameters": [
+      {
+        "Name": "Category",
+        "Description": "Event type.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Concerts",
+          "Festivals",
+          "Sports"
+        ]
+      },
+      {
+        "Name": "Location",
+        "Description": "Event location.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "Miami",
+          "Nearby"
+        ]
+      },
+      {
+        "Name": "Date",
+        "Description": "Event date or range.",
+        "Required": false,
+        "Normalize": true,
+        "Examples": [
+          "This weekend"
+        ]
+      }
+    ]
+  }
+]

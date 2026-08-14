@@ -1,0 +1,35 @@
+<div class="d-flex flex-column h-100">
+  <div class="container-responsive">
+    <form class="form" #promptForm="ngForm" (ngSubmit)="promptForm.valid && executeTurn(promptForm)">
+      <div class="card border">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-12">
+              <label>Send some text</label>
+              <input class="form-control" #userprompt="ngModel" [(ngModel)]="prompt" name="prompt" required />
+              <div *ngIf="userprompt.invalid && (userprompt.dirty || userprompt.touched)" style="color: red;">
+                <div *ngIf="userprompt.errors?.['required']">
+                  Text is required.
+                </div>
+              </div>
+            </div>
+            <div class="col-3">
+              <button type="submit" class="btn btn-info">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+    <div class="card border">
+      <div class="card-header">
+        Chat History
+      </div>
+      <div class="card-body d-flex flex-column">
+        @for (turn of turns; track turn) {
+        <div class="border align-self-end w-90 bg-light mb-1">{{turn.prompt}}&nbsp;</div>
+        <div class="border align-self-start w-90 bg-yellow mb-1">{{turn.response}}&nbsp;</div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

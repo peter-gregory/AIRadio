@@ -1,0 +1,670 @@
+﻿using AIRadio.Server.Models.PipeWire;
+using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Text;
+using System.Threading.Channels;
+
+namespace AIRadio.Server.Services.Audio
+{
+    public interface IPipeWireAudioClient : IAsyncDisposable
+    {
+        bool IsInitialized { get; }
+
+        bool IsPlaying { get; }
+
+        int QueuedFrameCount { get; }
+
+
+        Task InitializeAsync(
+            CancellationToken cancellationToken = default);
+
+
+        Task QueueWavAsync(
+            ReadOnlyMemory<byte> wavData,
+            CancellationToken cancellationToken = default);
+
+
+        Task QueuePcmAsync(
+            ReadOnlyMemory<byte> pcmData,
+            CancellationToken cancellationToken = default);
+
+
+        Task WaitForPlaybackCompleteAsync(
+            CancellationToken cancellationToken = default);
+
+
+        Task ClearQueueAsync(
+            CancellationToken cancellationToken = default);
+
+
+        Task StopPlaybackAsync(
+            CancellationToken cancellationToken = default);
+
+
+        Task SetMasterVolumeAsync(
+            int volume,
+            CancellationToken cancellationToken = default);
+
+
+        Task<int> GetMasterVolumeAsync(
+            CancellationToken cancellationToken = default);
+    }
+
+    public sealed class PipeWireAudioClient : IPipeWireAudioClient
+    {
+        private readonly ILogger<PipeWireAudioClient> _logger;
+
+        private readonly IPipeWireNativeClient _pipeWire;
+
+        private readonly Channel<AudioFrame> _audioQueue;
+
+
+        private readonly int _sampleRate;
+        private readonly short _channels;
+        private readonly short _bitsPerSample;
+        private readonly int _frameDurationMs;
+
+
+        private CancellationTokenSource? _playbackCancellation;
+
+        private Task? _consumerTask;
+
+        private bool _initialized;
+        private bool _isPlaying;
+        private int _queuedFrames;
+        private int _masterVolume = 100;
+
+        public PipeWireAudioClient(
+            IPipeWireNativeClient pipeWire,
+            IConfiguration configuration,
+            ILogger<PipeWireAudioClient> logger)
+        {
+            _pipeWire = pipeWire;
+            _logger = logger;
+
+
+            _sampleRate =
+                configuration.GetValue<int>(
+                    "Audio:SampleRate",
+                    22050);
+
+
+            _channels =
+                configuration.GetValue<short>(
+                    "Audio:Channels",
+                    1);
+
+
+            _bitsPerSample =
+                configuration.GetValue<short>(
+                    "Audio:BitsPerSample",
+                    16);
+
+
+            _frameDurationMs =
+                configuration.GetValue<int>(
+                    "Audio:FrameDurationMilliseconds",
+                    40);
+
+
+
+            _audioQueue =
+                Channel.CreateBounded<AudioFrame>(
+                    new BoundedChannelOptions(
+                        64)
+                    {
+                        FullMode =
+                            BoundedChannelFullMode.Wait
+                    });
+
+
+            _logger.LogInformation(
+                "PipeWire client configured {Rate}Hz {Channels}ch {Bits}bit frame {Frame}ms",
+                _sampleRate,
+                _channels,
+                _bitsPerSample,
+                _frameDurationMs);
+        }
+
+
+
+        public bool IsInitialized =>
+            _initialized;
+
+
+        public bool IsPlaying =>
+            _isPlaying;
+
+
+        public int QueuedFrameCount =>
+            _queuedFrames;
+
+
+
+        public async Task InitializeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (_initialized)
+            {
+                return;
+            }
+
+
+            await _pipeWire.InitializeAsync(
+                _sampleRate,
+                _channels,
+                _bitsPerSample,
+                cancellationToken);
+
+
+            _pipeWire.BufferRequested +=
+                OnPipeWireBufferRequested;
+
+
+            _playbackCancellation =
+                new CancellationTokenSource();
+
+
+            _consumerTask =
+                Task.Run(
+                    () =>
+                        ConsumeQueueAsync(
+                            _playbackCancellation.Token),
+                    cancellationToken);
+
+
+            _initialized = true;
+
+
+            _logger.LogInformation(
+                "PipeWire audio initialized.");
+        }
+
+
+
+        public async Task QueueWavAsync(
+            ReadOnlyMemory<byte> wavData,
+            CancellationToken cancellationToken = default)
+        {
+            var pcm =
+                WaveParser.Parse(
+                    wavData,
+                    _sampleRate,
+                    _channels,
+                    _bitsPerSample);
+
+
+            await QueuePcmAsync(
+                pcm,
+                cancellationToken);
+        }
+
+
+
+        public async Task QueuePcmAsync(
+            ReadOnlyMemory<byte> pcmData,
+            CancellationToken cancellationToken = default)
+        {
+            var frameSize =
+                CalculateFrameSize();
+
+
+            for (int offset = 0;
+                 offset < pcmData.Length;
+                 offset += frameSize)
+            {
+                var length =
+                    Math.Min(
+                        frameSize,
+                        pcmData.Length - offset);
+
+
+                await _audioQueue.Writer.WriteAsync(
+                    new AudioFrame(
+                        pcmData.Slice(
+                            offset,
+                            length)),
+                    cancellationToken);
+
+
+                Interlocked.Increment(
+                    ref _queuedFrames);
+            }
+
+
+            _logger.LogTrace(
+                "Queued PCM frames. Count={Count}",
+                _queuedFrames);
+        }
+
+
+
+        public async Task WaitForPlaybackCompleteAsync(
+            CancellationToken cancellationToken = default)
+        {
+            while (_queuedFrames > 0 ||
+                   _isPlaying)
+            {
+                await Task.Delay(
+                    10,
+                    cancellationToken);
+            }
+        }
+
+
+
+        public Task ClearQueueAsync(
+            CancellationToken cancellationToken = default)
+        {
+            while (_audioQueue.Reader.TryRead(
+                out _))
+            {
+                Interlocked.Decrement(
+                    ref _queuedFrames);
+            }
+
+
+            return Task.CompletedTask;
+        }
+
+
+
+        public async Task StopPlaybackAsync(
+            CancellationToken cancellationToken = default)
+        {
+            await ClearQueueAsync(
+                cancellationToken);
+
+
+            await _pipeWire.FlushAsync(
+                cancellationToken);
+        }
+
+
+
+        private async Task ConsumeQueueAsync(
+            CancellationToken cancellationToken)
+        {
+            await foreach (var frame in
+                _audioQueue.Reader.ReadAllAsync(
+                    cancellationToken))
+            {
+                //
+                // PipeWire consumes through callback.
+                // This loop exists only to track lifecycle.
+                //
+
+                _isPlaying = true;
+
+
+                while (!_pipeWire.BufferAvailable)
+                {
+                    await Task.Delay(
+                        1,
+                        cancellationToken);
+                }
+
+
+                Interlocked.Decrement(
+                    ref _queuedFrames);
+            }
+        }
+
+
+
+        private void OnPipeWireBufferRequested(
+            object? sender,
+            PipeWireBufferEventArgs e)
+        {
+            if (!_audioQueue.Reader.TryRead(
+                    out var frame))
+            {
+                e.FillSilence();
+
+                _isPlaying = false;
+
+                return;
+            }
+
+
+            e.CopyFrom(
+                frame.Data);
+
+
+            Interlocked.Decrement(
+                ref _queuedFrames);
+
+
+            _isPlaying = true;
+        }
+
+
+
+        public Task SetMasterVolumeAsync(
+            int volume,
+            CancellationToken cancellationToken = default)
+        {
+            _masterVolume =
+                Math.Clamp(
+                    volume,
+                    0,
+                    100);
+
+
+            return _pipeWire.SetVolumeAsync(
+                _masterVolume,
+                cancellationToken);
+        }
+
+
+
+        public Task<int> GetMasterVolumeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(
+                _masterVolume);
+        }
+
+
+
+        private int CalculateFrameSize()
+        {
+            return
+                (_sampleRate *
+                 _channels *
+                 (_bitsPerSample / 8) *
+                 _frameDurationMs)
+                 / 1000;
+        }
+
+
+
+        public async ValueTask DisposeAsync()
+        {
+            _playbackCancellation?.Cancel();
+
+
+            if (_consumerTask != null)
+            {
+                await _consumerTask;
+            }
+
+
+            await _pipeWire.DisposeAsync();
+
+
+            _logger.LogInformation(
+                "PipeWire client disposed.");
+        }
+    }
+    internal sealed class AudioFrame
+    {
+        public AudioFrame(
+            ReadOnlyMemory<byte> data)
+        {
+            Data = data;
+        }
+
+
+        public ReadOnlyMemory<byte> Data { get; }
+    }
+
+    internal static class WaveParser
+    {
+        private const short PcmFormat = 1;
+
+
+        public static ReadOnlyMemory<byte> Parse(
+            ReadOnlyMemory<byte> wavData,
+            int expectedSampleRate,
+            short expectedChannels,
+            short expectedBitsPerSample)
+        {
+            if (wavData.Length < 44)
+            {
+                throw new InvalidDataException(
+                    "WAV data is too small.");
+            }
+
+
+            var span = wavData.Span;
+
+
+            ValidateRiffHeader(span);
+
+            var format =
+                ReadFormatChunk(
+                    span,
+                    out var dataOffset,
+                    out var dataLength);
+
+
+            ValidateFormat(
+                format,
+                expectedSampleRate,
+                expectedChannels,
+                expectedBitsPerSample);
+
+
+
+            if (dataOffset + dataLength > span.Length)
+            {
+                throw new InvalidDataException(
+                    "WAV data chunk exceeds buffer length.");
+            }
+
+
+            return wavData.Slice(
+                dataOffset,
+                dataLength);
+        }
+
+
+
+        private static void ValidateRiffHeader(
+            ReadOnlySpan<byte> data)
+        {
+            var riff =
+                Encoding.ASCII.GetString(
+                    data[..4]);
+
+
+            if (riff != "RIFF")
+            {
+                throw new InvalidDataException(
+                    "Invalid WAV header. Missing RIFF.");
+            }
+
+
+            var wave =
+                Encoding.ASCII.GetString(
+                    data.Slice(8, 4));
+
+
+            if (wave != "WAVE")
+            {
+                throw new InvalidDataException(
+                    "Invalid WAV header. Missing WAVE.");
+            }
+        }
+
+
+
+        private static WaveFormat ReadFormatChunk(
+            ReadOnlySpan<byte> data,
+            out int dataOffset,
+            out int dataLength)
+        {
+            int position = 12;
+
+
+            WaveFormat? format = null;
+
+            dataOffset = 0;
+            dataLength = 0;
+
+
+
+            while (position + 8 <= data.Length)
+            {
+                var chunkId =
+                    Encoding.ASCII.GetString(
+                        data.Slice(position, 4));
+
+
+                var chunkSize =
+                    BinaryPrimitives.ReadInt32LittleEndian(
+                        data.Slice(
+                            position + 4,
+                            4));
+
+
+                position += 8;
+
+
+                if (chunkSize < 0 ||
+                    position + chunkSize > data.Length)
+                {
+                    throw new InvalidDataException(
+                        "Invalid WAV chunk size.");
+                }
+
+
+
+                switch (chunkId)
+                {
+                    case "fmt ":
+
+                        format =
+                            ParseFormatChunk(
+                                data.Slice(
+                                    position,
+                                    chunkSize));
+
+                        break;
+
+
+
+                    case "data":
+
+                        dataOffset =
+                            position;
+
+                        dataLength =
+                            chunkSize;
+
+                        break;
+                }
+
+
+                position += chunkSize;
+
+
+                if (format != null &&
+                    dataLength > 0)
+                {
+                    break;
+                }
+            }
+
+
+
+            if (format == null)
+            {
+                throw new InvalidDataException(
+                    "WAV fmt chunk not found.");
+            }
+
+
+            if (dataLength == 0)
+            {
+                throw new InvalidDataException(
+                    "WAV data chunk not found.");
+            }
+
+
+            return format;
+        }
+
+
+
+        private static WaveFormat ParseFormatChunk(
+            ReadOnlySpan<byte> data)
+        {
+            if (data.Length < 16)
+            {
+                throw new InvalidDataException(
+                    "Invalid fmt chunk.");
+            }
+
+
+            return new WaveFormat
+            {
+                AudioFormat =
+                    BinaryPrimitives.ReadInt16LittleEndian(
+                        data[..2]),
+
+                Channels =
+                    BinaryPrimitives.ReadInt16LittleEndian(
+                        data.Slice(2, 2)),
+
+                SampleRate =
+                    BinaryPrimitives.ReadInt32LittleEndian(
+                        data.Slice(4, 4)),
+
+                BitsPerSample =
+                    BinaryPrimitives.ReadInt16LittleEndian(
+                        data.Slice(14, 2))
+            };
+        }
+
+
+
+        private static void ValidateFormat(
+            WaveFormat format,
+            int expectedSampleRate,
+            short expectedChannels,
+            short expectedBitsPerSample)
+        {
+            if (format.AudioFormat != PcmFormat)
+            {
+                throw new NotSupportedException(
+                    $"Unsupported WAV format {format.AudioFormat}. Only PCM supported.");
+            }
+
+
+            if (format.SampleRate != expectedSampleRate)
+            {
+                throw new NotSupportedException(
+                    $"Sample rate {format.SampleRate}Hz does not match expected {expectedSampleRate}Hz.");
+            }
+
+
+            if (format.Channels != expectedChannels)
+            {
+                throw new NotSupportedException(
+                    $"Channel count {format.Channels} does not match expected {expectedChannels}.");
+            }
+
+
+            if (format.BitsPerSample != expectedBitsPerSample)
+            {
+                throw new NotSupportedException(
+                    $"Bit depth {format.BitsPerSample} does not match expected {expectedBitsPerSample}.");
+            }
+        }
+
+
+
+        private sealed class WaveFormat
+        {
+            public short AudioFormat { get; init; }
+
+            public short Channels { get; init; }
+
+            public int SampleRate { get; init; }
+
+            public short BitsPerSample { get; init; }
+        }
+    }
+}
