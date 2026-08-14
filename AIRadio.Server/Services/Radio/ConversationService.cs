@@ -7,12 +7,8 @@ namespace AIRadio.Server.Services.Radio
 {
     public interface IConversationService
     {
-        Task ProcessAsync(
-            string text,
-            CancellationToken cancellationToken = default);
-
-        Task CancelAsync(
-            CancellationToken cancellationToken = default);
+        Task ProcessAsync(string text, CancellationToken cancellationToken = default);
+        Task CancelAsync(CancellationToken cancellationToken = default);
     }
 
     public sealed class ConversationService : IConversationService, IAsyncDisposable
@@ -34,34 +30,29 @@ namespace AIRadio.Server.Services.Radio
             _audioManager = audioManager;
 
             ArgumentNullException.ThrowIfNull(tools);
-            _tools = tools.ToDictionary(
-                tool => tool.Name,
-                StringComparer.OrdinalIgnoreCase);
+            _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
             _queue = new AsyncWorkQueue<ConversationRequest>();
             _queue.Start(ProcessRequestAsync);
         }
 
-        public Task ProcessAsync(
-            string text,
-            CancellationToken cancellationToken = default)
+        public Task ProcessAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!_queue.TryEnqueue(new ConversationRequest(text)))
-            {
-                _logger.LogDebug(
-                    "Conversation request rejected because the conversation queue is not accepting work.");
-            }
+                _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
 
             return Task.CompletedTask;
         }
 
-        public async Task CancelAsync(
-            CancellationToken cancellationToken = default)
+        public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
-            await _queue.CancelAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await _queue.CancelAsync(CancellationToken.None);
+            await _audioManager.CancelAsync(CancellationToken.None);
             _queue.Resume();
         }
 
@@ -97,26 +88,14 @@ namespace AIRadio.Server.Services.Radio
             foreach (var soundEvent in response.SoundEvents)
             {
                 if (!string.IsNullOrWhiteSpace(soundEvent))
-                {
-                    await _audioManager.PlaySoundAsync(
-                        soundEvent,
-                        cancellationToken);
-                }
+                    await _audioManager.PlaySoundAsync(soundEvent, cancellationToken);
             }
 
             if (response.HasSpeech)
-            {
-                await _audioManager.PlaySpeechAsync(
-                    response.SpokenText,
-                    cancellationToken);
-            }
+                await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
 
             if (response.HasToolRequests)
-            {
-                await ExecuteToolsAsync(
-                    response.ToolRequests,
-                    cancellationToken);
-            }
+                await ExecuteToolsAsync(response.ToolRequests, cancellationToken);
         }
 
         private async Task ExecuteToolsAsync(
@@ -145,10 +124,7 @@ namespace AIRadio.Server.Services.Radio
 
                 try
                 {
-                    var result = await tool.ExecuteAsync(
-                        request,
-                        cancellationToken);
-
+                    var result = await tool.ExecuteAsync(request, cancellationToken);
                     results.Add(result ?? ToolResult.Failed(
                         request.Name,
                         $"Tool '{request.Name}' returned no result."));
@@ -166,23 +142,13 @@ namespace AIRadio.Server.Services.Radio
             }
 
             if (results.Count == 0)
-            {
                 return;
-            }
 
-            var response = await _llama.ContinueAsync(
-                results,
-                cancellationToken);
-
-            await ProcessLlamaResponseAsync(
-                response,
-                cancellationToken);
+            var response = await _llama.ContinueAsync(results, cancellationToken);
+            await ProcessLlamaResponseAsync(response, cancellationToken);
         }
 
-        public ValueTask DisposeAsync()
-        {
-            return _queue.DisposeAsync();
-        }
+        public ValueTask DisposeAsync() => _queue.DisposeAsync();
 
         private sealed record ConversationRequest(string Text);
     }
