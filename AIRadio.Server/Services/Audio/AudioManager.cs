@@ -1,4 +1,3 @@
-using AIRadio.Server.Models.Audio;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Sounds;
 using AIRadio.Server.Services.Tts;
@@ -83,7 +82,7 @@ namespace AIRadio.Server.Services.Audio
         public Task UnduckAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!IsDucked)
+            if (IsDucked)
                 return Task.CompletedTask;
 
             Volatile.Write(ref _isDucked, false);
@@ -94,11 +93,6 @@ namespace AIRadio.Server.Services.Audio
         public Task StopSpeechAsync(CancellationToken cancellationToken = default) =>
             CancelAsync(cancellationToken);
 
-        public void ClearQueue()
-        {
-            _queue.ClearPending();
-        }
-
         public Task ClearQueueAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -108,8 +102,6 @@ namespace AIRadio.Server.Services.Audio
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
-            // Once cancellation starts, it must finish. The caller token
-            // only matters before cancellation is initiated.
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
 
@@ -136,9 +128,7 @@ namespace AIRadio.Server.Services.Audio
             }
         }
 
-        private Task EnqueueAsync(
-            AudioRequest request,
-            CancellationToken cancellationToken)
+        private Task EnqueueAsync(AudioRequest request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -221,9 +211,7 @@ namespace AIRadio.Server.Services.Audio
                 return;
             }
 
-            await _pipeWireAudioClient.QueueWavAsync(
-                sound.WavData,
-                cancellationToken);
+            await _pipeWireAudioClient.QueueWavAsync(sound.WavData, cancellationToken);
         }
 
         private Task ProcessAudioFileAsync(
