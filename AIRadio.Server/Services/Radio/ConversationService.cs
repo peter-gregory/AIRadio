@@ -1,4 +1,4 @@
-﻿using AIRadio.Server.Models.LLama;
+using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.AI;
 using AIRadio.Server.Services.Audio;
@@ -15,17 +15,12 @@ namespace AIRadio.Server.Services.Radio
             CancellationToken cancellationToken = default);
     }
 
-    public sealed class ConversationService :
-        IConversationService,
-        IAsyncDisposable
+    public sealed class ConversationService : IConversationService, IAsyncDisposable
     {
         private readonly ILogger<ConversationService> _logger;
-
         private readonly IConversationLlamaClient _llama;
         private readonly IAudioManager _audioManager;
-
         private readonly IReadOnlyDictionary<string, ITool> _tools;
-
         private readonly AsyncWorkQueue<ConversationRequest> _queue;
 
         public ConversationService(
@@ -35,42 +30,29 @@ namespace AIRadio.Server.Services.Radio
             IEnumerable<ITool> tools)
         {
             _logger = logger;
-
             _llama = llama;
             _audioManager = audioManager;
 
             ArgumentNullException.ThrowIfNull(tools);
-
             _tools = tools.ToDictionary(
                 tool => tool.Name,
                 StringComparer.OrdinalIgnoreCase);
 
-            _queue =
-                new AsyncWorkQueue<ConversationRequest>();
-
-            _queue.Start(
-                ProcessRequestAsync);
+            _queue = new AsyncWorkQueue<ConversationRequest>();
+            _queue.Start(ProcessRequestAsync);
         }
 
         public Task ProcessAsync(
             string text,
             CancellationToken cancellationToken = default)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(
-                text);
+            ArgumentException.ThrowIfNullOrWhiteSpace(text);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var request =
-                new ConversationRequest(
-                    text);
-
-            if (!_queue.TryEnqueue(
-                    request))
+            if (!_queue.TryEnqueue(new ConversationRequest(text)))
             {
                 _logger.LogDebug(
-                    "Conversation request rejected because " +
-                    "conversation processing is cancelled.");
-
-                return Task.CompletedTask;
+                    "Conversation request rejected because the conversation queue is not accepting work.");
             }
 
             return Task.CompletedTask;
@@ -79,12 +61,7 @@ namespace AIRadio.Server.Services.Radio
         public async Task CancelAsync(
             CancellationToken cancellationToken = default)
         {
-            await _queue.CancelAsync(
-                cancellationToken);
-        }
-
-        public void Resume()
-        {
+            await _queue.CancelAsync(cancellationToken);
             _queue.Resume();
         }
 
@@ -92,29 +69,23 @@ namespace AIRadio.Server.Services.Radio
             ConversationRequest request,
             CancellationToken cancellationToken)
         {
-            _logger.LogDebug(
-                "Processing conversation request.");
-
-            LlamaResponse response;
-
-            if (_llama.IsInitialized)
+            try
             {
-                response =
-                    await _llama.ContinueAsync(
-                        request.Text,
-                        cancellationToken);
-            }
-            else
-            {
-                response =
-                    await _llama.StartConversationAsync(
-                        request.Text,
-                        cancellationToken);
-            }
+                var response = _llama.IsInitialized
+                    ? await _llama.ContinueAsync(request.Text, cancellationToken)
+                    : await _llama.StartConversationAsync(request.Text, cancellationToken);
 
-            await ProcessLlamaResponseAsync(
-                response,
-                cancellationToken);
+                await ProcessLlamaResponseAsync(response, cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Conversation processing cancelled.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Conversation processing failed.");
+            }
         }
 
         private async Task ProcessLlamaResponseAsync(
@@ -123,21 +94,10 @@ namespace AIRadio.Server.Services.Radio
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            /*
-             * Audio is queued, not played synchronously.
-             */
-            if (response.HasSoundEvents)
+            foreach (var soundEvent in response.SoundEvents)
             {
-                foreach (var soundEvent in response.SoundEvents)
+                if (!string.IsNullOrWhiteSpace(soundEvent))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    if (string.IsNullOrWhiteSpace(
-                            soundEvent))
-                    {
-                        continue;
-                    }
-
                     await _audioManager.PlaySoundAsync(
                         soundEvent,
                         cancellationToken);
@@ -151,10 +111,6 @@ namespace AIRadio.Server.Services.Radio
                     cancellationToken);
             }
 
-            /*
-             * Tool execution begins immediately. AudioManager continues
-             * processing the previously queued speech independently.
-             */
             if (response.HasToolRequests)
             {
                 await ExecuteToolsAsync(
@@ -167,67 +123,35 @@ namespace AIRadio.Server.Services.Radio
             IEnumerable<ToolRequest> toolRequests,
             CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(
-                toolRequests);
-
-            var results =
-                new List<ToolResult>();
+            var results = new List<ToolResult>();
 
             foreach (var request in toolRequests)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (string.IsNullOrWhiteSpace(
-                        request.Name))
+                if (string.IsNullOrWhiteSpace(request.Name))
                 {
-                    _logger.LogWarning(
-                        "Llama returned a tool request with no tool name.");
-
+                    _logger.LogWarning("Llama returned a tool request with no tool name.");
                     continue;
                 }
 
-                if (!_tools.TryGetValue(
-                        request.Name,
-                        out var tool))
+                if (!_tools.TryGetValue(request.Name, out var tool))
                 {
-                    _logger.LogWarning(
-                        "Llama requested unknown tool {ToolName}.",
-                        request.Name);
-
-                    results.Add(
-                        ToolResult.Failed(
-                            request.Name,
-                            $"Tool '{request.Name}' is not available."));
-
+                    results.Add(ToolResult.Failed(
+                        request.Name,
+                        $"Tool '{request.Name}' is not available."));
                     continue;
                 }
 
                 try
                 {
-                    _logger.LogDebug(
-                        "Executing tool {ToolName}.",
-                        request.Name);
+                    var result = await tool.ExecuteAsync(
+                        request,
+                        cancellationToken);
 
-                    var result =
-                        await tool.ExecuteAsync(
-                            request,
-                            cancellationToken);
-
-                    if (result is null)
-                    {
-                        _logger.LogWarning(
-                            "Tool {ToolName} returned null.",
-                            request.Name);
-
-                        results.Add(
-                            ToolResult.Failed(
-                                request.Name,
-                                $"Tool '{request.Name}' returned no result."));
-
-                        continue;
-                    }
-
-                    results.Add(result);
+                    results.Add(result ?? ToolResult.Failed(
+                        request.Name,
+                        $"Tool '{request.Name}' returned no result."));
                 }
                 catch (OperationCanceledException)
                     when (cancellationToken.IsCancellationRequested)
@@ -236,15 +160,8 @@ namespace AIRadio.Server.Services.Radio
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(
-                        ex,
-                        "Tool {ToolName} failed.",
-                        request.Name);
-
-                    results.Add(
-                        ToolResult.Failed(
-                            request.Name,
-                            ex.Message));
+                    _logger.LogError(ex, "Tool {ToolName} failed.", request.Name);
+                    results.Add(ToolResult.Failed(request.Name, ex.Message));
                 }
             }
 
@@ -253,28 +170,20 @@ namespace AIRadio.Server.Services.Radio
                 return;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-
-            /*
-             * Continue the same conversation. Any resulting speech or
-             * sound events are appended to the AudioManager queue.
-             */
-            var response =
-                await _llama.ContinueAsync(
-                    results,
-                    cancellationToken);
+            var response = await _llama.ContinueAsync(
+                results,
+                cancellationToken);
 
             await ProcessLlamaResponseAsync(
                 response,
                 cancellationToken);
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            await _queue.DisposeAsync();
+            return _queue.DisposeAsync();
         }
 
-        private sealed record ConversationRequest(
-            string Text);
+        private sealed record ConversationRequest(string Text);
     }
 }
