@@ -35,9 +35,20 @@ namespace AIRadio.Server.Services.Network
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t", "--separator", "\t", "-f",
-                "SSID,SIGNAL,SECURITY", "device", "wifi", "list",
-                "--rescan", "yes", cancellationToken);
+                new[]
+                {
+                    "-t",
+                    "--separator",
+                    "\t",
+                    "-f",
+                    "SSID,SIGNAL,SECURITY",
+                    "device",
+                    "wifi",
+                    "list",
+                    "--rescan",
+                    "yes"
+                },
+                cancellationToken);
 
             if (result.ExitCode != 0)
             {
@@ -107,7 +118,13 @@ namespace AIRadio.Server.Services.Network
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t", "-f", "DEVICE,TYPE,STATE", "device",
+                new[]
+                {
+                    "-t",
+                    "-f",
+                    "DEVICE,TYPE,STATE",
+                    "device"
+                },
                 cancellationToken);
 
             if (result.ExitCode != 0)
@@ -138,7 +155,10 @@ namespace AIRadio.Server.Services.Network
 
             var arguments = new List<string>
             {
-                "device", "wifi", "connect", ssid
+                "device",
+                "wifi",
+                "connect",
+                ssid
             };
 
             if (!string.IsNullOrEmpty(password))
@@ -147,28 +167,11 @@ namespace AIRadio.Server.Services.Network
                 arguments.Add(password);
             }
 
-            var result = await RunAsync(arguments, cancellationToken);
-            return result.ExitCode == 0;
-        }
-
-        private static async Task<CommandResult> RunAsync(
-            string argument1,
-            string argument2,
-            string argument3,
-            string argument4,
-            string argument5,
-            string argument6,
-            string argument7,
-            string argument8,
-            CancellationToken cancellationToken)
-        {
-            return await RunAsync(
-                new[]
-                {
-                    argument1, argument2, argument3, argument4,
-                    argument5, argument6, argument7, argument8
-                },
+            var result = await RunAsync(
+                arguments,
                 cancellationToken);
+
+            return result.ExitCode == 0;
         }
 
         private static async Task<CommandResult> RunAsync(
@@ -198,10 +201,14 @@ namespace AIRadio.Server.Services.Network
                     "Unable to start nmcli.");
             }
 
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            var outputTask =
+                process.StandardOutput.ReadToEndAsync(cancellationToken);
 
-            await process.WaitForExitAsync(cancellationToken);
+            var errorTask =
+                process.StandardError.ReadToEndAsync(cancellationToken);
+
+            await process.WaitForExitAsync(
+                cancellationToken);
 
             return new CommandResult(
                 process.ExitCode,
