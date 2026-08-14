@@ -24,24 +24,15 @@ namespace AIRadio.Server.Services.Network
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            var action =
-                request.GetString("action")?.Trim();
+            var action = request.GetString("action")?.Trim();
 
             try
             {
                 return action?.ToLowerInvariant() switch
                 {
-                    "scan" =>
-                        await ScanAsync(cancellationToken),
-
-                    "status" =>
-                        await GetStatusAsync(cancellationToken),
-
-                    "connect" =>
-                        await ConnectAsync(
-                            request,
-                            cancellationToken),
-
+                    "scan" => await ScanAsync(cancellationToken),
+                    "status" => await GetStatusAsync(cancellationToken),
+                    "connect" => await ConnectAsync(request, cancellationToken),
                     _ => ToolResult.Failed(
                         Name,
                         "The WiFi action must be scan, status, or connect.")
@@ -54,33 +45,40 @@ namespace AIRadio.Server.Services.Network
             }
             catch (Exception ex)
             {
-                return ToolResult.Failed(
-                    Name,
-                    ex.Message);
+                return ToolResult.Failed(Name, ex.Message);
             }
         }
 
         private async Task<ToolResult> ScanAsync(
             CancellationToken cancellationToken)
         {
-            var networks =
-                await _wifiManager.ScanAsync(
-                    cancellationToken);
+            var networks = await _wifiManager.ScanAsync(
+                cancellationToken);
+
+            var choices = networks
+                .Select((network, index) => new
+                {
+                    Number = index + 1,
+                    network.Ssid,
+                    network.SignalStrength,
+                    network.Security,
+                    network.IsSecured
+                })
+                .ToArray();
 
             return ToolResult.Successful(
                 Name,
-                networks.Count == 0
+                choices.Length == 0
                     ? "No WiFi networks were found."
-                    : $"Found {networks.Count} WiFi networks.",
-                networks);
+                    : $"Found {choices.Length} WiFi networks. Choose one by number, or say none of these to scan again.",
+                choices);
         }
 
         private async Task<ToolResult> GetStatusAsync(
             CancellationToken cancellationToken)
         {
-            var connected =
-                await _wifiManager.IsConnectedAsync(
-                    cancellationToken);
+            var connected = await _wifiManager.IsConnectedAsync(
+                cancellationToken);
 
             return ToolResult.Successful(
                 Name,
@@ -94,24 +92,61 @@ namespace AIRadio.Server.Services.Network
             ToolRequest request,
             CancellationToken cancellationToken)
         {
-            var ssid =
-                request.GetString("ssid")?.Trim();
+            var number = request.GetInt32("number");
+
+            if (number.HasValue)
+            {
+                if (!_wifiManager.TryGetScannedNetwork(
+                        number.Value,
+                        out var network) ||
+                    network is null)
+                {
+                    return ToolResult.Failed(
+                        Name,
+                        $"WiFi network number {number.Value} is not in the current scan. Ask the user to choose one of the listed networks or say none of these to scan again.");
+                }
+
+                return await ConnectToNetworkAsync(
+                    network,
+                    request.GetString("password"),
+                    cancellationToken);
+            }
+
+            var ssid = request.GetString("ssid")?.Trim();
 
             if (string.IsNullOrWhiteSpace(ssid))
             {
                 return ToolResult.Failed(
                     Name,
-                    "The WiFi network name was not specified.");
+                    "The WiFi network number or network name was not specified.");
             }
 
-            var password =
-                request.GetString("password");
+            return await ConnectAsync(
+                ssid,
+                request.GetString("password"),
+                cancellationToken);
+        }
 
-            var connected =
-                await _wifiManager.ConnectAsync(
-                    ssid,
-                    password,
-                    cancellationToken);
+        private async Task<ToolResult> ConnectToNetworkAsync(
+            WifiNetwork network,
+            string? password,
+            CancellationToken cancellationToken)
+        {
+            return await ConnectAsync(
+                network.Ssid,
+                password,
+                cancellationToken);
+        }
+
+        private async Task<ToolResult> ConnectAsync(
+            string ssid,
+            string? password,
+            CancellationToken cancellationToken)
+        {
+            var connected = await _wifiManager.ConnectAsync(
+                ssid,
+                password,
+                cancellationToken);
 
             if (!connected)
             {
