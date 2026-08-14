@@ -27,16 +27,19 @@ namespace AIRadio.Server.Services.Network
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t",
-                "--separator",
-                "\t",
-                "-f",
-                "SSID,SIGNAL,SECURITY",
-                "device",
-                "wifi",
-                "list",
-                "--rescan",
-                "yes",
+                new[]
+                {
+                    "-t",
+                    "--separator",
+                    "\t",
+                    "-f",
+                    "SSID,SIGNAL,SECURITY",
+                    "device",
+                    "wifi",
+                    "list",
+                    "--rescan",
+                    "yes"
+                },
                 cancellationToken);
 
             if (result.ExitCode != 0)
@@ -88,10 +91,13 @@ namespace AIRadio.Server.Services.Network
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t",
-                "-f",
-                "DEVICE,TYPE,STATE",
-                "device",
+                new[]
+                {
+                    "-t",
+                    "-f",
+                    "DEVICE,TYPE,STATE",
+                    "device"
+                },
                 cancellationToken);
 
             if (result.ExitCode != 0)
@@ -146,32 +152,6 @@ namespace AIRadio.Server.Services.Network
                 cancellationToken);
 
             return result.ExitCode == 0;
-        }
-
-        private static async Task<CommandResult> RunAsync(
-            string argument1,
-            string argument2,
-            string argument3,
-            string argument4,
-            string argument5,
-            string argument6,
-            string argument7,
-            string argument8,
-            CancellationToken cancellationToken)
-        {
-            return await RunAsync(
-                new[]
-                {
-                    argument1,
-                    argument2,
-                    argument3,
-                    argument4,
-                    argument5,
-                    argument6,
-                    argument7,
-                    argument8
-                },
-                cancellationToken);
         }
 
         private static async Task<CommandResult> RunAsync(
