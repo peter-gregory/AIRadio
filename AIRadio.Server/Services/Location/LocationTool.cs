@@ -1,8 +1,6 @@
 ﻿namespace AIRadio.Server.Services.Location
 {
     using AIRadio.Server.Models.Tools;
-    using Newtonsoft.Json;
-    using System.Text.RegularExpressions;
 
     public sealed class LocationTool : ITool
     {
@@ -37,22 +35,36 @@
                     current);
             }
 
-            var updated =
-                await _locationService.UpdateCurrentLocationAsync(
-                    location,
-                    cancellationToken);
+            try
+            {
+                var updated =
+                    await _locationService.UpdateCurrentLocationAsync(
+                        location,
+                        cancellationToken);
 
-            if (updated is null)
+                if (updated is null)
+                {
+                    return ToolResult.Failed(
+                        Name,
+                        $"Unable to determine location '{location}'.");
+                }
+
+                return ToolResult.Successful(
+                    Name,
+                    "Current location updated.",
+                    updated);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 return ToolResult.Failed(
                     Name,
-                    $"Unable to determine location '{location}'.");
+                    ex.Message);
             }
-
-            return ToolResult.Successful(
-                Name,
-                "Current location updated.",
-                updated);
         }
     }
 }
