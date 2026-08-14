@@ -59,7 +59,12 @@ builder.Services.AddSingleton<ITool, RadioTool>();
 builder.Services.AddSingleton<ITool, LocationTool>();
 builder.Services.AddSingleton<ITool, WeatherTool>();
 
-builder.Services.AddHostedService<AlarmManagerService>();
+builder.Services.AddSingleton<AlarmManagerService>();
+builder.Services.AddSingleton<IAlarmManagerService>(sp =>
+    sp.GetRequiredService<AlarmManagerService>());
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<AlarmManagerService>());
+
 builder.Services.AddMemoryCache(options => options.SizeLimit = 50);
 builder.Services.AddScoped<IRadioService, RadioService>();
 
