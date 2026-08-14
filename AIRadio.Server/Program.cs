@@ -4,6 +4,7 @@ using AIRadio.Server.Services.Alarms;
 using AIRadio.Server.Services.Audio;
 using AIRadio.Server.Services.Location;
 using AIRadio.Server.Services.Mpv;
+using AIRadio.Server.Services.Network;
 using AIRadio.Server.Services.News;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Sounds;
@@ -51,6 +52,7 @@ builder.Services.AddSingleton<IAudioManager, AudioManager>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
 builder.Services.AddSingleton<ILocationStore, JsonLocationStore>();
 builder.Services.AddSingleton<IMpvState, MpvState>();
+builder.Services.AddSingleton<IWifiManager, WifiManager>();
 
 builder.Services.AddHttpClient<IWeatherLocationResolver, OpenMeteoLocationResolver>();
 builder.Services.AddHttpClient<IWeatherService, WeatherService>();
@@ -59,6 +61,7 @@ builder.Services.AddHttpClient<IPiperClient, PiperClient>();
 builder.Services.AddSingleton<ITool, RadioTool>();
 builder.Services.AddSingleton<ITool, LocationTool>();
 builder.Services.AddSingleton<ITool, WeatherTool>();
+builder.Services.AddSingleton<ITool, WifiTool>();
 
 builder.Services.AddSingleton<AlarmManagerService>();
 builder.Services.AddSingleton<IAlarmManagerService>(sp =>
