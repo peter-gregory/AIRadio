@@ -9,6 +9,10 @@ namespace AIRadio.Server.Services.Network
         Task<IReadOnlyList<WifiNetwork>> ScanAsync(
             CancellationToken cancellationToken = default);
 
+        bool TryGetScannedNetwork(
+            int number,
+            out WifiNetwork? network);
+
         Task<bool> IsConnectedAsync(
             CancellationToken cancellationToken = default);
 
@@ -20,24 +24,20 @@ namespace AIRadio.Server.Services.Network
 
     public sealed class WifiManager : IWifiManager
     {
-        private const string Command =
-            "nmcli";
+        private const string Command = "nmcli";
+
+        private readonly object _sync = new();
+
+        private IReadOnlyList<WifiNetwork> _scannedNetworks =
+            Array.Empty<WifiNetwork>();
 
         public async Task<IReadOnlyList<WifiNetwork>> ScanAsync(
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t",
-                "--separator",
-                "\t",
-                "-f",
-                "SSID,SIGNAL,SECURITY",
-                "device",
-                "wifi",
-                "list",
-                "--rescan",
-                "yes",
-                cancellationToken);
+                "-t", "--separator", "\t", "-f",
+                "SSID,SIGNAL,SECURITY", "device", "wifi", "list",
+                "--rescan", "yes", cancellationToken);
 
             if (result.ExitCode != 0)
             {
@@ -51,8 +51,7 @@ namespace AIRadio.Server.Services.Network
                 StringComparer.Ordinal);
 
             foreach (var line in result.Output.Split(
-                         '\n',
-                         StringSplitOptions.RemoveEmptyEntries))
+                         '\n', StringSplitOptions.RemoveEmptyEntries))
             {
                 var fields = line.Split('\t');
 
@@ -64,47 +63,70 @@ namespace AIRadio.Server.Services.Network
                 if (string.IsNullOrWhiteSpace(ssid))
                     continue;
 
-                if (!int.TryParse(
-                        fields[1].Trim(),
-                        out var signal))
-                {
+                if (!int.TryParse(fields[1].Trim(), out var signal))
                     signal = 0;
-                }
-
-                var security =
-                    fields[2].Trim();
 
                 networks[ssid] = new WifiNetwork
                 {
                     Ssid = ssid,
                     SignalStrength = signal,
-                    Security = security
+                    Security = fields[2].Trim()
                 };
             }
 
-            return networks.Values
+            var orderedNetworks = networks.Values
                 .OrderByDescending(network => network.SignalStrength)
                 .ToArray();
+
+            lock (_sync)
+            {
+                _scannedNetworks = orderedNetworks;
+            }
+
+            return orderedNetworks;
+        }
+
+        public bool TryGetScannedNetwork(
+            int number,
+            out WifiNetwork? network)
+        {
+            lock (_sync)
+            {
+                if (number < 1 || number > _scannedNetworks.Count)
+                {
+                    network = null;
+                    return false;
+                }
+
+                network = _scannedNetworks[number - 1];
+                return true;
+            }
         }
 
         public async Task<bool> IsConnectedAsync(
             CancellationToken cancellationToken = default)
         {
             var result = await RunAsync(
-                "-t",
-                "-f",
-                "GENERAL.STATE",
-                "device",
-                "show",
-                "wlan0",
+                "-t", "-f", "DEVICE,TYPE,STATE", "device",
                 cancellationToken);
 
             if (result.ExitCode != 0)
                 return false;
 
-            return result.Output.Contains(
-                "100 (connected)",
-                StringComparison.OrdinalIgnoreCase);
+            foreach (var line in result.Output.Split(
+                         '\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var fields = line.Split(':');
+
+                if (fields.Length >= 3 &&
+                    fields[1].Equals("wifi", StringComparison.OrdinalIgnoreCase) &&
+                    fields[2].Equals("connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public async Task<bool> ConnectAsync(
@@ -116,10 +138,7 @@ namespace AIRadio.Server.Services.Network
 
             var arguments = new List<string>
             {
-                "device",
-                "wifi",
-                "connect",
-                ssid
+                "device", "wifi", "connect", ssid
             };
 
             if (!string.IsNullOrEmpty(password))
@@ -128,10 +147,7 @@ namespace AIRadio.Server.Services.Network
                 arguments.Add(password);
             }
 
-            var result = await RunAsync(
-                arguments,
-                cancellationToken);
-
+            var result = await RunAsync(arguments, cancellationToken);
             return result.ExitCode == 0;
         }
 
@@ -149,14 +165,8 @@ namespace AIRadio.Server.Services.Network
             return await RunAsync(
                 new[]
                 {
-                    argument1,
-                    argument2,
-                    argument3,
-                    argument4,
-                    argument5,
-                    argument6,
-                    argument7,
-                    argument8
+                    argument1, argument2, argument3, argument4,
+                    argument5, argument6, argument7, argument8
                 },
                 cancellationToken);
         }
@@ -180,9 +190,7 @@ namespace AIRadio.Server.Services.Network
             };
 
             foreach (var argument in arguments)
-            {
                 process.StartInfo.ArgumentList.Add(argument);
-            }
 
             if (!process.Start())
             {
@@ -190,14 +198,10 @@ namespace AIRadio.Server.Services.Network
                     "Unable to start nmcli.");
             }
 
-            var outputTask =
-                process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-            var errorTask =
-                process.StandardError.ReadToEndAsync(cancellationToken);
-
-            await process.WaitForExitAsync(
-                cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
 
             return new CommandResult(
                 process.ExitCode,
