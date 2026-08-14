@@ -1,4 +1,3 @@
-﻿using AIRadio.Server.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AIRadio.Server.Services.Radio
@@ -8,18 +7,18 @@ namespace AIRadio.Server.Services.Radio
         Task<ActionResult> Stt(string prompt);
     }
 
-    public class RadioService : IRadioService
+    public sealed class RadioService : IRadioService
     {
-        IRadioEngineService _engine;
+        private readonly IRadioManagerService _radioManager;
 
-        public RadioService(IRadioEngineService engine)
+        public RadioService(IRadioManagerService radioManager)
         {
-            _engine = engine;
+            _radioManager = radioManager;
         }
 
         public async Task<ActionResult> Stt(string prompt)
         {
-            await _engine.ProcessSpeechAsync(prompt);
+            await _radioManager.ProcessSpeechAsync(prompt);
             return new OkResult();
         }
     }
