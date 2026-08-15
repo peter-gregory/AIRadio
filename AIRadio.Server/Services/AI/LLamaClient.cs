@@ -1,5 +1,6 @@
 using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
+using AIRadio.Server.Services.Sounds;
 using Newtonsoft.Json;
 
 namespace AIRadio.Server.Services.AI
@@ -23,6 +24,7 @@ namespace AIRadio.Server.Services.AI
         private readonly ILogger<ConversationLlamaClient> _logger;
         private readonly ILlamaHttpClient _llama;
         private readonly IConfiguration _configuration;
+        private readonly ISoundEffectManager _soundEffectManager;
         private readonly List<LlamaMessage> _history = [];
         private readonly string _systemPrompt;
         private readonly SemaphoreSlim _requestLock = new(1, 1);
@@ -34,11 +36,13 @@ namespace AIRadio.Server.Services.AI
         public ConversationLlamaClient(
             ILogger<ConversationLlamaClient> logger,
             ILlamaHttpClient llama,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ISoundEffectManager soundEffectManager)
         {
             _logger = logger;
             _llama = llama;
             _configuration = configuration;
+            _soundEffectManager = soundEffectManager;
             _systemPrompt = LoadSystemPrompt();
         }
 
@@ -84,7 +88,9 @@ namespace AIRadio.Server.Services.AI
 
             var results = toolResults.ToList();
             if (results.Count == 0)
-                throw new ArgumentException("At least one tool result is required.", nameof(toolResults));
+                throw new ArgumentException(
+                    "At least one tool result is required.",
+                    nameof(toolResults));
 
             await _requestLock.WaitAsync(cancellationToken);
             try
@@ -172,10 +178,14 @@ namespace AIRadio.Server.Services.AI
             }
         }
 
-        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
+        private async Task<LlamaResponse> CompleteAsync(
+            CancellationToken cancellationToken)
         {
             var completion = await _llama.CompleteAsync(
-                new LlamaCompletionRequest { Messages = _history.ToList() },
+                new LlamaCompletionRequest
+                {
+                    Messages = _history.ToList()
+                },
                 cancellationToken);
 
             AddAssistantResponse(completion);
@@ -185,11 +195,13 @@ namespace AIRadio.Server.Services.AI
         private void ResetHistoryInternal()
         {
             _history.Clear();
+
             _history.Add(new LlamaMessage
             {
                 Role = LlamaMessageRole.System.ToString(),
                 Content = _systemPrompt
             });
+
             _isInitialized = true;
         }
 
@@ -207,7 +219,8 @@ namespace AIRadio.Server.Services.AI
                 Content = result.ToJson()
             });
 
-        private void AddAssistantResponse(LlamaCompletionResponse completion)
+        private void AddAssistantResponse(
+            LlamaCompletionResponse completion)
         {
             if (!string.IsNullOrWhiteSpace(completion.Content))
             {
@@ -219,9 +232,13 @@ namespace AIRadio.Server.Services.AI
             }
         }
 
-        private CancellationToken BeginRequest(CancellationToken cancellationToken)
+        private CancellationToken BeginRequest(
+            CancellationToken cancellationToken)
         {
-            _requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _requestCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken);
+
             return _requestCancellation.Token;
         }
 
@@ -231,13 +248,17 @@ namespace AIRadio.Server.Services.AI
             _requestCancellation = null;
         }
 
-        private static LlamaResponse ParseResponse(LlamaCompletionResponse completion)
+        private static LlamaResponse ParseResponse(
+            LlamaCompletionResponse completion)
         {
             if (string.IsNullOrWhiteSpace(completion.Content))
-                throw new InvalidOperationException("Llama completion contained no content.");
+                throw new InvalidOperationException(
+                    "Llama completion contained no content.");
 
-            var dto = JsonConvert.DeserializeObject<LlamaResponseDto>(completion.Content)
-                ?? throw new InvalidOperationException("Unable to parse Llama response.");
+            var dto = JsonConvert.DeserializeObject<LlamaResponseDto>(
+                          completion.Content)
+                      ?? throw new InvalidOperationException(
+                          "Unable to parse Llama response.");
 
             var response = new LlamaResponse
             {
@@ -255,7 +276,8 @@ namespace AIRadio.Server.Services.AI
 
         private string LoadSystemPrompt()
         {
-            var configuredPath = _configuration["Application:PromptsDirectory"]
+            var configuredPath =
+                _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException(
                     "Application:PromptsDirectory is not configured.");
 
@@ -266,13 +288,27 @@ namespace AIRadio.Server.Services.AI
                         AppContext.BaseDirectory,
                         configuredPath));
 
-            var promptFile = Path.Combine(promptsPath, "conversation-system.txt");
+            var promptFile = Path.Combine(
+                promptsPath,
+                "conversation-system.txt");
+
             if (!File.Exists(promptFile))
                 throw new FileNotFoundException(
                     "Conversation Llama system prompt was not found.",
                     promptFile);
 
-            return File.ReadAllText(promptFile).Trim();
+            var prompt = File.ReadAllText(promptFile).Trim();
+            var soundUsage = _soundEffectManager.GetPromptText();
+
+            if (string.IsNullOrWhiteSpace(soundUsage))
+                return prompt;
+
+            return string.Join(
+                Environment.NewLine + Environment.NewLine,
+                prompt,
+                "# Available Sound Effects",
+                "Use these sound tags in the response soundEvents array when appropriate.",
+                soundUsage);
         }
 
         private void EnsureInitialized()
