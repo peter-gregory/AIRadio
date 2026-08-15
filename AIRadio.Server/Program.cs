@@ -78,8 +78,6 @@ var configuration = app.Services.GetRequiredService<IConfiguration>();
 foreach (var directory in new[]
 {
     configuration["Application:DataDirectory"],
-    configuration["Application:SoundsDirectory"],
-    configuration["Application:PromptsDirectory"],
     configuration["Application:ConfigDirectory"]
 })
 {
@@ -87,9 +85,34 @@ foreach (var directory in new[]
         Directory.CreateDirectory(directory);
 }
 
+var soundsDirectory = Path.GetFullPath(
+    Path.Combine(
+        app.Environment.ContentRootPath,
+        configuration["Application:SoundsDirectory"]
+            ?? throw new InvalidOperationException(
+                "Application:SoundsDirectory is not configured.")));
+
+var promptsDirectory = Path.GetFullPath(
+    Path.Combine(
+        app.Environment.ContentRootPath,
+        configuration["Application:PromptsDirectory"]
+            ?? throw new InvalidOperationException(
+                "Application:PromptsDirectory is not configured.")));
+
+if (!Directory.Exists(soundsDirectory))
+{
+    throw new DirectoryNotFoundException(
+        $"Sound effects directory was not found: {soundsDirectory}");
+}
+
+if (!Directory.Exists(promptsDirectory))
+{
+    throw new DirectoryNotFoundException(
+        $"Prompt directory was not found: {promptsDirectory}");
+}
+
 await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(
-    configuration["Application:SoundsDirectory"]
-        ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured."));
+    soundsDirectory);
 
 await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
 await app.Services.GetRequiredService<ILlamaIntentClient>().InitializeAsync();
