@@ -255,9 +255,16 @@ namespace AIRadio.Server.Services.AI
 
         private string LoadSystemPrompt()
         {
-            var promptsPath = _configuration["Application:PromptsDirectory"]
+            var configuredPath = _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException(
                     "Application:PromptsDirectory is not configured.");
+
+            var promptsPath = Path.IsPathRooted(configuredPath)
+                ? configuredPath
+                : Path.GetFullPath(
+                    Path.Combine(
+                        AppContext.BaseDirectory,
+                        configuredPath));
 
             var promptFile = Path.Combine(promptsPath, "conversation-system.txt");
             if (!File.Exists(promptFile))
