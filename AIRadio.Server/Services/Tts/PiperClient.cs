@@ -114,7 +114,8 @@ namespace AIRadio.Server.Services.Tts
 
             if (_cache.TryGetValue(
                     cacheKey,
-                    out byte[]? cached))
+                    out byte[]? cached) &&
+                cached is not null)
             {
                 _logger.LogDebug(
                     "Piper cache hit. CacheId={CacheId}, Bytes={Bytes}",
@@ -195,55 +196,32 @@ namespace AIRadio.Server.Services.Tts
             string text,
             CancellationToken cancellationToken)
         {
-            _logger.LogTrace(
-                "Sending request to Piper endpoint {Endpoint}",
-                _endpoint);
-
-
             using var request =
                 new HttpRequestMessage(
                     HttpMethod.Post,
-                    _endpoint);
+                    _endpoint)
+                {
+                    Content =
+                        new StringContent(
+                            text,
+                            System.Text.Encoding.UTF8,
+                            "text/plain")
+                };
 
+            request.Headers.Add(
+                "X-Voice",
+                _voice);
 
-            request.Content =
-                JsonContent.Create(
-                    new
-                    {
-                        text,
-                        voice = _voice
-                    });
-
-
-            using HttpResponseMessage response =
+            using var response =
                 await _httpClient.SendAsync(
                     request,
                     HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken);
 
+            response.EnsureSuccessStatusCode();
 
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError(
-                    "Piper returned HTTP {StatusCode}",
-                    response.StatusCode);
-
-                response.EnsureSuccessStatusCode();
-            }
-
-
-            byte[] wav =
-                await response.Content
-                    .ReadAsByteArrayAsync(
-                        cancellationToken);
-
-
-            _logger.LogTrace(
-                "Received WAV data from Piper. Bytes={Bytes}",
-                wav.Length);
-
-
-            return wav;
+            return await response.Content.ReadAsByteArrayAsync(
+                cancellationToken);
         }
     }
 }
