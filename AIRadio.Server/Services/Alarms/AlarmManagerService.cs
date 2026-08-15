@@ -17,6 +17,8 @@ namespace AIRadio.Server.Services.Alarms
 
     public sealed class AlarmManagerService : BackgroundService, IAlarmManagerService
     {
+        private const string DataFileName = "scheduled-events.json";
+
         private readonly IConfiguration _configuration;
         private readonly IRadioManagerService _radioManager;
         private readonly ILogger<AlarmManagerService> _logger;
@@ -164,11 +166,13 @@ namespace AIRadio.Server.Services.Alarms
 
         private static string ResolveDataFile(IConfiguration configuration)
         {
-            var path = configuration["AlarmManager:DataFile"];
-            if (string.IsNullOrWhiteSpace(path))
-                throw new InvalidOperationException("AlarmManager:DataFile is not configured.");
+            var dataDirectory = configuration["Application:DataDirectory"];
+            if (string.IsNullOrWhiteSpace(dataDirectory))
+                throw new InvalidOperationException(
+                    "Application:DataDirectory is not configured.");
 
-            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path));
+            return Path.GetFullPath(
+                Path.Combine(dataDirectory, DataFileName));
         }
 
         private async Task LoadAsync(CancellationToken cancellationToken)
