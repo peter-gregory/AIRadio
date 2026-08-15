@@ -16,6 +16,7 @@ namespace AIRadio.Server.Services.Sounds
         SoundEffect? GetSoundEffect(string tag);
         SoundEffectWave? GetRandomSound(string tag);
         IReadOnlyList<string> GetTags();
+        string GetPromptText();
         void Clear();
     }
 
@@ -24,6 +25,7 @@ namespace AIRadio.Server.Services.Sounds
         private readonly ILogger<SoundEffectManager> _logger;
         private Dictionary<string, SoundEffect> _soundEffects =
             new(StringComparer.OrdinalIgnoreCase);
+        private string _promptText = string.Empty;
 
         public bool IsInitialized { get; private set; }
 
@@ -64,24 +66,34 @@ namespace AIRadio.Server.Services.Sounds
 
                 if (string.IsNullOrWhiteSpace(tag))
                 {
-                    _logger.LogWarning("Ignoring sound effect with invalid tag directory: {File}", file);
+                    _logger.LogWarning(
+                        "Ignoring sound effect with invalid tag directory: {File}",
+                        file);
                     continue;
                 }
 
                 byte[] wavData;
                 try
                 {
-                    wavData = await File.ReadAllBytesAsync(file, cancellationToken);
+                    wavData = await File.ReadAllBytesAsync(
+                        file,
+                        cancellationToken);
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (Exception ex) when (
+                    ex is IOException or UnauthorizedAccessException)
                 {
-                    _logger.LogWarning(ex, "Unable to load sound effect WAV file: {File}", file);
+                    _logger.LogWarning(
+                        ex,
+                        "Unable to load sound effect WAV file: {File}",
+                        file);
                     continue;
                 }
 
                 if (wavData.Length == 0)
                 {
-                    _logger.LogWarning("Ignoring empty sound effect WAV file: {File}", file);
+                    _logger.LogWarning(
+                        "Ignoring empty sound effect WAV file: {File}",
+                        file);
                     continue;
                 }
 
@@ -106,14 +118,21 @@ namespace AIRadio.Server.Services.Sounds
                 if (effects.Count == 0)
                     continue;
 
-                soundEffects.Add(tag, new SoundEffect
-                {
-                    Tag = tag,
-                    Effects = effects
-                });
+                soundEffects.Add(
+                    tag,
+                    new SoundEffect
+                    {
+                        Tag = tag,
+                        Effects = effects
+                    });
             }
 
             _soundEffects = soundEffects;
+            _promptText = await BuildPromptTextAsync(
+                soundsDirectory,
+                _soundEffects.Keys,
+                cancellationToken);
+
             IsInitialized = true;
 
             _logger.LogInformation(
@@ -145,18 +164,101 @@ namespace AIRadio.Server.Services.Sounds
         public SoundEffectWave? GetRandomSound(string tag)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(tag);
-            return _soundEffects.TryGetValue(tag, out var soundEffect)
+
+            return _soundEffects.TryGetValue(
+                tag,
+                out var soundEffect)
                 ? soundEffect.GetRandom()
                 : null;
         }
 
         public IReadOnlyList<string> GetTags() =>
-            _soundEffects.Keys.OrderBy(static x => x).ToArray();
+            _soundEffects.Keys
+                .OrderBy(static x => x)
+                .ToArray();
+
+        public string GetPromptText() =>
+            _promptText;
 
         public void Clear()
         {
-            _soundEffects = new(StringComparer.OrdinalIgnoreCase);
+            _soundEffects =
+                new(StringComparer.OrdinalIgnoreCase);
+            _promptText = string.Empty;
             IsInitialized = false;
+        }
+
+        private async Task<string> BuildPromptTextAsync(
+            string soundsDirectory,
+            IEnumerable<string> tags,
+            CancellationToken cancellationToken)
+        {
+            var descriptions = new List<string>();
+
+            foreach (var tag in tags.OrderBy(static x => x))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var tagDirectory = FindTagDirectory(
+                    soundsDirectory,
+                    tag);
+
+                if (tagDirectory is null)
+                {
+                    _logger.LogWarning(
+                        "Unable to locate sound directory for tag '{Tag}'.",
+                        tag);
+                    continue;
+                }
+
+                var usageFile = Path.Combine(
+                    tagDirectory,
+                    "usage.md");
+
+                if (!File.Exists(usageFile))
+                {
+                    _logger.LogDebug(
+                        "No usage.md found for sound tag '{Tag}'.",
+                        tag);
+                    continue;
+                }
+
+                var usage = (await File.ReadAllTextAsync(
+                        usageFile,
+                        cancellationToken))
+                    .Trim();
+
+                if (string.IsNullOrWhiteSpace(usage))
+                    continue;
+
+                descriptions.Add(
+                    $"### {tag}\n{usage}");
+            }
+
+            if (descriptions.Count == 0)
+                return string.Empty;
+
+            return string.Join(
+                Environment.NewLine + Environment.NewLine,
+                descriptions);
+        }
+
+        private static string? FindTagDirectory(
+            string soundsDirectory,
+            string tag)
+        {
+            foreach (var categoryDirectory in Directory.EnumerateDirectories(
+                         soundsDirectory))
+            {
+                var tagDirectory = Path.Combine(
+                    categoryDirectory,
+                    tag);
+
+                if (Directory.Exists(tagDirectory))
+                    return tagDirectory;
+            }
+
+            return null;
         }
     }
 }
