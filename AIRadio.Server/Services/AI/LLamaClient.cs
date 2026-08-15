@@ -48,7 +48,8 @@ namespace AIRadio.Server.Services.AI
         public bool IsInitialized => _isInitialized;
         public bool IsBusy => _requestCancellation is not null;
 
-        public async Task InitializeAsync(CancellationToken cancellationToken = default)
+        public async Task InitializeAsync(
+            CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
@@ -58,11 +59,12 @@ namespace AIRadio.Server.Services.AI
                 if (_isInitialized)
                     return;
 
-                EnsureSystemPrompt();
-
+                await EnsureSystemPromptAsync(cancellationToken);
                 await _llama.InitializeAsync(cancellationToken);
                 ResetHistoryInternal();
-                _logger.LogInformation("Conversation Llama client initialized.");
+
+                _logger.LogInformation(
+                    "Conversation Llama client initialized.");
             }
             finally
             {
@@ -73,12 +75,18 @@ namespace AIRadio.Server.Services.AI
         public Task<LlamaResponse> StartConversationAsync(
             string userMessage,
             CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, true, cancellationToken);
+            ExecuteConversationAsync(
+                userMessage,
+                true,
+                cancellationToken);
 
         public Task<LlamaResponse> ContinueAsync(
             string userMessage,
             CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, false, cancellationToken);
+            ExecuteConversationAsync(
+                userMessage,
+                false,
+                cancellationToken);
 
         public async Task<LlamaResponse> ContinueAsync(
             IEnumerable<ToolResult> toolResults,
@@ -89,19 +97,24 @@ namespace AIRadio.Server.Services.AI
 
             var results = toolResults.ToList();
             if (results.Count == 0)
+            {
                 throw new ArgumentException(
                     "At least one tool result is required.",
                     nameof(toolResults));
+            }
 
             await _requestLock.WaitAsync(cancellationToken);
             try
             {
-                EnsureInitialized();
+                await EnsureInitializedAsync(cancellationToken);
+
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
                     foreach (var result in results)
+                    {
                         AddToolResultToHistory(result);
+                    }
 
                     return await CompleteAsync(requestToken);
                 }
@@ -119,10 +132,12 @@ namespace AIRadio.Server.Services.AI
         public Task CancelAsync()
         {
             ThrowIfDisposed();
-            return _requestCancellation?.CancelAsync() ?? Task.CompletedTask;
+            return _requestCancellation?.CancelAsync()
+                ?? Task.CompletedTask;
         }
 
-        public async Task ResetAsync(CancellationToken cancellationToken = default)
+        public async Task ResetAsync(
+            CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
@@ -133,7 +148,7 @@ namespace AIRadio.Server.Services.AI
                 _requestCancellation?.Dispose();
                 _requestCancellation = null;
 
-                EnsureSystemPrompt();
+                await EnsureSystemPromptAsync(cancellationToken);
                 ResetHistoryInternal();
             }
             finally
@@ -159,12 +174,16 @@ namespace AIRadio.Server.Services.AI
             await _requestLock.WaitAsync(cancellationToken);
             try
             {
-                EnsureSystemPrompt();
+                await EnsureSystemPromptAsync(cancellationToken);
 
                 if (resetConversation)
+                {
                     ResetHistoryInternal();
+                }
                 else
-                    EnsureInitialized();
+                {
+                    await EnsureInitializedAsync(cancellationToken);
+                }
 
                 var requestToken = BeginRequest(cancellationToken);
                 try
@@ -183,6 +202,89 @@ namespace AIRadio.Server.Services.AI
             }
         }
 
+        private async Task EnsureInitializedAsync(
+            CancellationToken cancellationToken)
+        {
+            if (_isInitialized)
+                return;
+
+            await EnsureSystemPromptAsync(cancellationToken);
+            await _llama.InitializeAsync(cancellationToken);
+            ResetHistoryInternal();
+
+            _logger.LogInformation(
+                "Conversation Llama client initialized on first use.");
+        }
+
+        private async Task EnsureSystemPromptAsync(
+            CancellationToken cancellationToken)
+        {
+            if (_systemPrompt is not null)
+                return;
+
+            var configuredPath =
+                _configuration["Application:PromptsDirectory"]
+                ?? throw new InvalidOperationException(
+                    "Application:PromptsDirectory is not configured.");
+
+            var promptsPath = Path.IsPathRooted(configuredPath)
+                ? configuredPath
+                : Path.GetFullPath(
+                    Path.Combine(
+                        AppContext.BaseDirectory,
+                        configuredPath));
+
+            var promptFile = Path.Combine(
+                promptsPath,
+                "conversation-system.txt");
+
+            if (!File.Exists(promptFile))
+            {
+                throw new FileNotFoundException(
+                    "Conversation Llama system prompt was not found.",
+                    promptFile);
+            }
+
+            var soundsDirectory =
+                _configuration["Application:SoundsDirectory"]
+                ?? throw new InvalidOperationException(
+                    "Application:SoundsDirectory is not configured.");
+
+            soundsDirectory = Path.IsPathRooted(soundsDirectory)
+                ? soundsDirectory
+                : Path.GetFullPath(
+                    Path.Combine(
+                        AppContext.BaseDirectory,
+                        soundsDirectory));
+
+            await _soundEffectManager.InitializeAsync(
+                soundsDirectory,
+                cancellationToken);
+
+            var prompt =
+                await File.ReadAllTextAsync(
+                    promptFile,
+                    cancellationToken);
+
+            prompt = prompt.Trim();
+
+            var soundUsage =
+                _soundEffectManager.GetPromptText();
+
+            if (string.IsNullOrWhiteSpace(soundUsage))
+            {
+                _systemPrompt = prompt;
+                return;
+            }
+
+            _systemPrompt = string.Join(
+                Environment.NewLine + Environment.NewLine,
+                prompt,
+                "# Available Sound Effects",
+                "Use these sound tags in the response soundEvents array when appropriate.",
+                soundUsage);
+        }
+
         private async Task<LlamaResponse> CompleteAsync(
             CancellationToken cancellationToken)
         {
@@ -199,14 +301,18 @@ namespace AIRadio.Server.Services.AI
 
         private void ResetHistoryInternal()
         {
-            EnsureSystemPrompt();
+            if (_systemPrompt is null)
+            {
+                throw new InvalidOperationException(
+                    "The system prompt has not been initialized.");
+            }
 
             _history.Clear();
 
             _history.Add(new LlamaMessage
             {
                 Role = LlamaMessageRole.System.ToString(),
-                Content = _systemPrompt!
+                Content = _systemPrompt
             });
 
             _isInitialized = true;
@@ -259,8 +365,10 @@ namespace AIRadio.Server.Services.AI
             LlamaCompletionResponse completion)
         {
             if (string.IsNullOrWhiteSpace(completion.Content))
+            {
                 throw new InvalidOperationException(
                     "Llama completion contained no content.");
+            }
 
             var dto = JsonConvert.DeserializeObject<LlamaResponseDto>(
                           completion.Content)
@@ -273,62 +381,16 @@ namespace AIRadio.Server.Services.AI
             };
 
             if (dto.SoundEvents is not null)
-                response.SoundEvents.AddRange(dto.SoundEvents);
-
-            if (dto.ToolRequests is not null)
-                response.ToolRequests.AddRange(dto.ToolRequests);
-
-            return response;
-        }
-
-        private void EnsureSystemPrompt()
-        {
-            if (_systemPrompt is not null)
-                return;
-
-            var configuredPath =
-                _configuration["Application:PromptsDirectory"]
-                ?? throw new InvalidOperationException(
-                    "Application:PromptsDirectory is not configured.");
-
-            var promptsPath = Path.IsPathRooted(configuredPath)
-                ? configuredPath
-                : Path.GetFullPath(
-                    Path.Combine(
-                        AppContext.BaseDirectory,
-                        configuredPath));
-
-            var promptFile = Path.Combine(
-                promptsPath,
-                "conversation-system.txt");
-
-            if (!File.Exists(promptFile))
-                throw new FileNotFoundException(
-                    "Conversation Llama system prompt was not found.",
-                    promptFile);
-
-            var prompt = File.ReadAllText(promptFile).Trim();
-            var soundUsage = _soundEffectManager.GetPromptText();
-
-            if (string.IsNullOrWhiteSpace(soundUsage))
             {
-                _systemPrompt = prompt;
-                return;
+                response.SoundEvents.AddRange(dto.SoundEvents);
             }
 
-            _systemPrompt = string.Join(
-                Environment.NewLine + Environment.NewLine,
-                prompt,
-                "# Available Sound Effects",
-                "Use these sound tags in the response soundEvents array when appropriate.",
-                soundUsage);
-        }
+            if (dto.ToolRequests is not null)
+            {
+                response.ToolRequests.AddRange(dto.ToolRequests);
+            }
 
-        private void EnsureInitialized()
-        {
-            if (!_isInitialized)
-                throw new InvalidOperationException(
-                    "Conversation Llama client has not been initialized.");
+            return response;
         }
 
         private void ThrowIfDisposed() =>
