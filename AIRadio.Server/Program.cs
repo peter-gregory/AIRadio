@@ -72,6 +72,30 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddMemoryCache(options => options.SizeLimit = 50);
 builder.Services.AddScoped<IRadioService, RadioService>();
 
+var contentRoot = builder.Environment.ContentRootPath;
+
+var configuredSoundsDirectory =
+    builder.Configuration["Application:SoundsDirectory"]
+    ?? throw new InvalidOperationException(
+        "Application:SoundsDirectory is not configured.");
+
+var configuredPromptsDirectory =
+    builder.Configuration["Application:PromptsDirectory"]
+    ?? throw new InvalidOperationException(
+        "Application:PromptsDirectory is not configured.");
+
+builder.Configuration["Application:SoundsDirectory"] =
+    Path.GetFullPath(
+        Path.Combine(
+            contentRoot,
+            configuredSoundsDirectory));
+
+builder.Configuration["Application:PromptsDirectory"] =
+    Path.GetFullPath(
+        Path.Combine(
+            contentRoot,
+            configuredPromptsDirectory));
+
 var app = builder.Build();
 var configuration = app.Services.GetRequiredService<IConfiguration>();
 
@@ -85,19 +109,15 @@ foreach (var directory in new[]
         Directory.CreateDirectory(directory);
 }
 
-var soundsDirectory = Path.GetFullPath(
-    Path.Combine(
-        app.Environment.ContentRootPath,
-        configuration["Application:SoundsDirectory"]
-            ?? throw new InvalidOperationException(
-                "Application:SoundsDirectory is not configured.")));
+var soundsDirectory =
+    configuration["Application:SoundsDirectory"]
+    ?? throw new InvalidOperationException(
+        "Application:SoundsDirectory is not configured.");
 
-var promptsDirectory = Path.GetFullPath(
-    Path.Combine(
-        app.Environment.ContentRootPath,
-        configuration["Application:PromptsDirectory"]
-            ?? throw new InvalidOperationException(
-                "Application:PromptsDirectory is not configured.")));
+var promptsDirectory =
+    configuration["Application:PromptsDirectory"]
+    ?? throw new InvalidOperationException(
+        "Application:PromptsDirectory is not configured.");
 
 if (!Directory.Exists(soundsDirectory))
 {
