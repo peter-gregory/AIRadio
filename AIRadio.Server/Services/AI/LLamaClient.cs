@@ -26,9 +26,9 @@ namespace AIRadio.Server.Services.AI
         private readonly IConfiguration _configuration;
         private readonly ISoundEffectManager _soundEffectManager;
         private readonly List<LlamaMessage> _history = [];
-        private readonly string _systemPrompt;
         private readonly SemaphoreSlim _requestLock = new(1, 1);
 
+        private string? _systemPrompt;
         private CancellationTokenSource? _requestCancellation;
         private bool _isInitialized;
         private bool _disposed;
@@ -43,7 +43,6 @@ namespace AIRadio.Server.Services.AI
             _llama = llama;
             _configuration = configuration;
             _soundEffectManager = soundEffectManager;
-            _systemPrompt = LoadSystemPrompt();
         }
 
         public bool IsInitialized => _isInitialized;
@@ -58,6 +57,8 @@ namespace AIRadio.Server.Services.AI
             {
                 if (_isInitialized)
                     return;
+
+                EnsureSystemPrompt();
 
                 await _llama.InitializeAsync(cancellationToken);
                 ResetHistoryInternal();
@@ -131,6 +132,8 @@ namespace AIRadio.Server.Services.AI
                 _requestCancellation?.Cancel();
                 _requestCancellation?.Dispose();
                 _requestCancellation = null;
+
+                EnsureSystemPrompt();
                 ResetHistoryInternal();
             }
             finally
@@ -156,6 +159,8 @@ namespace AIRadio.Server.Services.AI
             await _requestLock.WaitAsync(cancellationToken);
             try
             {
+                EnsureSystemPrompt();
+
                 if (resetConversation)
                     ResetHistoryInternal();
                 else
@@ -194,12 +199,14 @@ namespace AIRadio.Server.Services.AI
 
         private void ResetHistoryInternal()
         {
+            EnsureSystemPrompt();
+
             _history.Clear();
 
             _history.Add(new LlamaMessage
             {
                 Role = LlamaMessageRole.System.ToString(),
-                Content = _systemPrompt
+                Content = _systemPrompt!
             });
 
             _isInitialized = true;
@@ -274,8 +281,11 @@ namespace AIRadio.Server.Services.AI
             return response;
         }
 
-        private string LoadSystemPrompt()
+        private void EnsureSystemPrompt()
         {
+            if (_systemPrompt is not null)
+                return;
+
             var configuredPath =
                 _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException(
@@ -301,9 +311,12 @@ namespace AIRadio.Server.Services.AI
             var soundUsage = _soundEffectManager.GetPromptText();
 
             if (string.IsNullOrWhiteSpace(soundUsage))
-                return prompt;
+            {
+                _systemPrompt = prompt;
+                return;
+            }
 
-            return string.Join(
+            _systemPrompt = string.Join(
                 Environment.NewLine + Environment.NewLine,
                 prompt,
                 "# Available Sound Effects",
