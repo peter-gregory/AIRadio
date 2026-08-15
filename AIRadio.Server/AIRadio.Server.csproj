@@ -27,4 +27,10 @@
     <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.11" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Data\**\*"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
