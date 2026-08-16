@@ -9,7 +9,7 @@ public sealed class PiperAudioCache
     {
         public required string Key { get; init; }
         public required byte[] Audio { get; init; }
-        public required LinkedListNode<string> Node { get; init; }
+        public required LinkedListNode<string> Node { get; set; }
     }
 
     private readonly object _lock = new();
