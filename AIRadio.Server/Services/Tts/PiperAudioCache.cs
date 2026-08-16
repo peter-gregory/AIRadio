@@ -32,6 +32,7 @@ public sealed class PiperAudioCache
 
         _maxBytes = sizeMb * 1024L * 1024L;
         Directory.CreateDirectory(_directory);
+        EnforceDiskLimit();
     }
 
     public async Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
@@ -81,6 +82,7 @@ public sealed class PiperAudioCache
             File.Move(temporaryPath, path, true);
             TryTouchFile(path);
             Add(key, audio);
+            EnforceDiskLimit();
         }
         catch (OperationCanceledException)
         {
@@ -122,6 +124,38 @@ public sealed class PiperAudioCache
     {
         _lru.Remove(entry.Node);
         entry.Node = _lru.AddFirst(entry.Key);
+    }
+
+    private void EnforceDiskLimit()
+    {
+        try
+        {
+            var files = Directory.EnumerateFiles(_directory, "*.wav")
+                .Select(path => new FileInfo(path))
+                .OrderBy(file => file.LastAccessTimeUtc)
+                .ToList();
+
+            long total = files.Sum(file => file.Length);
+            foreach (var file in files)
+            {
+                if (total <= _maxBytes)
+                    break;
+
+                try
+                {
+                    total -= file.Length;
+                    file.Delete();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Unable to evict Piper cache file {Path}", file.FullName);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex, "Unable to inspect Piper cache directory.");
+        }
     }
 
     private string GetPath(string key) => Path.Combine(_directory, GetCacheId(key) + ".wav");
