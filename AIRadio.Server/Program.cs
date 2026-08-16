@@ -56,6 +56,7 @@ builder.Services.AddSingleton<IWifiManager, WifiManager>();
 
 builder.Services.AddHttpClient<IWeatherLocationResolver, OpenMeteoLocationResolver>();
 builder.Services.AddHttpClient<IWeatherService, WeatherService>();
+builder.Services.AddSingleton<PiperAudioCache>();
 builder.Services.AddHttpClient<IPiperClient, PiperClient>();
 
 builder.Services.AddSingleton<ITool, RadioTool>();
@@ -69,7 +70,6 @@ builder.Services.AddSingleton<IAlarmManagerService>(sp =>
 builder.Services.AddHostedService(sp =>
     sp.GetRequiredService<AlarmManagerService>());
 
-builder.Services.AddMemoryCache(options => options.SizeLimit = 50);
 builder.Services.AddScoped<IRadioService, RadioService>();
 
 var contentRoot = builder.Environment.ContentRootPath;
