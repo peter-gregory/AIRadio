@@ -165,21 +165,29 @@ public sealed class PiperClient : IPiperClient
             dataLength += current.Data.Length;
         }
 
-        using var stream = new MemoryStream(44 + dataLength);
+        var fmtPadding = first.Format.Length & 1;
+        var dataPadding = dataLength & 1;
+        var riffSize = 4 + 8 + first.Format.Length + fmtPadding + 8 + dataLength + dataPadding;
+
+        using var stream = new MemoryStream(20 + first.Format.Length + dataLength);
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
 
         writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataLength);
+        writer.Write(riffSize);
         writer.Write(Encoding.ASCII.GetBytes("WAVE"));
         writer.Write(Encoding.ASCII.GetBytes("fmt "));
         writer.Write(first.Format.Length);
         writer.Write(first.Format);
+        if (fmtPadding != 0)
+            writer.Write((byte)0);
+
         writer.Write(Encoding.ASCII.GetBytes("data"));
         writer.Write(dataLength);
-
         writer.Write(first.Data);
         for (var i = 1; i < wavFiles.Count; i++)
             writer.Write(ParseWav(wavFiles[i]).Data);
+        if (dataPadding != 0)
+            writer.Write((byte)0);
 
         writer.Flush();
         return stream.ToArray();
