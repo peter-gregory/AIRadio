@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Sounds;
 using AIRadio.Server.Services.Tts;
@@ -22,6 +23,10 @@ namespace AIRadio.Server.Services.Audio
 
     public sealed class AudioManager : IAudioManager, IAsyncDisposable
     {
+        private static readonly Regex SentenceSeparator = new(
+            @"(?<=[.!?])\s+",
+            RegexOptions.Compiled);
+
         private readonly ILogger<AudioManager> _logger;
         private readonly ISoundEffectManager _soundEffectManager;
         private readonly IPipeWireAudioClient _pipeWireAudioClient;
@@ -53,7 +58,15 @@ namespace AIRadio.Server.Services.Audio
         public Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
-            return EnqueueAsync(new(AudioRequestType.Speech, text), cancellationToken);
+
+            var sentences = SplitSentences(text);
+            foreach (var sentence in sentences)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                EnqueueAsync(new(AudioRequestType.Speech, sentence), cancellationToken);
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default)
@@ -82,7 +95,7 @@ namespace AIRadio.Server.Services.Audio
         public Task UnduckAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (IsDucked)
+            if (!IsDucked)
                 return Task.CompletedTask;
 
             Volatile.Write(ref _isDucked, false);
@@ -222,6 +235,13 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         }
+
+        private static string[] SplitSentences(string text) =>
+            SentenceSeparator
+                .Split(text.Trim())
+                .Where(static sentence => !string.IsNullOrWhiteSpace(sentence))
+                .Select(static sentence => sentence.Trim())
+                .ToArray();
 
         public async ValueTask DisposeAsync()
         {
