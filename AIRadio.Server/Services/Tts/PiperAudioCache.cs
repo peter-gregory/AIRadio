@@ -20,33 +20,21 @@ public sealed class PiperAudioCache
     private long _currentBytes;
     private readonly ILogger<PiperAudioCache> _logger;
 
-    public PiperAudioCache(
-        IConfiguration configuration,
-        ILogger<PiperAudioCache> logger)
+    public PiperAudioCache(IConfiguration configuration, ILogger<PiperAudioCache> logger)
     {
         _logger = logger;
-
         _directory = configuration["Piper:CacheDirectory"]
-            ?? throw new InvalidOperationException(
-                "Piper cache directory is not configured.");
+            ?? throw new InvalidOperationException("Piper cache directory is not configured.");
 
-        var sizeMb = int.TryParse(
-            configuration["Piper:CacheSizeMB"],
-            out var size)
-                ? size
-                : 50;
-
+        var sizeMb = int.TryParse(configuration["Piper:CacheSizeMB"], out var size) ? size : 50;
         if (sizeMb <= 0)
-            throw new InvalidOperationException(
-                "Piper cache size must be greater than zero.");
+            throw new InvalidOperationException("Piper cache size must be greater than zero.");
 
         _maxBytes = sizeMb * 1024L * 1024L;
         Directory.CreateDirectory(_directory);
     }
 
-    public async Task<byte[]?> GetAsync(
-        string key,
-        CancellationToken cancellationToken = default)
+    public async Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -65,6 +53,7 @@ public sealed class PiperAudioCache
         {
             var audio = await File.ReadAllBytesAsync(path, cancellationToken);
             Add(key, audio);
+            TryTouchFile(path);
             return audio;
         }
         catch (FileNotFoundException)
@@ -73,32 +62,25 @@ public sealed class PiperAudioCache
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogWarning(
-                ex,
-                "Unable to read Piper cache entry {CacheId}",
-                GetCacheId(key));
+            _logger.LogWarning(ex, "Unable to read Piper cache entry {CacheId}", GetCacheId(key));
             return null;
         }
     }
 
-    public async Task SetAsync(
-        string key,
-        byte[] audio,
-        CancellationToken cancellationToken = default)
+    public async Task SetAsync(string key, byte[] audio, CancellationToken cancellationToken = default)
     {
-        Add(key, audio);
+        if (audio.LongLength > _maxBytes)
+            return;
 
         var path = GetPath(key);
         var temporaryPath = path + ".tmp";
 
         try
         {
-            await File.WriteAllBytesAsync(
-                temporaryPath,
-                audio,
-                cancellationToken);
-
+            await File.WriteAllBytesAsync(temporaryPath, audio, cancellationToken);
             File.Move(temporaryPath, path, true);
+            TryTouchFile(path);
+            Add(key, audio);
         }
         catch (OperationCanceledException)
         {
@@ -108,18 +90,12 @@ public sealed class PiperAudioCache
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             TryDelete(temporaryPath);
-            _logger.LogWarning(
-                ex,
-                "Unable to persist Piper cache entry {CacheId}",
-                GetCacheId(key));
+            _logger.LogWarning(ex, "Unable to persist Piper cache entry {CacheId}", GetCacheId(key));
         }
     }
 
     private void Add(string key, byte[] audio)
     {
-        if (audio.LongLength > _maxBytes)
-            return;
-
         lock (_lock)
         {
             if (_entries.TryGetValue(key, out var existing))
@@ -129,19 +105,13 @@ public sealed class PiperAudioCache
             }
 
             var node = _lru.AddFirst(key);
-            _entries[key] = new Entry
-            {
-                Key = key,
-                Audio = audio,
-                Node = node
-            };
+            _entries[key] = new Entry { Key = key, Audio = audio, Node = node };
             _currentBytes += audio.LongLength;
 
             while (_currentBytes > _maxBytes && _lru.Last is not null)
             {
                 var keyToRemove = _lru.Last.Value;
                 _lru.RemoveLast();
-
                 if (_entries.Remove(keyToRemove, out var removed))
                     _currentBytes -= removed.Audio.LongLength;
             }
@@ -154,11 +124,16 @@ public sealed class PiperAudioCache
         entry.Node = _lru.AddFirst(entry.Key);
     }
 
-    private string GetPath(string key) =>
-        Path.Combine(_directory, GetCacheId(key) + ".wav");
+    private string GetPath(string key) => Path.Combine(_directory, GetCacheId(key) + ".wav");
 
     private static string GetCacheId(string key) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+
+    private static void TryTouchFile(string path)
+    {
+        try { File.SetLastAccessTimeUtc(path, DateTime.UtcNow); }
+        catch { }
+    }
 
     private static void TryDelete(string path)
     {
@@ -167,9 +142,6 @@ public sealed class PiperAudioCache
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch
-        {
-            // Best effort cleanup only.
-        }
+        catch { }
     }
 }
