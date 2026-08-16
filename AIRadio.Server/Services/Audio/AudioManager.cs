@@ -59,8 +59,7 @@ namespace AIRadio.Server.Services.Audio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
-            var sentences = SplitSentences(text);
-            foreach (var sentence in sentences)
+            foreach (var sentence in SplitSentences(text))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 EnqueueAsync(new(AudioRequestType.Speech, sentence), cancellationToken);
@@ -209,6 +208,7 @@ namespace AIRadio.Server.Services.Audio
             }
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
+            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
         }
 
         private async Task ProcessSoundAsync(
