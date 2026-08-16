@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Sounds;
 using AIRadio.Server.Services.Tts;
@@ -23,10 +22,6 @@ namespace AIRadio.Server.Services.Audio
 
     public sealed class AudioManager : IAudioManager, IAsyncDisposable
     {
-        private static readonly Regex SentenceSeparator = new(
-            @"(?<=[.!?])\s+",
-            RegexOptions.Compiled);
-
         private readonly ILogger<AudioManager> _logger;
         private readonly ISoundEffectManager _soundEffectManager;
         private readonly IPipeWireAudioClient _pipeWireAudioClient;
@@ -59,7 +54,7 @@ namespace AIRadio.Server.Services.Audio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
-            foreach (var sentence in SplitSentences(text))
+            foreach (var sentence in SentenceParser.Split(text))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 EnqueueAsync(new(AudioRequestType.Speech, sentence), cancellationToken);
@@ -208,7 +203,6 @@ namespace AIRadio.Server.Services.Audio
             }
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
-            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
         }
 
         private async Task ProcessSoundAsync(
@@ -235,13 +229,6 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         }
-
-        private static string[] SplitSentences(string text) =>
-            SentenceSeparator
-                .Split(text.Trim())
-                .Where(static sentence => !string.IsNullOrWhiteSpace(sentence))
-                .Select(static sentence => sentence.Trim())
-                .ToArray();
 
         public async ValueTask DisposeAsync()
         {
