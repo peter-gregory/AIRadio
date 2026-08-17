@@ -7,18 +7,18 @@ namespace AIRadio.Server.Services.Audio
         private const string Library = "libpipewire-0.3.so.0";
 
         internal const uint PwIdAny = uint.MaxValue;
-        internal const int SpaTypeObject = 15;
-        internal const int SpaTypeObjectFormat = 0x40002;
-        internal const int SpaParamEnumFormat = 3;
-        internal const int SpaMediaTypeAudio = 1;
-        internal const int SpaMediaSubtypeRaw = 1;
-        internal const int SpaAudioFormatS16 = 0x103;
-        internal const int SpaFormatMediaType = 1;
-        internal const int SpaFormatMediaSubtype = 2;
-        internal const int SpaFormatAudioFormat = 0x10001;
-        internal const int SpaFormatAudioRate = 0x10003;
-        internal const int SpaFormatAudioChannels = 0x10004;
-        internal const int SpaPropVolume = 0x10003;
+        internal const uint SpaTypeObject = 15;
+        internal const uint SpaTypeObjectFormat = 0x40002;
+        internal const uint SpaParamEnumFormat = 3;
+        internal const uint SpaMediaTypeAudio = 1;
+        internal const uint SpaMediaSubtypeRaw = 1;
+        internal const uint SpaAudioFormatS16 = 0x103;
+        internal const uint SpaFormatMediaType = 1;
+        internal const uint SpaFormatMediaSubtype = 2;
+        internal const uint SpaFormatAudioFormat = 0x10001;
+        internal const uint SpaFormatAudioRate = 0x10003;
+        internal const uint SpaFormatAudioChannels = 0x10004;
+        internal const uint SpaPropVolume = 0x10003;
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pw_init(IntPtr argc, IntPtr argv);
@@ -60,11 +60,7 @@ namespace AIRadio.Server.Services.Audio
         internal delegate void PwDrainedCallback(IntPtr userData);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        internal delegate void PwStateChangedCallback(
-            IntPtr userData,
-            int oldState,
-            int state,
-            IntPtr error);
+        internal delegate void PwStateChangedCallback(IntPtr userData, int oldState, int state, IntPtr error);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr pw_stream_new_simple(
@@ -96,7 +92,9 @@ namespace AIRadio.Server.Services.Audio
         internal static extern int pw_stream_return_buffer(IntPtr stream, IntPtr buffer);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        [return: MarshalAs(UnmanagedType.I1)]
+        internal static extern int pw_stream_set_active(IntPtr stream, [MarshalAs(UnmanagedType.I1)] bool active);
+
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int pw_stream_flush(IntPtr stream, [MarshalAs(UnmanagedType.I1)] bool drain);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
@@ -111,16 +109,10 @@ namespace AIRadio.Server.Services.Audio
         internal static extern IntPtr pw_stream_get_control(IntPtr stream, uint id);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_stream_get_state(IntPtr stream, out IntPtr error);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_properties_new(string key, string value, IntPtr end);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int pw_properties_set(IntPtr properties, string key, string value);
 
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_properties_free(IntPtr properties);
+        internal static extern IntPtr pw_properties_new(string key, string value, IntPtr end);
 
         internal enum PwDirection
         {
@@ -134,9 +126,7 @@ namespace AIRadio.Server.Services.Audio
     {
         None = 0,
         Autoconnect = 1 << 0,
-        MapBuffers = 1 << 2,
-        Driver = 1 << 3,
-        RtProcess = 1 << 4
+        MapBuffers = 1 << 2
     }
 
     [StructLayout(LayoutKind.Sequential)]
