@@ -1,4 +1,5 @@
 using AIRadio.Server.Models.Radio;
+using AIRadio.Server.Services.Audio;
 using AIRadio.Server.Services.Mpv;
 
 namespace AIRadio.Server.Services.Radio
@@ -20,17 +21,20 @@ namespace AIRadio.Server.Services.Radio
     {
         private readonly ILogger<RadioManagerService> _logger;
         private readonly IIntentService _intentService;
+        private readonly IAudioManager _audioManager;
         private readonly IMpvManager _mpvManager;
         private readonly IMpvState _mpvState;
 
         public RadioManagerService(
             ILogger<RadioManagerService> logger,
             IIntentService intentService,
+            IAudioManager audioManager,
             IMpvManager mpvManager,
             IMpvState mpvState)
         {
             _logger = logger;
             _intentService = intentService;
+            _audioManager = audioManager;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
         }
@@ -54,7 +58,7 @@ namespace AIRadio.Server.Services.Radio
         }
 
         public Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default) =>
-            _mpvManager.PlayAsync(station, cancellationToken);
+            _audioManager.PlayStationAsync(station, cancellationToken);
 
         public Task PlayPlaylistStationAsync(int index, CancellationToken cancellationToken = default) =>
             _mpvManager.PlayPlaylistStationAsync(index, cancellationToken);
