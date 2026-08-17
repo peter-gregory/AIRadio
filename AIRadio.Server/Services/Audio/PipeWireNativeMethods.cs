@@ -8,7 +8,7 @@ namespace AIRadio.Server.Services.Audio
 
         internal const uint PwIdAny = uint.MaxValue;
         internal const uint SpaTypeObject = 15;
-        internal const uint SpaTypeObjectFormat = 0x40002;
+        internal const uint SpaTypeObjectFormat = 0x40003;
         internal const uint SpaParamEnumFormat = 3;
         internal const uint SpaMediaTypeAudio = 1;
         internal const uint SpaMediaSubtypeRaw = 1;
