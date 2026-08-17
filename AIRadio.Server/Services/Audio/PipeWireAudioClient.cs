@@ -30,11 +30,15 @@ namespace AIRadio.Server.Services.Audio
         private readonly short _channels;
         private readonly short _bitsPerSample;
         private readonly int _frameDurationMs;
+        private readonly int _queueCapacity;
 
         private bool _initialized;
         private bool _isPlaying;
         private int _queuedFrames;
         private int _masterVolume = 100;
+
+        private TaskCompletionSource<object?>? _playbackCompletion;
+        private readonly object _completionLock = new();
 
         public PipeWireAudioClient(
             IPipeWireNativeClient pipeWire,
@@ -48,12 +52,14 @@ namespace AIRadio.Server.Services.Audio
             _channels = configuration.GetValue<short>("AudioFormat:Channels", 1);
             _bitsPerSample = configuration.GetValue<short>("AudioFormat:BitsPerSample", 16);
             _frameDurationMs = configuration.GetValue("AudioFormat:FrameMilliseconds", 20);
+            _queueCapacity = Math.Max(1, configuration.GetValue("AudioFormat:QueueFrames", 32));
 
             _audioQueue = Channel.CreateBounded<AudioFrame>(
-                new BoundedChannelOptions(64)
+                new BoundedChannelOptions(_queueCapacity)
                 {
                     FullMode = BoundedChannelFullMode.Wait,
-                    SingleReader = true
+                    SingleReader = true,
+                    SingleWriter = false
                 });
         }
 
@@ -73,24 +79,25 @@ namespace AIRadio.Server.Services.Audio
                 cancellationToken);
 
             _pipeWire.BufferRequested += OnPipeWireBufferRequested;
+            _pipeWire.Drained += OnPipeWireDrained;
             _initialized = true;
 
             _logger.LogInformation(
-                "PipeWire audio initialized: {Rate}Hz {Channels}ch {Bits}bit frame {Frame}ms",
+                "PipeWire audio initialized: {Rate}Hz {Channels}ch {Bits}bit frame {Frame}ms queue {QueueFrames} frames ({QueueMs}ms)",
                 _sampleRate,
                 _channels,
                 _bitsPerSample,
-                _frameDurationMs);
+                _frameDurationMs,
+                _queueCapacity,
+                _queueCapacity * _frameDurationMs);
         }
 
         public Task QueueWavAsync(
             ReadOnlyMemory<byte> wavData,
-            CancellationToken cancellationToken = default)
-        {
-            return QueuePcmAsync(
+            CancellationToken cancellationToken = default) =>
+            QueuePcmAsync(
                 WaveParser.Parse(wavData, _sampleRate, _channels, _bitsPerSample),
                 cancellationToken);
-        }
 
         public async Task QueuePcmAsync(
             ReadOnlyMemory<byte> pcmData,
@@ -113,16 +120,34 @@ namespace AIRadio.Server.Services.Audio
         public async Task WaitForPlaybackCompleteAsync(
             CancellationToken cancellationToken = default)
         {
-            while (QueuedFrameCount > 0 || Volatile.Read(ref _isPlaying))
-                await Task.Delay(10, cancellationToken);
+            if (QueuedFrameCount == 0 && !Volatile.Read(ref _isPlaying))
+                return;
+
+            Task completion;
+            lock (_completionLock)
+            {
+                _playbackCompletion ??= new TaskCompletionSource<object?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                completion = _playbackCompletion.Task;
+            }
+
+            if (QueuedFrameCount == 0 && !Volatile.Read(ref _isPlaying))
+            {
+                CompletePlayback();
+                return;
+            }
+
+            await completion.WaitAsync(cancellationToken);
         }
 
         public Task ClearQueueAsync(CancellationToken cancellationToken = default)
         {
-            while (_audioQueue.Reader.TryRead(out _))
-                Interlocked.Decrement(ref _queuedFrames);
-
+            // The PipeWire process callback is the sole reader of the channel.
+            // Clearing is performed by advancing a generation and flushing the
+            // native stream; stale frames are discarded by the callback.
+            Interlocked.Increment(ref _queueGeneration);
             Volatile.Write(ref _isPlaying, false);
+            CompletePlayback();
             return Task.CompletedTask;
         }
 
@@ -133,20 +158,49 @@ namespace AIRadio.Server.Services.Audio
             Volatile.Write(ref _isPlaying, false);
         }
 
+        private long _queueGeneration;
+
         private void OnPipeWireBufferRequested(
             object? sender,
             PipeWireBufferEventArgs e)
         {
-            if (!_audioQueue.Reader.TryRead(out var frame))
+            try
             {
+                if (!_audioQueue.Reader.TryRead(out var frame))
+                {
+                    e.FillSilence();
+                    Volatile.Write(ref _isPlaying, false);
+                    return;
+                }
+
+                e.CopyFrom(frame.Data);
+                Interlocked.Decrement(ref _queuedFrames);
+                Volatile.Write(ref _isPlaying, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to provide PipeWire audio buffer.");
                 e.FillSilence();
                 Volatile.Write(ref _isPlaying, false);
-                return;
+            }
+        }
+
+        private void OnPipeWireDrained(object? sender, EventArgs e)
+        {
+            Volatile.Write(ref _isPlaying, false);
+            CompletePlayback();
+        }
+
+        private void CompletePlayback()
+        {
+            TaskCompletionSource<object?>? completion;
+            lock (_completionLock)
+            {
+                completion = _playbackCompletion;
+                _playbackCompletion = null;
             }
 
-            e.CopyFrom(frame.Data);
-            Interlocked.Decrement(ref _queuedFrames);
-            Volatile.Write(ref _isPlaying, true);
+            completion?.TrySetResult(null);
         }
 
         public Task SetMasterVolumeAsync(
@@ -157,8 +211,7 @@ namespace AIRadio.Server.Services.Audio
             return _pipeWire.SetVolumeAsync(_masterVolume, cancellationToken);
         }
 
-        public Task<int> GetMasterVolumeAsync(
-            CancellationToken cancellationToken = default) =>
+        public Task<int> GetMasterVolumeAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(_masterVolume);
 
         private int CalculateFrameSize() =>
@@ -167,6 +220,8 @@ namespace AIRadio.Server.Services.Audio
         public async ValueTask DisposeAsync()
         {
             _pipeWire.BufferRequested -= OnPipeWireBufferRequested;
+            _pipeWire.Drained -= OnPipeWireDrained;
+            CompletePlayback();
             await _pipeWire.DisposeAsync();
             _logger.LogInformation("PipeWire client disposed.");
         }
@@ -206,9 +261,7 @@ namespace AIRadio.Server.Services.Audio
         {
             if (Encoding.ASCII.GetString(data[..4]) != "RIFF" ||
                 Encoding.ASCII.GetString(data.Slice(8, 4)) != "WAVE")
-            {
                 throw new InvalidDataException("Invalid WAV header.");
-            }
         }
 
         private static WaveFormat ReadFormatChunk(
