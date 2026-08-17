@@ -48,6 +48,7 @@ builder.Services.AddSingleton<IPipeWireAudioClient, PipeWireAudioClient>();
 builder.Services.AddSingleton<IMpvTransport, MpvTransport>();
 builder.Services.AddSingleton<IRadioMetadataTranslator, RadioMetadataTranslator>();
 builder.Services.AddSingleton<IMpvClient, MpvClient>();
+builder.Services.AddSingleton<IMpvManager, MpvManager>();
 builder.Services.AddSingleton<IAudioManager, AudioManager>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
 builder.Services.AddSingleton<ILocationStore, JsonLocationStore>();
