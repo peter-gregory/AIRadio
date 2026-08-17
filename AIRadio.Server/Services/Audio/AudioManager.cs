@@ -1,4 +1,4 @@
-using AIRadio.Server.Services.Radio;
+using AIRadio.Server.Services.Mpv;
 using AIRadio.Server.Services.Sounds;
 using AIRadio.Server.Services.Tts;
 
@@ -6,12 +6,9 @@ namespace AIRadio.Server.Services.Audio
 {
     public interface IAudioManager
     {
-        bool IsSpeechPlaying { get; }
         bool IsDucked { get; }
-
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
-        Task PlayAudioAsync(string path, CancellationToken cancellationToken = default);
         Task DuckAsync(CancellationToken cancellationToken = default);
         Task UnduckAsync(CancellationToken cancellationToken = default);
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
@@ -26,28 +23,36 @@ namespace AIRadio.Server.Services.Audio
         private readonly ISoundEffectManager _soundEffectManager;
         private readonly IPipeWireAudioClient _pipeWireAudioClient;
         private readonly IPiperClient _piperClient;
+        private readonly IMpvManager _mpvManager;
+        private readonly IMpvClient _mpvClient;
+        private readonly int _duckVolume;
         private readonly AsyncWorkQueue<AudioRequest> _queue;
 
-        private bool _isSpeechPlaying;
         private bool _isDucked;
+        private int _normalVolume;
         private bool _disposed;
 
         public AudioManager(
             ILogger<AudioManager> logger,
             ISoundEffectManager soundEffectManager,
             IPipeWireAudioClient pipeWireAudioClient,
-            IPiperClient piperClient)
+            IPiperClient piperClient,
+            IMpvManager mpvManager,
+            IMpvClient mpvClient,
+            IConfiguration configuration)
         {
             _logger = logger;
             _soundEffectManager = soundEffectManager;
             _pipeWireAudioClient = pipeWireAudioClient;
             _piperClient = piperClient;
+            _mpvManager = mpvManager;
+            _mpvClient = mpvClient;
+            _duckVolume = configuration.GetValue("Mpv:Transport:DuckVolume", 20);
 
             _queue = new AsyncWorkQueue<AudioRequest>();
             _queue.Start(ProcessRequestAsync);
         }
 
-        public bool IsSpeechPlaying => Volatile.Read(ref _isSpeechPlaying);
         public bool IsDucked => Volatile.Read(ref _isDucked);
 
         public Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
@@ -69,33 +74,11 @@ namespace AIRadio.Server.Services.Audio
             return EnqueueAsync(new(AudioRequestType.Sound, sound), cancellationToken);
         }
 
-        public Task PlayAudioAsync(string path, CancellationToken cancellationToken = default)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(path);
-            return EnqueueAsync(new(AudioRequestType.AudioFile, path), cancellationToken);
-        }
+        public Task DuckAsync(CancellationToken cancellationToken = default) =>
+            EnqueueAsync(new(AudioRequestType.MpvDuck, string.Empty), cancellationToken);
 
-        public Task DuckAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (IsDucked)
-                return Task.CompletedTask;
-
-            Volatile.Write(ref _isDucked, true);
-            _logger.LogDebug("Audio duck requested.");
-            return Task.CompletedTask;
-        }
-
-        public Task UnduckAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!IsDucked)
-                return Task.CompletedTask;
-
-            Volatile.Write(ref _isDucked, false);
-            _logger.LogDebug("Audio unduck requested.");
-            return Task.CompletedTask;
-        }
+        public Task UnduckAsync(CancellationToken cancellationToken = default) =>
+            EnqueueAsync(new(AudioRequestType.MpvUnduck, string.Empty), cancellationToken);
 
         public Task StopSpeechAsync(CancellationToken cancellationToken = default) =>
             CancelAsync(cancellationToken);
@@ -111,11 +94,9 @@ namespace AIRadio.Server.Services.Audio
         {
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
-
             await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
             await _pipeWireAudioClient.ClearQueueAsync(CancellationToken.None);
-
-            Volatile.Write(ref _isSpeechPlaying, false);
+            Volatile.Write(ref _isDucked, false);
             _queue.Resume();
         }
 
@@ -129,9 +110,7 @@ namespace AIRadio.Server.Services.Audio
                 if (_queue.IsIdle &&
                     !_pipeWireAudioClient.IsPlaying &&
                     _pipeWireAudioClient.QueuedFrameCount == 0)
-                {
                     return;
-                }
             }
         }
 
@@ -148,15 +127,10 @@ namespace AIRadio.Server.Services.Audio
             return Task.CompletedTask;
         }
 
-        private async Task ProcessRequestAsync(
-            AudioRequest request,
-            CancellationToken cancellationToken)
+        private async Task ProcessRequestAsync(AudioRequest request, CancellationToken cancellationToken)
         {
             try
             {
-                if (request.Type == AudioRequestType.Speech)
-                    Volatile.Write(ref _isSpeechPlaying, true);
-
                 switch (request.Type)
                 {
                     case AudioRequestType.Speech:
@@ -165,16 +139,15 @@ namespace AIRadio.Server.Services.Audio
                     case AudioRequestType.Sound:
                         await ProcessSoundAsync(request.Value, cancellationToken);
                         break;
-                    case AudioRequestType.AudioFile:
-                        await ProcessAudioFileAsync(request.Value, cancellationToken);
+                    case AudioRequestType.MpvDuck:
+                    case AudioRequestType.MpvUnduck:
+                        await ProcessMpvAsync(request.Type, cancellationToken);
                         break;
                     default:
-                        throw new InvalidOperationException(
-                            $"Unsupported audio request type: {request.Type}");
+                        throw new InvalidOperationException($"Unsupported audio request type: {request.Type}");
                 }
             }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 _logger.LogDebug("Audio request cancelled.");
             }
@@ -182,16 +155,9 @@ namespace AIRadio.Server.Services.Audio
             {
                 _logger.LogError(ex, "Audio request failed.");
             }
-            finally
-            {
-                if (request.Type == AudioRequestType.Speech)
-                    Volatile.Write(ref _isSpeechPlaying, false);
-            }
         }
 
-        private async Task ProcessSpeechAsync(
-            string text,
-            CancellationToken cancellationToken)
+        private async Task ProcessSpeechAsync(string text, CancellationToken cancellationToken)
         {
             var wavData = await _piperClient.GenerateWavAsync(text, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -205,9 +171,7 @@ namespace AIRadio.Server.Services.Audio
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
         }
 
-        private async Task ProcessSoundAsync(
-            string tag,
-            CancellationToken cancellationToken)
+        private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -221,13 +185,32 @@ namespace AIRadio.Server.Services.Audio
             await _pipeWireAudioClient.QueueWavAsync(sound.WavData, cancellationToken);
         }
 
-        private Task ProcessAudioFileAsync(
-            string path,
-            CancellationToken cancellationToken)
+        private async Task ProcessMpvAsync(AudioRequestType type, CancellationToken cancellationToken)
         {
-            _logger.LogDebug("Playing audio file: {Path}", path);
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
+            // An MPV request embedded in this queue is intentionally the one
+            // operation that waits for already queued PCM to finish. Other
+            // audio queues remain independent and asynchronous.
+            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+
+            switch (type)
+            {
+                case AudioRequestType.MpvDuck:
+                    if (IsDucked)
+                        return;
+
+                    _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
+                    await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
+                    Volatile.Write(ref _isDucked, true);
+                    break;
+
+                case AudioRequestType.MpvUnduck:
+                    if (!IsDucked)
+                        return;
+
+                    await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
+                    Volatile.Write(ref _isDucked, false);
+                    break;
+            }
         }
 
         public async ValueTask DisposeAsync()
@@ -237,24 +220,15 @@ namespace AIRadio.Server.Services.Audio
 
             _disposed = true;
 
-            try
-            {
-                await _queue.StopAsync(CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error stopping AudioManager queue.");
-            }
+            try { await _queue.StopAsync(CancellationToken.None); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error stopping AudioManager queue."); }
 
             try
             {
                 await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
                 await _pipeWireAudioClient.ClearQueueAsync(CancellationToken.None);
             }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error clearing PipeWire playback.");
-            }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error clearing PipeWire playback."); }
 
             await _queue.DisposeAsync();
         }
@@ -265,7 +239,8 @@ namespace AIRadio.Server.Services.Audio
         {
             Speech,
             Sound,
-            AudioFile
+            MpvDuck,
+            MpvUnduck
         }
     }
 }
