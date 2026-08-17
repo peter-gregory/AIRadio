@@ -1,3 +1,4 @@
+using AIRadio.Server.Models.Radio;
 using AIRadio.Server.Services.Mpv;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Sounds;
@@ -10,6 +11,7 @@ namespace AIRadio.Server.Services.Audio
         bool IsDucked { get; }
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
+        Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default);
         Task DuckAsync(CancellationToken cancellationToken = default);
         Task UnduckAsync(CancellationToken cancellationToken = default);
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
@@ -63,7 +65,7 @@ namespace AIRadio.Server.Services.Audio
             foreach (var sentence in SentenceParser.Split(text))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                EnqueueAsync(new(AudioRequestType.Speech, sentence), cancellationToken);
+                EnqueueAsync(new(AudioRequestType.Speech, sentence, null), cancellationToken);
             }
 
             return Task.CompletedTask;
@@ -72,14 +74,22 @@ namespace AIRadio.Server.Services.Audio
         public Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sound);
-            return EnqueueAsync(new(AudioRequestType.Sound, sound), cancellationToken);
+            return EnqueueAsync(new(AudioRequestType.Sound, sound, null), cancellationToken);
+        }
+
+        public Task PlayStationAsync(
+            RadioStation station,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(station);
+            return EnqueueAsync(new(AudioRequestType.MpvPlayStation, null, station), cancellationToken);
         }
 
         public Task DuckAsync(CancellationToken cancellationToken = default) =>
-            EnqueueAsync(new(AudioRequestType.MpvDuck, string.Empty), cancellationToken);
+            EnqueueAsync(new(AudioRequestType.MpvDuck, null, null), cancellationToken);
 
         public Task UnduckAsync(CancellationToken cancellationToken = default) =>
-            EnqueueAsync(new(AudioRequestType.MpvUnduck, string.Empty), cancellationToken);
+            EnqueueAsync(new(AudioRequestType.MpvUnduck, null, null), cancellationToken);
 
         public Task StopSpeechAsync(CancellationToken cancellationToken = default) =>
             CancelAsync(cancellationToken);
@@ -97,6 +107,19 @@ namespace AIRadio.Server.Services.Audio
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
             await _pipeWireAudioClient.ClearQueueAsync(CancellationToken.None);
+
+            if (IsDucked)
+            {
+                try
+                {
+                    await _mpvManager.SetVolumeAsync(_normalVolume, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Unable to restore MPV volume after audio cancellation.");
+                }
+            }
+
             Volatile.Write(ref _isDucked, false);
             _queue.Resume();
         }
@@ -135,14 +158,15 @@ namespace AIRadio.Server.Services.Audio
                 switch (request.Type)
                 {
                     case AudioRequestType.Speech:
-                        await ProcessSpeechAsync(request.Value, cancellationToken);
+                        await ProcessSpeechAsync(request.Value!, cancellationToken);
                         break;
                     case AudioRequestType.Sound:
-                        await ProcessSoundAsync(request.Value, cancellationToken);
+                        await ProcessSoundAsync(request.Value!, cancellationToken);
                         break;
                     case AudioRequestType.MpvDuck:
                     case AudioRequestType.MpvUnduck:
-                        await ProcessMpvAsync(request.Type, cancellationToken);
+                    case AudioRequestType.MpvPlayStation:
+                        await ProcessMpvAsync(request, cancellationToken);
                         break;
                     default:
                         throw new InvalidOperationException($"Unsupported audio request type: {request.Type}");
@@ -186,14 +210,14 @@ namespace AIRadio.Server.Services.Audio
             await _pipeWireAudioClient.QueueWavAsync(sound.WavData, cancellationToken);
         }
 
-        private async Task ProcessMpvAsync(AudioRequestType type, CancellationToken cancellationToken)
+        private async Task ProcessMpvAsync(AudioRequest request, CancellationToken cancellationToken)
         {
             // An MPV request embedded in this queue is intentionally the one
             // operation that waits for already queued PCM to finish. Other
             // audio queues remain independent and asynchronous.
             await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
 
-            switch (type)
+            switch (request.Type)
             {
                 case AudioRequestType.MpvDuck:
                     if (IsDucked)
@@ -210,6 +234,11 @@ namespace AIRadio.Server.Services.Audio
 
                     await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
                     Volatile.Write(ref _isDucked, false);
+                    break;
+
+                case AudioRequestType.MpvPlayStation:
+                    ArgumentNullException.ThrowIfNull(request.Station);
+                    await _mpvManager.PlayAsync(request.Station, cancellationToken);
                     break;
             }
         }
@@ -234,14 +263,18 @@ namespace AIRadio.Server.Services.Audio
             await _queue.DisposeAsync();
         }
 
-        private sealed record AudioRequest(AudioRequestType Type, string Value);
+        private sealed record AudioRequest(
+            AudioRequestType Type,
+            string? Value,
+            RadioStation? Station);
 
         private enum AudioRequestType
         {
             Speech,
             Sound,
             MpvDuck,
-            MpvUnduck
+            MpvUnduck,
+            MpvPlayStation
         }
     }
 }
