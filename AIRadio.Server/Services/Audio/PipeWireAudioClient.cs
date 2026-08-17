@@ -138,11 +138,10 @@ namespace AIRadio.Server.Services.Audio
                 completion = _flushedCompletion.Task;
             }
 
-            SignalFlushedIfEmpty();
-
             try
             {
                 await _pipeWire.FlushAsync(drain: false, cancellationToken);
+                SignalFlushedIfEmpty();
 
                 // The PipeWire process callback is the sole reader. It discards
                 // queued WAV frames while _flushing is set. The completion is
