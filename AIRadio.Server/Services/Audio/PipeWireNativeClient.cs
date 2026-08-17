@@ -20,7 +20,6 @@ namespace AIRadio.Server.Services.Audio
         private const int StreamStateError = -1;
         private const int StreamStatePaused = 2;
         private const int StreamStateStreaming = 3;
-        private static readonly byte[] Silence = new byte[256];
 
         private readonly ILogger<PipeWireNativeClient> _logger;
         private readonly object _stateLock = new();
