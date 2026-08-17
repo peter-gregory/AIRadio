@@ -139,16 +139,26 @@ namespace AIRadio.Server.Services.Audio
             }
 
             SignalFlushedIfEmpty();
-            await _pipeWire.FlushAsync(drain: false, cancellationToken);
 
-            // The PipeWire process callback is the sole reader. It discards
-            // queued WAV frames while _flushing is set. The completion is
-            // signaled only after both application and native buffers are empty.
-            await completion.WaitAsync(cancellationToken);
-
-            lock (_flushLock)
+            try
             {
-                _flushing = false;
+                await _pipeWire.FlushAsync(drain: false, cancellationToken);
+
+                // The PipeWire process callback is the sole reader. It discards
+                // queued WAV frames while _flushing is set. The completion is
+                // signaled only after both application and native buffers are empty.
+                await completion.WaitAsync(cancellationToken);
+            }
+            catch
+            {
+                lock (_flushLock)
+                {
+                    _flushing = false;
+                    var failedCompletion = _flushedCompletion;
+                    _flushedCompletion = null;
+                    failedCompletion?.TrySetCanceled();
+                }
+                throw;
             }
         }
 
@@ -207,6 +217,7 @@ namespace AIRadio.Server.Services.Audio
 
                 if (_flushing)
                 {
+                    _flushing = false;
                     flushCompletion = _flushedCompletion;
                     _flushedCompletion = null;
                 }
@@ -239,8 +250,6 @@ namespace AIRadio.Server.Services.Audio
 
         private int CalculateFrameSize() =>
             _sampleRate * _channels * (_bitsPerSample / 8) * _frameDurationMs / 1000;
-
-        private int BytesPerFrame() => _channels * (_bitsPerSample / 8);
 
         public async ValueTask DisposeAsync()
         {
