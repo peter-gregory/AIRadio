@@ -106,7 +106,6 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
-            await _pipeWireAudioClient.ClearQueueAsync(CancellationToken.None);
 
             if (IsDucked)
             {
@@ -132,8 +131,8 @@ namespace AIRadio.Server.Services.Audio
                 await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
 
                 if (_queue.IsIdle &&
-                    !_pipeWireAudioClient.IsPlaying &&
-                    _pipeWireAudioClient.QueuedFrameCount == 0)
+                    _pipeWireAudioClient.QueuedFrameCount == 0 &&
+                    _pipeWireAudioClient.OutstandingFrameCount == 0)
                     return;
             }
         }
@@ -253,11 +252,7 @@ namespace AIRadio.Server.Services.Audio
             try { await _queue.StopAsync(CancellationToken.None); }
             catch (Exception ex) { _logger.LogDebug(ex, "Error stopping AudioManager queue."); }
 
-            try
-            {
-                await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
-                await _pipeWireAudioClient.ClearQueueAsync(CancellationToken.None);
-            }
+            try { await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None); }
             catch (Exception ex) { _logger.LogDebug(ex, "Error clearing PipeWire playback."); }
 
             await _queue.DisposeAsync();
