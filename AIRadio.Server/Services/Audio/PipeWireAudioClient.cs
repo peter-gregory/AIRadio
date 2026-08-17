@@ -34,6 +34,7 @@ namespace AIRadio.Server.Services.Audio
         private bool _isPlaying;
         private int _queuedFrames;
         private int _masterVolume = 100;
+        private long _queueGeneration;
         private TaskCompletionSource<object?>? _playbackCompletion;
         private readonly object _completionLock = new();
 
@@ -50,7 +51,7 @@ namespace AIRadio.Server.Services.Audio
             _audioQueue = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(_queueCapacity)
             {
                 FullMode = BoundedChannelFullMode.Wait,
-                SingleReader = true,
+                SingleReader = false,
                 SingleWriter = false
             });
         }
@@ -77,10 +78,19 @@ namespace AIRadio.Server.Services.Audio
         public async Task QueuePcmAsync(ReadOnlyMemory<byte> pcmData, CancellationToken cancellationToken = default)
         {
             var frameSize = CalculateFrameSize();
+
             for (var offset = 0; offset < pcmData.Length; offset += frameSize)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Capture the current generation for each frame rather than once
+                // for the entire WAV. A clear can occur while a producer is still
+                // feeding a large WAV into the queue.
+                var generation = Volatile.Read(ref _queueGeneration);
                 var length = Math.Min(frameSize, pcmData.Length - offset);
-                await _audioQueue.Writer.WriteAsync(new AudioFrame(pcmData.Slice(offset, length)), cancellationToken);
+                await _audioQueue.Writer.WriteAsync(
+                    new AudioFrame(pcmData.Slice(offset, length), generation),
+                    cancellationToken);
                 Interlocked.Increment(ref _queuedFrames);
             }
         }
@@ -92,7 +102,8 @@ namespace AIRadio.Server.Services.Audio
             Task completion;
             lock (_completionLock)
             {
-                _playbackCompletion ??= new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _playbackCompletion ??= new TaskCompletionSource<object?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
                 completion = _playbackCompletion.Task;
             }
 
@@ -108,10 +119,33 @@ namespace AIRadio.Server.Services.Audio
 
         public Task ClearQueueAsync(CancellationToken cancellationToken = default)
         {
-            // The PipeWire callback is the sole channel reader. Do not drain the
-            // channel here; cancellation is implemented by flushing the native stream.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Advance the generation first. Any producer that races this clear
+            // may still enqueue a frame, but that frame can no longer be played.
+            Interlocked.Increment(ref _queueGeneration);
+
+            // Unlike the PipeWire native buffer queue, this is our application
+            // queue. It must be explicitly emptied when playback is cancelled.
+            // The process callback can also be reading concurrently, so this
+            // channel intentionally does not advertise SingleReader semantics.
+            var cleared = 0;
+            while (_audioQueue.Reader.TryRead(out _))
+            {
+                Interlocked.Decrement(ref _queuedFrames);
+                cleared++;
+            }
+
             Volatile.Write(ref _isPlaying, false);
             CompletePlayback();
+
+            if (cleared > 0)
+            {
+                _logger.LogDebug(
+                    "Cleared {FrameCount} queued PipeWire audio frames.",
+                    cleared);
+            }
+
             return Task.CompletedTask;
         }
 
@@ -126,16 +160,22 @@ namespace AIRadio.Server.Services.Audio
         {
             try
             {
-                if (!_audioQueue.Reader.TryRead(out var frame))
+                while (_audioQueue.Reader.TryRead(out var frame))
                 {
-                    e.FillSilence();
-                    Volatile.Write(ref _isPlaying, false);
+                    Interlocked.Decrement(ref _queuedFrames);
+
+                    // A clear may race a producer. Never allow a frame from the
+                    // previous generation to reach PipeWire after cancellation.
+                    if (frame.Generation != Volatile.Read(ref _queueGeneration))
+                        continue;
+
+                    e.CopyFrom(frame.Data);
+                    Volatile.Write(ref _isPlaying, true);
                     return;
                 }
 
-                e.CopyFrom(frame.Data);
-                Interlocked.Decrement(ref _queuedFrames);
-                Volatile.Write(ref _isPlaying, true);
+                e.FillSilence();
+                Volatile.Write(ref _isPlaying, false);
             }
             catch (Exception ex)
             {
@@ -168,8 +208,11 @@ namespace AIRadio.Server.Services.Audio
             return _pipeWire.SetVolumeAsync(_masterVolume, cancellationToken);
         }
 
-        public Task<int> GetMasterVolumeAsync(CancellationToken cancellationToken = default) => Task.FromResult(_masterVolume);
-        private int CalculateFrameSize() => _sampleRate * _channels * (_bitsPerSample / 8) * _frameDurationMs / 1000;
+        public Task<int> GetMasterVolumeAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(_masterVolume);
+
+        private int CalculateFrameSize() =>
+            _sampleRate * _channels * (_bitsPerSample / 8) * _frameDurationMs / 1000;
 
         public async ValueTask DisposeAsync()
         {
@@ -183,52 +226,98 @@ namespace AIRadio.Server.Services.Audio
 
     internal sealed class AudioFrame
     {
-        public AudioFrame(ReadOnlyMemory<byte> data) => Data = data;
+        public AudioFrame(ReadOnlyMemory<byte> data, long generation)
+        {
+            Data = data;
+            Generation = generation;
+        }
+
         public ReadOnlyMemory<byte> Data { get; }
+        public long Generation { get; }
     }
 
     internal static class WaveParser
     {
         private const short PcmFormat = 1;
-        public static ReadOnlyMemory<byte> Parse(ReadOnlyMemory<byte> wavData, int expectedSampleRate, short expectedChannels, short expectedBitsPerSample)
+
+        public static ReadOnlyMemory<byte> Parse(
+            ReadOnlyMemory<byte> wavData,
+            int expectedSampleRate,
+            short expectedChannels,
+            short expectedBitsPerSample)
         {
-            if (wavData.Length < 44) throw new InvalidDataException("WAV data is too small.");
+            if (wavData.Length < 44)
+                throw new InvalidDataException("WAV data is too small.");
+
             var span = wavData.Span;
             ValidateRiffHeader(span);
             var format = ReadFormatChunk(span, out var dataOffset, out var dataLength);
             ValidateFormat(format, expectedSampleRate, expectedChannels, expectedBitsPerSample);
-            if (dataOffset + dataLength > span.Length) throw new InvalidDataException("WAV data chunk exceeds buffer length.");
+
+            if (dataOffset + dataLength > span.Length)
+                throw new InvalidDataException("WAV data chunk exceeds buffer length.");
+
             return wavData.Slice(dataOffset, dataLength);
         }
+
         private static void ValidateRiffHeader(ReadOnlySpan<byte> data)
         {
-            if (Encoding.ASCII.GetString(data[..4]) != "RIFF" || Encoding.ASCII.GetString(data.Slice(8, 4)) != "WAVE")
+            if (Encoding.ASCII.GetString(data[..4]) != "RIFF" ||
+                Encoding.ASCII.GetString(data.Slice(8, 4)) != "WAVE")
+            {
                 throw new InvalidDataException("Invalid WAV header.");
+            }
         }
-        private static WaveFormat ReadFormatChunk(ReadOnlySpan<byte> data, out int dataOffset, out int dataLength)
+
+        private static WaveFormat ReadFormatChunk(
+            ReadOnlySpan<byte> data,
+            out int dataOffset,
+            out int dataLength)
         {
-            var position = 12; WaveFormat? format = null; dataOffset = 0; dataLength = 0;
+            var position = 12;
+            WaveFormat? format = null;
+            dataOffset = 0;
+            dataLength = 0;
+
             while (position + 8 <= data.Length)
             {
                 var chunkId = Encoding.ASCII.GetString(data.Slice(position, 4));
-                var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(position + 4, 4));
+                var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(
+                    data.Slice(position + 4, 4));
                 position += 8;
-                if (chunkSize < 0 || position + chunkSize > data.Length) throw new InvalidDataException("Invalid WAV chunk size.");
+
+                if (chunkSize < 0 || position + chunkSize > data.Length)
+                    throw new InvalidDataException("Invalid WAV chunk size.");
+
                 switch (chunkId)
                 {
-                    case "fmt ": format = ParseFormatChunk(data.Slice(position, chunkSize)); break;
-                    case "data": dataOffset = position; dataLength = chunkSize; break;
+                    case "fmt ":
+                        format = ParseFormatChunk(data.Slice(position, chunkSize));
+                        break;
+                    case "data":
+                        dataOffset = position;
+                        dataLength = chunkSize;
+                        break;
                 }
+
                 position += chunkSize;
-                if (format is not null && dataLength > 0) break;
+                if (format is not null && dataLength > 0)
+                    break;
             }
-            if (format is null) throw new InvalidDataException("WAV fmt chunk not found.");
-            if (dataLength == 0) throw new InvalidDataException("WAV data chunk not found.");
+
+            if (format is null)
+                throw new InvalidDataException("WAV fmt chunk not found.");
+            if (dataLength == 0)
+                throw new InvalidDataException("WAV data chunk not found.");
+
             return format;
         }
+
         private static WaveFormat ParseFormatChunk(ReadOnlySpan<byte> data)
         {
-            if (data.Length < 16) throw new InvalidDataException("Invalid fmt chunk.");
+            if (data.Length < 16)
+                throw new InvalidDataException("Invalid fmt chunk.");
+
             return new WaveFormat
             {
                 AudioFormat = BinaryPrimitives.ReadInt16LittleEndian(data[..2]),
@@ -237,13 +326,26 @@ namespace AIRadio.Server.Services.Audio
                 BitsPerSample = BinaryPrimitives.ReadInt16LittleEndian(data.Slice(14, 2))
             };
         }
-        private static void ValidateFormat(WaveFormat format, int expectedSampleRate, short expectedChannels, short expectedBitsPerSample)
+
+        private static void ValidateFormat(
+            WaveFormat format,
+            int expectedSampleRate,
+            short expectedChannels,
+            short expectedBitsPerSample)
         {
-            if (format.AudioFormat != PcmFormat) throw new NotSupportedException("Only PCM WAV files are supported.");
-            if (format.SampleRate != expectedSampleRate) throw new NotSupportedException($"Sample rate {format.SampleRate}Hz does not match expected {expectedSampleRate}Hz.");
-            if (format.Channels != expectedChannels) throw new NotSupportedException($"Channel count {format.Channels} does not match expected {expectedChannels}.");
-            if (format.BitsPerSample != expectedBitsPerSample) throw new NotSupportedException($"Bit depth {format.BitsPerSample} does not match expected {expectedBitsPerSample}.");
+            if (format.AudioFormat != PcmFormat)
+                throw new NotSupportedException("Only PCM WAV files are supported.");
+            if (format.SampleRate != expectedSampleRate)
+                throw new NotSupportedException(
+                    $"Sample rate {format.SampleRate}Hz does not match expected {expectedSampleRate}Hz.");
+            if (format.Channels != expectedChannels)
+                throw new NotSupportedException(
+                    $"Channel count {format.Channels} does not match expected {expectedChannels}.");
+            if (format.BitsPerSample != expectedBitsPerSample)
+                throw new NotSupportedException(
+                    $"Bit depth {format.BitsPerSample} does not match expected {expectedBitsPerSample}.");
         }
+
         private sealed class WaveFormat
         {
             public short AudioFormat { get; init; }
