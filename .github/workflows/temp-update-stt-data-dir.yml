@@ -1,0 +1,86 @@
+name: Temporary STT data-dir update
+
+on:
+  push:
+    branches:
+      - refactor/service-queues
+
+permissions:
+  contents: write
+
+jobs:
+  update-stt-daemon:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/service-queues
+          fetch-depth: 0
+
+      - name: Update SttDaemon.cc
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path("AIRadio.Server/SttDaemon.cc")
+          text = p.read_text()
+
+          # Add filesystem support.
+          if "#include <filesystem>" not in text:
+              marker = "#include <cmath>\n"
+              if marker not in text:
+                  raise SystemExit("filesystem insertion point not found")
+              text = text.replace(marker, marker + "#include <filesystem>\n", 1)
+
+          # Add data directory state and helpers.
+          marker = "    std::atomic<bool> g_trace_enabled{ false };\n"
+          if "std::string g_data_dir;" not in text:
+              if marker not in text:
+                  raise SystemExit("global insertion point not found")
+              addition = '''    std::string g_data_dir;\n\n    static std::string ModelPath(const char* filename) {\n      return (std::filesystem::path(g_data_dir) / filename).string();\n    }\n\n    static bool ParseDataDir(int argc, char** argv) {\n      for (int i = 1; i < argc; ++i) {\n        if (std::string(argv[i]) == "--data-dir") {\n          if (i + 1 >= argc || argv[i + 1][0] == '\\0') {\n            std::cerr << "ERROR: --data-dir requires a directory path\\n";\n            return false;\n          }\n          g_data_dir = argv[++i];\n          return true;\n        }\n      }\n\n      std::cerr << "ERROR: --data-dir <model-directory> is required\\n";\n      return false;\n    }\n\n'''
+              text = text.replace(marker, addition + marker, 1)
+
+          replacements = {
+              '          "./silero_vad.onnx";': '          ModelPath("silero_vad.onnx");',
+              '          "./encoder-epoch-99-avg-1.int8.onnx";': '          ModelPath("encoder-epoch-99-avg-1.int8.onnx");',
+              '          "./decoder-epoch-99-avg-1.onnx";': '          ModelPath("decoder-epoch-99-avg-1.onnx");',
+              '          "./joiner-epoch-99-avg-1.int8.onnx";': '          ModelPath("joiner-epoch-99-avg-1.int8.onnx");',
+              '          "./tokens.txt";': '          ModelPath("tokens.txt");',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"model path not found: {old}")
+              text = text.replace(old, new, 1)
+
+          # Require and validate --data-dir at main startup.
+          if "if (!ParseDataDir(argc, argv))" not in text:
+              main_pos = text.find("int main(")
+              if main_pos < 0:
+                  raise SystemExit("main() not found")
+              brace = text.find("{", main_pos)
+              if brace < 0:
+                  raise SystemExit("main() opening brace not found")
+              addition = '''\n      if (!ParseDataDir(argc, argv)) {\n        return 1;\n      }\n\n      const std::filesystem::path data_dir(g_data_dir);\n      const char* required_models[] = {\n          "encoder-epoch-99-avg-1.int8.onnx",\n          "decoder-epoch-99-avg-1.onnx",\n          "joiner-epoch-99-avg-1.int8.onnx",\n          "tokens.txt",\n          "silero_vad.onnx",\n      };\n\n      if (!std::filesystem::is_directory(data_dir)) {\n        std::cerr << "ERROR: data directory does not exist or is not a directory: "\n                  << g_data_dir << "\\n";\n        return 1;\n      }\n\n      for (const char* filename : required_models) {\n        const auto model_path = data_dir / filename;\n        if (!std::filesystem::is_regular_file(model_path)) {\n          std::cerr << "ERROR: required model file not found: "\n                    << model_path << "\\n";\n          return 1;\n        }\n      }\n\n'''
+              text = text[:brace + 1] + addition + text[brace + 1:]
+
+          # Existing option parser must consume --data-dir too.
+          marker = '''            if (arg == "--trace") {\n'''
+          if 'if (arg == "--data-dir")' not in text:
+              if marker not in text:
+                  raise SystemExit("argument parser insertion point not found")
+              addition = '''            if (arg == "--data-dir") {\n                if (i + 1 >= argc) {\n                    std::cerr << "--data-dir requires a path\\n";\n                    return -1;\n                }\n\n                ++i;\n                continue;\n            }\n\n'''
+              text = text.replace(marker, addition + marker, 1)
+
+          p.write_text(text)
+
+      - name: Commit updated source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AIRadio.Server/SttDaemon.cc
+          git diff --cached --check
+          git diff --cached -- AIRadio.Server/SttDaemon.cc
+          git commit -m "feat: pass STT model directory as parameter"
+          git push origin HEAD:refactor/service-queues
