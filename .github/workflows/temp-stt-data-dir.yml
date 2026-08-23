@@ -1,0 +1,83 @@
+name: Temporary STT data-dir update
+
+on:
+  push:
+    branches:
+      - refactor/service-queues
+
+permissions:
+  contents: write
+
+jobs:
+  update-stt-daemon:
+    if: github.actor == 'peter-gregory'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/service-queues
+
+      - name: Update SttDaemon.cc
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('AIRadio.Server/SttDaemon.cc')
+          text = path.read_text()
+
+          if '#include <filesystem>' not in text:
+              marker = '#include <cmath>\n'
+              if marker not in text:
+                  raise SystemExit('ERROR: could not find include insertion point')
+              text = text.replace(marker, marker + '#include <filesystem>\n', 1)
+
+          marker = '    std::atomic<bool> g_trace_enabled{ false };\n'
+          if 'std::string g_data_dir;' not in text:
+              if marker not in text:
+                  raise SystemExit('ERROR: could not find trace globals insertion point')
+              addition = '''    std::string g_data_dir;\n\n    static std::string ModelPath(const char* filename) {\n      return (std::filesystem::path(g_data_dir) / filename).string();\n    }\n\n    static bool ParseDataDir(int argc, char** argv) {\n      for (int i = 1; i < argc; ++i) {\n        if (std::string(argv[i]) == "--data-dir") {\n          if (i + 1 >= argc || argv[i + 1][0] == '\\0') {\n            std::cerr << "ERROR: --data-dir requires a directory path\\n";\n            return false;\n          }\n          g_data_dir = argv[++i];\n          return true;\n        }\n      }\n\n      std::cerr << "ERROR: --data-dir <model-directory> is required\\n";\n      return false;\n    }\n\n'''
+              text = text.replace(marker, addition + marker, 1)
+
+          replacements = {
+              'config.silero_vad.model = "./silero_vad.onnx";':
+                  'config.silero_vad.model = ModelPath("silero_vad.onnx");',
+              'config.model_config.transducer.encoder =\n        "./encoder-epoch-99-avg-1.int8.onnx";':
+                  'config.model_config.transducer.encoder =\n        ModelPath("encoder-epoch-99-avg-1.int8.onnx");',
+              'config.model_config.transducer.decoder =\n        "./decoder-epoch-99-avg-1.onnx";':
+                  'config.model_config.transducer.decoder =\n        ModelPath("decoder-epoch-99-avg-1.onnx");',
+              'config.model_config.transducer.joiner =\n        "./joiner-epoch-99-avg-1.int8.onnx";':
+                  'config.model_config.transducer.joiner =\n        ModelPath("joiner-epoch-99-avg-1.int8.onnx");',
+              'config.model_config.tokens =\n        "./tokens.txt";':
+                  'config.model_config.tokens =\n        ModelPath("tokens.txt");',
+          }
+
+          for old, new in replacements.items():
+              if old in text:
+                  text = text.replace(old, new, 1)
+
+          if 'if (!ParseDataDir(argc, argv))' not in text:
+              main = re.search(r'int\\s+main\\s*\\([^)]*\\)\\s*\\{', text)
+              if not main:
+                  raise SystemExit('ERROR: main() not found')
+              pos = main.end()
+              addition = '''\n\n      if (!ParseDataDir(argc, argv)) {\n        return 1;\n      }\n\n      const std::filesystem::path data_dir(g_data_dir);\n      const char* required_models[] = {\n          "encoder-epoch-99-avg-1.int8.onnx",\n          "decoder-epoch-99-avg-1.onnx",\n          "joiner-epoch-99-avg-1.int8.onnx",\n          "tokens.txt",\n          "silero_vad.onnx",\n      };\n\n      if (!std::filesystem::is_directory(data_dir)) {\n        std::cerr << "ERROR: data directory does not exist or is not a directory: "\n                  << g_data_dir << "\\n";\n        return 1;\n      }\n\n      for (const char* filename : required_models) {\n        const auto model_path = data_dir / filename;\n        if (!std::filesystem::is_regular_file(model_path)) {\n          std::cerr << "ERROR: required model file not found: "\n                    << model_path << "\\n";\n          return 1;\n        }\n      }\n\n'''
+              text = text[:pos] + addition + text[pos:]
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- AIRadio.Server/SttDaemon.cc
+
+      - name: Commit STT source update and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AIRadio.Server/SttDaemon.cc
+          git rm .github/workflows/temp-stt-data-dir.yml
+          git commit -m "Add STT model data directory parameter"
+          git push origin HEAD:refactor/service-queues
