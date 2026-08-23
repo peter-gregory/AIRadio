@@ -93,7 +93,7 @@ namespace {
     std::condition_variable g_shutdown_condition;
 
     std::atomic<bool> g_asr_worker_done{ false };
-    std::atomic<bool> g_recognition_worker_done{ false > ;
+    std::atomic<bool> g_recognition_worker_done{ false };
 
     static void Handler(int /*sig*/) {
       g_shutdown_requested.store(true);
