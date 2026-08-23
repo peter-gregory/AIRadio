@@ -21,6 +21,7 @@
 #include <deque>
 #include <fstream>
 #include <cmath>
+#include <filesystem>
 
 #include "portaudio.h"
 #include "sherpa-onnx/c-api/cxx-api.h"
@@ -66,6 +67,28 @@ namespace {
 
     constexpr bool kEnableAudioDiagnostics = true;
     constexpr uint64_t kDiagnosticFrames = 100;
+
+    std::string g_data_dir;
+
+    static std::string ModelPath(const char* filename) {
+      return (std::filesystem::path(g_data_dir) / filename).string();
+    }
+
+    static bool ParseDataDir(int argc, char** argv) {
+      for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--data-dir") {
+          if (i + 1 >= argc || argv[i + 1][0] == '\0') {
+            std::cerr << "ERROR: --data-dir requires a directory path\n";
+            return false;
+          }
+          g_data_dir = argv[++i];
+          return true;
+        }
+      }
+
+      std::cerr << "ERROR: --data-dir <model-directory> is required\n";
+      return false;
+    }
 
     std::atomic<bool> g_trace_enabled{ false };
     std::mutex g_trace_mutex;
@@ -1694,6 +1717,36 @@ g_shutdown_condition.notify_all();
         int main(
             int argc,
             char** argv) {
+
+      if (!ParseDataDir(argc, argv)) {
+        return 1;
+      }
+
+      const std::filesystem::path data_dir(g_data_dir);
+      const char* required_models[] = {
+          "encoder-epoch-99-avg-1.int8.onnx",
+          "decoder-epoch-99-avg-1.onnx",
+          "joiner-epoch-99-avg-1.int8.onnx",
+          "tokens.txt",
+          "silero_vad.onnx",
+      };
+
+      if (!std::filesystem::is_directory(data_dir)) {
+        std::cerr << "ERROR: data directory does not exist or is not a directory: "
+                  << g_data_dir << "\n";
+        return 1;
+      }
+
+      for (const char* filename : required_models) {
+        const auto model_path = data_dir / filename;
+        if (!std::filesystem::is_regular_file(model_path)) {
+          std::cerr << "ERROR: required model file not found: "
+                    << model_path << "\n";
+          return 1;
+        }
+      }
+
+
         signal(SIGINT, Handler);
         signal(SIGTERM, Handler);
 
