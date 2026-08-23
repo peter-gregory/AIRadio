@@ -59,7 +59,7 @@ jobs:
                   text = text.replace(old, new, 1)
 
           if 'if (!ParseDataDir(argc, argv))' not in text:
-              main = re.search(r'int\\s+main\\s*\\([^)]*\\)\\s*\\{', text)
+              main = re.search(r'int\s+main\s*\([^)]*\)\s*\{', text)
               if not main:
                   raise SystemExit('ERROR: main() not found')
               pos = main.end()
@@ -70,7 +70,6 @@ jobs:
           PY
 
           git diff --check
-          git diff -- AIRadio.Server/SttDaemon.cc
 
       - name: Commit STT source update and remove temporary workflow
         shell: bash
@@ -79,5 +78,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add AIRadio.Server/SttDaemon.cc
           git rm .github/workflows/temp-stt-data-dir.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
           git commit -m "Add STT model data directory parameter"
           git push origin HEAD:refactor/service-queues
