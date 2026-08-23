@@ -654,7 +654,7 @@ private:
       VadModelConfig config;
 
       config.silero_vad.model =
-          "./silero_vad.onnx";
+          ModelPath("silero_vad.onnx");
 
       config.silero_vad.threshold =
           kVadThreshold;
@@ -702,16 +702,16 @@ private:
       OnlineRecognizerConfig config;
 
       config.model_config.transducer.encoder =
-          "./encoder-epoch-99-avg-1.int8.onnx";
+          ModelPath("encoder-epoch-99-avg-1.int8.onnx");
 
       config.model_config.transducer.decoder =
-          "./decoder-epoch-99-avg-1.onnx";
+          ModelPath("decoder-epoch-99-avg-1.onnx");
 
       config.model_config.transducer.joiner =
-          "./joiner-epoch-99-avg-1.int8.onnx";
+          ModelPath("joiner-epoch-99-avg-1.int8.onnx");
 
       config.model_config.tokens =
-          "./tokens.txt";
+          ModelPath("tokens.txt");
 
       config.model_config.num_threads = 2;
 
@@ -1762,6 +1762,16 @@ g_shutdown_condition.notify_all();
         for (int i = 1; i < argc; ++i) {
             const std::string arg =
                 argv[i];
+
+            if (arg == "--data-dir") {
+                if (i + 1 >= argc) {
+                    std::cerr << "--data-dir requires a path\n";
+                    return -1;
+                }
+
+                ++i;
+                continue;
+            }
 
             if (arg == "--trace") {
                 g_trace_enabled.store(
