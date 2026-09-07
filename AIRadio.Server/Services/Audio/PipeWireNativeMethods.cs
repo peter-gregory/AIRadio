@@ -1,188 +1,74 @@
 using System.Runtime.InteropServices;
 
-namespace AIRadio.Server.Services.Audio
+namespace AIRadio.Server.Services.Audio;
+
+internal static class PipeWireNativeMethods
 {
-    internal static class PipeWireNativeMethods
-    {
-        private const string Library = "libpipewire-0.3.so.0";
-
-        internal const uint PwIdAny = uint.MaxValue;
-        internal const uint SpaTypeObject = 15;
-        internal const uint SpaTypeObjectFormat = 0x40003;
-        internal const uint SpaParamEnumFormat = 3;
-        internal const uint SpaMediaTypeAudio = 1;
-        internal const uint SpaMediaSubtypeRaw = 1;
-        internal const uint SpaAudioFormatS16 = 0x103;
-        internal const uint SpaFormatMediaType = 1;
-        internal const uint SpaFormatMediaSubtype = 2;
-        internal const uint SpaFormatAudioFormat = 0x10001;
-        internal const uint SpaFormatAudioRate = 0x10003;
-        internal const uint SpaFormatAudioChannels = 0x10004;
-        internal const uint SpaPropVolume = 0x10003;
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_init(IntPtr argc, IntPtr argv);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_deinit();
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_main_loop_new(IntPtr props);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_main_loop_get_loop(IntPtr mainLoop);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_main_loop_run(IntPtr mainLoop);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_main_loop_quit(IntPtr mainLoop);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_main_loop_destroy(IntPtr mainLoop);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_context_new(IntPtr loop, IntPtr properties, int userDataSize);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_context_destroy(IntPtr context);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_context_connect(IntPtr context, IntPtr properties, int userDataSize);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_core_disconnect(IntPtr core);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        internal delegate void PwProcessCallback(IntPtr userData);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        internal delegate void PwDrainedCallback(IntPtr userData);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        internal delegate void PwStateChangedCallback(IntPtr userData, int oldState, int state, IntPtr error);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_stream_new_simple(
-            IntPtr loop,
-            string name,
-            IntPtr properties,
-            ref PwStreamEvents events,
-            IntPtr userData);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_connect(
-            IntPtr stream,
-            PwDirection direction,
-            uint targetId,
-            PwStreamFlags flags,
-            IntPtr[] parameters,
-            uint nParams);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pw_stream_destroy(IntPtr stream);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_stream_dequeue_buffer(IntPtr stream);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_queue_buffer(IntPtr stream, IntPtr buffer);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_return_buffer(IntPtr stream, IntPtr buffer);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_set_active(IntPtr stream, [MarshalAs(UnmanagedType.I1)] bool active);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_flush(IntPtr stream, [MarshalAs(UnmanagedType.I1)] bool drain);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_stream_set_control(
-            IntPtr stream,
-            uint id,
-            uint nValues,
-            [In] float[] values,
-            IntPtr terminator);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_stream_get_control(IntPtr stream, uint id);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int pw_properties_set(IntPtr properties, string key, string value);
-
-        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr pw_properties_new(string key, string value, IntPtr end);
-
-        internal enum PwDirection
-        {
-            Output = 0,
-            Input = 1
-        }
-    }
-
-    [Flags]
-    internal enum PwStreamFlags
-    {
-        None = 0,
-        Autoconnect = 1 << 0,
-        MapBuffers = 1 << 2
-    }
+    private const string Library = "libairadio-pipewire.so";
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct PwStreamEvents
+    internal struct AIRadioPcmSegment
     {
-        public uint Version;
-        public IntPtr Destroy;
-        public IntPtr StateChanged;
-        public IntPtr ControlInfo;
-        public IntPtr IoChanged;
-        public IntPtr ParamChanged;
-        public IntPtr AddBuffer;
-        public IntPtr RemoveBuffer;
-        public IntPtr Process;
-        public IntPtr Drained;
-        public IntPtr Command;
-        public IntPtr TriggerDone;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct PwBuffer
-    {
-        public IntPtr Buffer;
-        public IntPtr UserData;
-        public ulong Size;
-        public ulong Requested;
-        public ulong Time;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct SpaBuffer
-    {
-        public uint MetaCount;
-        public uint DataCount;
-        public IntPtr Metas;
-        public IntPtr Datas;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct SpaData
-    {
-        public uint Type;
-        public uint Flags;
-        public long Fd;
-        public uint MapOffset;
-        public uint MaxSize;
         public IntPtr Data;
-        public IntPtr Chunk;
+        public nuint Size;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct SpaChunk
-    {
-        public uint Offset;
-        public uint Size;
-        public int Stride;
-        public int Flags;
-    }
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void PlaybackCallback(IntPtr userData);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void ErrorCallback(
+        IntPtr userData,
+        int errorCode,
+        IntPtr message);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr airadio_pw_create(
+        uint sampleRate,
+        uint channels,
+        uint bitsPerSample);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int airadio_pw_start(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int airadio_pw_enqueue(
+        IntPtr client,
+        IntPtr segments,
+        nuint segmentCount);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int airadio_pw_clear(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int airadio_pw_set_volume(
+        IntPtr client,
+        float volume);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern float airadio_pw_get_volume(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern ulong airadio_pw_queued_frames(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern ulong airadio_pw_outstanding_frames(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void airadio_pw_set_playback_complete_callback(
+        IntPtr client,
+        PlaybackCallback? callback,
+        IntPtr userData);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void airadio_pw_set_error_callback(
+        IntPtr client,
+        ErrorCallback? callback,
+        IntPtr userData);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr airadio_pw_last_error(IntPtr client);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void airadio_pw_destroy(IntPtr client);
 }
