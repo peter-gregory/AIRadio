@@ -33,4 +33,12 @@
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-arm64' and Exists('$(MSBuildProjectDirectory)/native/linux-arm64/libairadio-pipewire.so')">
+    <None Include="native/linux-arm64/libairadio-pipewire.so"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
