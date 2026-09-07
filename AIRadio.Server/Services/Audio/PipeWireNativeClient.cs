@@ -32,6 +32,7 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
     private readonly ILogger<PipeWireNativeClient> _logger;
     private readonly SemaphoreSlim _nativeCallLock = new(1, 1);
     private readonly object _completionLock = new();
+    private PipeWireNativeMethods.AIRadioPcmSegment[] _segmentDescriptors = Array.Empty<PipeWireNativeMethods.AIRadioPcmSegment>();
 
     private IntPtr _client;
     private GCHandle _selfHandle;
@@ -136,6 +137,24 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         }
     }
 
+    public Task WaitForPlaybackCompleteAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Task completion;
+        lock (_completionLock)
+        {
+            if (QueuedFrameCount == 0 && OutstandingFrameCount == 0)
+                return Task.CompletedTask;
+
+            _playbackCompletion ??= CreateCompletionSource();
+            completion = _playbackCompletion.Task;
+        }
+
+        return completion.WaitAsync(cancellationToken);
+    }
+
     public Task EnqueueAsync(
         ReadOnlyMemory<byte> pcmData,
         CancellationToken cancellationToken = default) =>
@@ -157,26 +176,23 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
 
         await _nativeCallLock.WaitAsync(cancellationToken);
 
+        EnsureDescriptorCapacity(pcmSegments.Count);
         var handles = new GCHandle[pcmSegments.Count];
-        var descriptorBytes = checked(
-            Marshal.SizeOf<PipeWireNativeMethods.AIRadioPcmSegment>() *
-            pcmSegments.Count);
-
-        var descriptorMemory = Marshal.AllocHGlobal(descriptorBytes);
+        GCHandle descriptorHandle = default;
 
         try
         {
+            descriptorHandle = GCHandle.Alloc(
+                _segmentDescriptors,
+                GCHandleType.Pinned);
+
             for (var i = 0; i < pcmSegments.Count; i++)
             {
                 var memory = pcmSegments[i];
 
                 if (memory.Length == 0)
                 {
-                    WriteDescriptor(
-                        descriptorMemory,
-                        i,
-                        default);
-
+                    _segmentDescriptors[i] = default;
                     continue;
                 }
 
@@ -191,24 +207,18 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
                     segment.Array,
                     GCHandleType.Pinned);
 
-                var pointer = handles[i].AddrOfPinnedObject();
-                pointer += segment.Offset;
-
-                WriteDescriptor(
-                    descriptorMemory,
-                    i,
-                    new PipeWireNativeMethods.AIRadioPcmSegment
-                    {
-                        Data = pointer,
-                        Size = checked((nuint)memory.Length)
-                    });
+                _segmentDescriptors[i] = new PipeWireNativeMethods.AIRadioPcmSegment
+                {
+                    Data = handles[i].AddrOfPinnedObject() + segment.Offset,
+                    Size = checked((nuint)memory.Length)
+                };
             }
 
             cancellationToken.ThrowIfCancellationRequested();
 
             var result = PipeWireNativeMethods.airadio_pw_enqueue(
                 _client,
-                descriptorMemory,
+                descriptorHandle.AddrOfPinnedObject(),
                 checked((nuint)pcmSegments.Count));
 
             if (result < 0)
@@ -219,13 +229,15 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         }
         finally
         {
+            if (descriptorHandle.IsAllocated)
+                descriptorHandle.Free();
+
             for (var i = 0; i < handles.Length; i++)
             {
                 if (handles[i].IsAllocated)
                     handles[i].Free();
             }
 
-            Marshal.FreeHGlobal(descriptorMemory);
             _nativeCallLock.Release();
         }
     }
@@ -346,16 +358,18 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
             text);
     }
 
-    private static void WriteDescriptor(
-        IntPtr baseAddress,
-        int index,
-        PipeWireNativeMethods.AIRadioPcmSegment descriptor)
+    private void EnsureDescriptorCapacity(int count)
     {
-        var address = baseAddress +
-            index * Marshal.SizeOf<PipeWireNativeMethods.AIRadioPcmSegment>();
+        if (_segmentDescriptors.Length >= count)
+            return;
 
-        Marshal.StructureToPtr(descriptor, address, false);
+        var capacity = _segmentDescriptors.Length == 0 ? 16 : _segmentDescriptors.Length;
+        while (capacity < count)
+            capacity = checked(capacity * 2);
+
+        _segmentDescriptors = new PipeWireNativeMethods.AIRadioPcmSegment[capacity];
     }
+
 
     private string GetNativeError()
     {
