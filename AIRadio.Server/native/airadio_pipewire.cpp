@@ -340,6 +340,16 @@ public:
         has_pending_audio_ = false;
         completion_candidate_ = false;
         completion_pending_.store(false, std::memory_order_release);
+
+        if (!active_ && outstanding_frames_.load(std::memory_order_acquire) == 0)
+        {
+            completion_from_drain_ = true;
+            completion_pending_.store(true, std::memory_order_release);
+            completion_cv_.notify_one();
+            pw_thread_loop_unlock(loop_);
+            return 0;
+        }
+
         draining_ = true;
 
         const int result = pw_stream_flush(stream_, true);
