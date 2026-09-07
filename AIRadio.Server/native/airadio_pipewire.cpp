@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -23,7 +24,6 @@ namespace
 {
 constexpr size_t kInitialRingBytes = 256 * 1024;
 constexpr size_t kPodBufferBytes = 1024;
-constexpr uint32_t kPlaybackLatencyFrames = 4800; // 100 ms @ 48 kHz
 
 class PcmRing
 {
@@ -84,7 +84,7 @@ public:
 private:
     size_t required_capacity(size_t incoming) const
     {
-        size_t required = size_ + incoming;
+        const size_t required = size_ + incoming;
         size_t capacity = capacity_ == 0 ? 4096 : capacity_;
 
         while (capacity < required)
@@ -150,7 +150,7 @@ public:
             return 0;
 
         if (sample_rate_ == 0 || channels_ == 0 || bits_per_sample_ != 16)
-            return -22; // EINVAL
+            return -22;
 
         pw_init(nullptr, nullptr);
 
@@ -167,12 +167,16 @@ public:
             return loop_result;
         }
 
+        const std::string latency =
+            std::to_string(std::max<uint32_t>(1, sample_rate_ / 10)) +
+            "/" + std::to_string(sample_rate_);
+
         pw_properties *props = pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio",
             PW_KEY_MEDIA_CATEGORY, "Playback",
             PW_KEY_MEDIA_ROLE, "Music",
-            PW_KEY_NODE_LATENCY, "4800/48000",
-            PW_KEY_NODE_MAX_LATENCY, "4800/48000",
+            PW_KEY_NODE_LATENCY, latency.c_str(),
+            PW_KEY_NODE_MAX_LATENCY, latency.c_str(),
             PW_KEY_NODE_STREAM, "true",
             nullptr);
 
@@ -257,9 +261,9 @@ public:
 
         if (connection_error_ < 0)
         {
-            const int result = connection_error_;
+            const int error = connection_error_;
             pw_thread_loop_unlock(loop_);
-            return result;
+            return error;
         }
 
         pw_thread_loop_unlock(loop_);
@@ -272,7 +276,7 @@ public:
     int enqueue(const AIRadioPcmSegment *segments, size_t segment_count)
     {
         if (!started_ || stream_ == nullptr || loop_ == nullptr)
-            return -107; // ENOTCONN
+            return -107;
 
         if (segment_count != 0 && segments == nullptr)
             return -22;
@@ -282,7 +286,7 @@ public:
         if (draining_)
         {
             pw_thread_loop_unlock(loop_);
-            return -16; // EBUSY
+            return -16;
         }
 
         for (size_t i = 0; i < segment_count; ++i)
@@ -334,6 +338,7 @@ public:
 
         ring_.clear();
         has_pending_audio_ = false;
+        completion_candidate_ = false;
         completion_pending_.store(false, std::memory_order_release);
         draining_ = true;
 
@@ -362,12 +367,13 @@ public:
             1,
             &volume,
             nullptr);
+
         if (result >= 0)
-            volume_ = volume;
+            volume_.store(volume, std::memory_order_release);
         else
             last_error_ = "pw_stream_set_control(volume) failed: " + std::to_string(result);
-        pw_thread_loop_unlock(loop_);
 
+        pw_thread_loop_unlock(loop_);
         return result;
     }
 
@@ -410,28 +416,23 @@ public:
 
     void destroy()
     {
-        if (!loop_)
+        if (loop_)
         {
-            if (started_)
-                pw_deinit();
-            started_ = false;
-            return;
+            pw_thread_loop_lock(loop_);
+
+            if (stream_)
+            {
+                pw_stream_set_active(stream_, false);
+                pw_stream_destroy(stream_);
+                stream_ = nullptr;
+            }
+
+            pw_thread_loop_unlock(loop_);
+
+            pw_thread_loop_stop(loop_);
+            pw_thread_loop_destroy(loop_);
+            loop_ = nullptr;
         }
-
-        pw_thread_loop_lock(loop_);
-
-        if (stream_)
-        {
-            pw_stream_set_active(stream_, false);
-            pw_stream_destroy(stream_);
-            stream_ = nullptr;
-        }
-
-        pw_thread_loop_unlock(loop_);
-
-        pw_thread_loop_stop(loop_);
-        pw_thread_loop_destroy(loop_);
-        loop_ = nullptr;
 
         {
             std::lock_guard<std::mutex> lock(completion_mutex_);
@@ -466,8 +467,8 @@ private:
         if (state == PW_STREAM_STATE_ERROR)
         {
             self->connection_error_ = -5;
-            self->last_error_ = error ? error : "PipeWire stream entered an error state";
-            self->connection_ready_ = false;
+            self->last_error_ =
+                error ? error : "PipeWire stream entered an error state";
 
             self->queue_error_callback(-5, self->last_error_);
             pw_thread_loop_signal(self->loop_, false);
@@ -476,23 +477,18 @@ private:
 
     static void on_process(void *data)
     {
-        auto *self = static_cast<PipeWireBackend *>(data);
-        self->process();
+        static_cast<PipeWireBackend *>(data)->process();
     }
 
     static void on_drained(void *data)
     {
         auto *self = static_cast<PipeWireBackend *>(data);
 
-        if (self->loop_ != nullptr && self->stream_ != nullptr)
-        {
-            const int result = pw_stream_set_active(self->stream_, true);
-            if (result >= 0)
-                self->active_ = true;
-        }
-
+        self->active_ = false;
         self->draining_ = false;
         self->has_pending_audio_ = false;
+        self->completion_candidate_ = false;
+        self->completion_from_drain_ = true;
         self->completion_pending_.store(true, std::memory_order_release);
         self->completion_cv_.notify_one();
     }
@@ -510,6 +506,7 @@ private:
         {
             const uint64_t current =
                 outstanding_frames_.load(std::memory_order_relaxed);
+
             outstanding_frames_.store(
                 current >= previously_queued ? current - previously_queued : 0,
                 std::memory_order_release);
@@ -531,8 +528,8 @@ private:
 
         const uint32_t stride = bytes_per_frame_;
         const uint32_t capacity_bytes = data->maxsize;
-        uint64_t requested_frames = buffer->requested;
 
+        uint64_t requested_frames = buffer->requested;
         if (requested_frames == 0)
             requested_frames = capacity_bytes / stride;
 
@@ -542,15 +539,19 @@ private:
 
         size_t copied = 0;
         if (!ring_.empty())
+        {
             copied = ring_.read(
                 static_cast<uint8_t *>(data->data),
                 requested_bytes);
+        }
 
         if (copied < requested_bytes)
+        {
             std::memset(
                 static_cast<uint8_t *>(data->data) + copied,
                 0,
                 requested_bytes - copied);
+        }
 
         data->chunk->offset = 0;
         data->chunk->stride = static_cast<int32_t>(stride);
@@ -572,11 +573,7 @@ private:
         }
 
         if (ring_.empty() && has_pending_audio_ && submitted_audio)
-        {
-            // The final buffer may contain zero padding. Completion is not
-            // signaled until this buffer is returned by PipeWire.
             completion_candidate_ = true;
-        }
 
         if (ring_.empty() &&
             completion_candidate_ &&
@@ -620,16 +617,21 @@ private:
             {
                 pw_thread_loop_lock(loop_);
 
-                if (draining_)
+                if (completion_from_drain_)
                 {
-                    // The drained callback owns completion for a clear/stop.
-                    pw_thread_loop_unlock(loop_);
-                    continue;
-                }
+                    completion_from_drain_ = false;
 
-                if (has_pending_audio_ &&
-                    ring_.empty() &&
-                    outstanding_frames_.load(std::memory_order_acquire) == 0)
+                    if (stream_ != nullptr && active_)
+                    {
+                        pw_stream_set_active(stream_, false);
+                        active_ = false;
+                    }
+
+                    fire = true;
+                }
+                else if (has_pending_audio_ &&
+                         ring_.empty() &&
+                         outstanding_frames_.load(std::memory_order_acquire) == 0)
                 {
                     has_pending_audio_ = false;
                     completion_candidate_ = false;
@@ -696,6 +698,7 @@ private:
     bool draining_ = false;
     bool has_pending_audio_ = false;
     bool completion_candidate_ = false;
+    bool completion_from_drain_ = false;
 
     bool connection_ready_ = false;
     int connection_error_ = 0;
