@@ -1,4 +1,4 @@
-﻿using AIRadio.Server.Models.Location;
+using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Location;
 
@@ -9,40 +9,23 @@ namespace AIRadio.Server.Services.Weather
         private readonly IWeatherService _weatherService;
         private readonly ILocationService _locationService;
 
-        public WeatherTool(
-            IWeatherService weatherService,
-            ILocationService locationService)
+        public WeatherTool(IWeatherService weatherService, ILocationService locationService)
         {
             _weatherService = weatherService;
             _locationService = locationService;
         }
 
-        public string Name =>
-            "weather";
+        public string Name => "weather";
 
-        public async Task<ToolResult> ExecuteAsync(
-            ToolRequest request,
-            CancellationToken cancellationToken = default)
+        public string GetPromptText() => "weather{location?}";
+
+        public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-
-            var locationName =
-                request.GetString("location");
-
-            RadioLocation? location;
-
-            if (string.IsNullOrWhiteSpace(locationName))
-            {
-                location =
-                    _locationService.GetCurrentLocation();
-            }
-            else
-            {
-                location =
-                    await _locationService.ResolveLocationAsync(
-                        locationName.Trim(),
-                        cancellationToken);
-            }
+            var locationName = request.GetString("location");
+            RadioLocation? location = string.IsNullOrWhiteSpace(locationName)
+                ? _locationService.GetCurrentLocation()
+                : await _locationService.ResolveLocationAsync(locationName.Trim(), cancellationToken);
 
             if (location is null)
             {
@@ -55,26 +38,16 @@ namespace AIRadio.Server.Services.Weather
 
             try
             {
-                var weather =
-                    await _weatherService.GetWeatherAsync(
-                        location,
-                        cancellationToken);
-
-                return ToolResult.Successful(
-                    Name,
-                    "Weather retrieved successfully.",
-                    weather);
+                var weather = await _weatherService.GetWeatherAsync(location, cancellationToken);
+                return ToolResult.Successful(Name, "Weather retrieved successfully.", weather);
             }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
             catch (Exception ex)
             {
-                return ToolResult.Failed(
-                    Name,
-                    ex.Message);
+                return ToolResult.Failed(Name, ex.Message);
             }
         }
     }
