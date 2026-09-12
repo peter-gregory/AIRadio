@@ -1,10 +1,11 @@
-﻿using AIRadio.Server.Models.Tools;
-using System.Xml.Linq;
+using AIRadio.Server.Models.Tools;
 
 namespace AIRadio.Server.Services.Tools
 {
     public interface IToolExecutor
     {
+        string GetPromptText();
+
         Task<ToolResult> ExecuteAsync(
             ToolRequest request,
             CancellationToken cancellationToken = default);
@@ -17,8 +18,8 @@ namespace AIRadio.Server.Services.Tools
     public sealed class ToolExecutor : IToolExecutor
     {
         private readonly ILogger<ToolExecutor> _logger;
-
         private readonly Dictionary<string, ITool> _tools;
+
         public string Name =>
             "tool_dispatcher";
 
@@ -28,11 +29,18 @@ namespace AIRadio.Server.Services.Tools
         {
             _logger = logger;
 
-            _tools =
-                tools.ToDictionary(
-                    x => x.Name,
-                    StringComparer.OrdinalIgnoreCase);
+            _tools = tools.ToDictionary(
+                x => x.Name,
+                StringComparer.OrdinalIgnoreCase);
         }
+
+        public string GetPromptText() =>
+            string.Join(
+                '\n',
+                _tools.Values
+                    .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+                    .Select(static tool => tool.GetPromptText())
+                    .Where(static text => !string.IsNullOrWhiteSpace(text)));
 
         public async Task<ToolResult> ExecuteAsync(
             ToolRequest request,
@@ -94,18 +102,15 @@ namespace AIRadio.Server.Services.Tools
         {
             ArgumentNullException.ThrowIfNull(requests);
 
-            var results =
-                new List<ToolResult>(
-                    requests.Count);
+            var results = new List<ToolResult>(requests.Count);
 
             foreach (var request in requests)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var result =
-                    await ExecuteAsync(
-                        request,
-                        cancellationToken);
+                var result = await ExecuteAsync(
+                    request,
+                    cancellationToken);
 
                 results.Add(result);
             }
@@ -113,5 +118,4 @@ namespace AIRadio.Server.Services.Tools
             return results;
         }
     }
-
 }
