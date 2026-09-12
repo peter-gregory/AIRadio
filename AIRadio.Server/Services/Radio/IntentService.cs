@@ -87,12 +87,14 @@ namespace AIRadio.Server.Services.Radio
                             "WakeUp",
                             StringComparison.OrdinalIgnoreCase))
                     {
+                        // Wake-up is only a speech-state signal. Do not strip
+                        // or otherwise interpret the wake-up phrase. The entire
+                        // transcript is passed to the conversation service so
+                        // the LLM receives all of the user's speech.
                         _logger.LogInformation(
                             "Wake-up detected by regex rule {RuleName}: {Text}.",
                             match.RuleName,
                             text);
-
-                        return;
                     }
                 }
 
