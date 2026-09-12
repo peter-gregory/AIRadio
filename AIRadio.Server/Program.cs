@@ -15,6 +15,14 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddJsonFile(
+    Path.Combine(
+        builder.Environment.ContentRootPath,
+        "Config",
+        "IntentRegex.json"),
+    optional: false,
+    reloadOnChange: true);
+
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .CreateLogger();
@@ -37,7 +45,7 @@ builder.Services.AddHttpClient<INewsProvider, RssNewsProvider>(client =>
 builder.Services.AddSingleton<INewsService, NewsService>();
 builder.Services.AddSingleton<IRadioSearchClient, RadioSearchClient>();
 builder.Services.AddSingleton<IConversationLlamaClient, ConversationLlamaClient>();
-builder.Services.AddSingleton<ILlamaIntentClient, LlamaIntentClient>();
+builder.Services.AddSingleton<IRegexIntentParser, RegexIntentParser>();
 builder.Services.AddSingleton<IConversationService, ConversationService>();
 builder.Services.AddSingleton<IIntentService, IntentService>();
 builder.Services.AddSingleton<IRadioManagerService, RadioManagerService>();
@@ -137,7 +145,6 @@ await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(
     soundsDirectory);
 
 await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
-await app.Services.GetRequiredService<ILlamaIntentClient>().InitializeAsync();
 await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
 
 app.UseDefaultFiles();

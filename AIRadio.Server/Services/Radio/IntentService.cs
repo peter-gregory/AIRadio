@@ -1,5 +1,3 @@
-using AIRadio.Server.Services.AI;
-
 namespace AIRadio.Server.Services.Radio
 {
     public interface IIntentService
@@ -15,17 +13,17 @@ namespace AIRadio.Server.Services.Radio
     public sealed class IntentService : IIntentService, IAsyncDisposable
     {
         private readonly ILogger<IntentService> _logger;
-        private readonly ILlamaIntentClient _intentClient;
+        private readonly IRegexIntentParser _intentParser;
         private readonly IConversationService _conversationService;
         private readonly AsyncWorkQueue<string> _queue;
 
         public IntentService(
             ILogger<IntentService> logger,
-            ILlamaIntentClient intentClient,
+            IRegexIntentParser intentParser,
             IConversationService conversationService)
         {
             _logger = logger;
-            _intentClient = intentClient;
+            _intentParser = intentParser;
             _conversationService = conversationService;
 
             _queue = new AsyncWorkQueue<string>();
@@ -64,22 +62,38 @@ namespace AIRadio.Server.Services.Radio
         {
             try
             {
-                var result = await _intentClient.CheckBargeInAsync(
-                    text,
-                    cancellationToken);
+                var match = _intentParser.Match(text);
 
-                if (result.IsBargeIn)
+                if (match is not null)
                 {
-                    _logger.LogInformation(
-                        "Barge-in detected. Confidence={Confidence}, Command={Command}, Reason={Reason}.",
-                        result.Confidence,
-                        result.Command,
-                        result.Reason);
+                    if (string.Equals(
+                            match.Intent,
+                            "BargeIn",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation(
+                            "Barge-in detected by regex rule {RuleName}: {Text}.",
+                            match.RuleName,
+                            text);
 
-                    await _conversationService.CancelAsync(
-                        cancellationToken);
+                        await _conversationService.CancelAsync(
+                            cancellationToken);
 
-                    return;
+                        return;
+                    }
+
+                    if (string.Equals(
+                            match.Intent,
+                            "WakeUp",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation(
+                            "Wake-up detected by regex rule {RuleName}: {Text}.",
+                            match.RuleName,
+                            text);
+
+                        return;
+                    }
                 }
 
                 await _conversationService.ProcessAsync(
