@@ -288,11 +288,15 @@ namespace AIRadio.Server.Services.AI
         private async Task<LlamaResponse> CompleteAsync(
             CancellationToken cancellationToken)
         {
+            var message = new LlamaCompletionRequest
+            {
+                Messages = _history.ToList()
+            };
+
+            _logger.LogInformation("Sending LLama message:\n" + JsonConvert.SerializeObject(message, Formatting.Indented));
+
             var completion = await _llama.CompleteAsync(
-                new LlamaCompletionRequest
-                {
-                    Messages = _history.ToList()
-                },
+                message,
                 cancellationToken);
 
             AddAssistantResponse(completion);
