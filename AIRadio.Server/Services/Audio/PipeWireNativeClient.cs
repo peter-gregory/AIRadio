@@ -22,11 +22,17 @@ public interface IPipeWireNativeClient : IAsyncDisposable
         IReadOnlyList<ReadOnlyMemory<byte>> pcmSegments,
         CancellationToken cancellationToken = default);
 
+    Task EndUtteranceAsync(
+        bool cancel,
+        CancellationToken cancellationToken = default);
+
+    Task WaitForPlaybackCompleteAsync(
+        CancellationToken cancellationToken = default);
+
     Task ClearAsync(CancellationToken cancellationToken = default);
     Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default);
     Task<int> GetVolumeAsync(CancellationToken cancellationToken = default);
 }
-
 public sealed class PipeWireNativeClient : IPipeWireNativeClient
 {
     private readonly ILogger<PipeWireNativeClient> _logger;
@@ -242,7 +248,9 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         }
     }
 
-    public async Task ClearAsync(CancellationToken cancellationToken = default)
+    public async Task EndUtteranceAsync(
+        bool cancel,
+        CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -250,29 +258,36 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         if (!IsConnected)
             return;
 
-        Task completion;
+        TaskCompletionSource<object?> completion;
 
+        /*
+         * Establish the completion waiter before calling native end_utterance.
+         * The native implementation may complete immediately when the queue is
+         * already empty, so creating the TCS afterwards would lose the event.
+         */
         lock (_completionLock)
         {
-            _playbackCompletion = CreateCompletionSource();
-            completion = _playbackCompletion.Task;
+            completion = _playbackCompletion ??= CreateCompletionSource();
         }
 
         await _nativeCallLock.WaitAsync(cancellationToken);
 
         try
         {
-            var result = PipeWireNativeMethods.airadio_pw_clear(_client);
+            var result = PipeWireNativeMethods.airadio_pw_end_utterance(
+                _client,
+                cancel ? 1 : 0);
 
             if (result < 0)
             {
                 lock (_completionLock)
                 {
-                    _playbackCompletion = null;
+                    if (ReferenceEquals(_playbackCompletion, completion))
+                        _playbackCompletion = null;
                 }
 
                 throw new InvalidOperationException(
-                    $"Native PipeWire clear failed: {result} ({GetNativeError()})");
+                    $"Native PipeWire end-utterance failed: {result} ({GetNativeError()})");
             }
         }
         finally
@@ -280,8 +295,11 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
             _nativeCallLock.Release();
         }
 
-        await completion.WaitAsync(cancellationToken);
+        await completion.Task.WaitAsync(cancellationToken);
     }
+
+    public Task ClearAsync(CancellationToken cancellationToken = default) =>
+        EndUtteranceAsync(cancel: true, cancellationToken);
 
     public async Task SetVolumeAsync(
         int volume,

@@ -491,6 +491,20 @@ private:
             if (stop_completion_thread_) return;
             completion_pending_.store(false, std::memory_order_release);
             l.unlock();
+
+            /*
+             * The completion callback marks the boundary between utterances.
+             * Reset the native end-of-utterance barrier before invoking the
+             * host callback so the host may immediately enqueue the next
+             * utterance from its completion handler.
+             */
+            if (loop_) {
+                pw_thread_loop_lock(loop_);
+                end_of_utterance_ = false;
+                cancelled_ = false;
+                pw_thread_loop_unlock(loop_);
+            }
+
             queue_playback_callback();
         }
     }
@@ -555,20 +569,78 @@ extern "C" {
 AIRADIO_API AIRadioPipeWire *airadio_pw_create(uint32_t r, uint32_t c, uint32_t b) {
     try { return new AIRadioPipeWire(r, c, b); } catch (...) { return nullptr; }
 }
-AIRADIO_API int airadio_pw_start(AIRadioPipeWire *c) {
-    if (!c) return -22; try { return c->backend.start(); } catch (...) { return -5; }
+AIRADIO_API int airadio_pw_start(AIRadioPipeWire *c)
+{
+    if (!c)
+        return -22;
+
+    try
+    {
+        return c->backend.start();
+    }
+    catch (...)
+    {
+        return -5;
+    }
 }
-AIRADIO_API int airadio_pw_enqueue(AIRadioPipeWire *c, const AIRadioPcmSegment *s, size_t n) {
-    if (!c) return -22; try { return c->backend.enqueue(s, n); } catch (...) { return -5; }
+AIRADIO_API int airadio_pw_enqueue(
+    AIRadioPipeWire *c,
+    const AIRadioPcmSegment *s,
+    size_t n)
+{
+    if (!c)
+        return -22;
+
+    try
+    {
+        return c->backend.enqueue(s, n);
+    }
+    catch (...)
+    {
+        return -5;
+    }
 }
-AIRADIO_API int airadio_pw_end_utterance(AIRadioPipeWire *c, int cancel) {
-    if (!c) return -22; try { return c->backend.end_utterance(cancel != 0); } catch (...) { return -5; }
+AIRADIO_API int airadio_pw_end_utterance(AIRadioPipeWire *c, int cancel)
+{
+    if (!c)
+        return -22;
+
+    try
+    {
+        return c->backend.end_utterance(cancel != 0);
+    }
+    catch (...)
+    {
+        return -5;
+    }
 }
-AIRADIO_API int airadio_pw_clear(AIRadioPipeWire *c) {
-    if (!c) return -22; try { return c->backend.clear(); } catch (...) { return -5; }
+AIRADIO_API int airadio_pw_clear(AIRadioPipeWire *c)
+{
+    if (!c)
+        return -22;
+
+    try
+    {
+        return c->backend.clear();
+    }
+    catch (...)
+    {
+        return -5;
+    }
 }
-AIRADIO_API int airadio_pw_set_volume(AIRadioPipeWire *c, float v) {
-    if (!c) return -22; try { return c->backend.set_volume(v); } catch (...) { return -5; }
+AIRADIO_API int airadio_pw_set_volume(AIRadioPipeWire *c, float v)
+{
+    if (!c)
+        return -22;
+
+    try
+    {
+        return c->backend.set_volume(v);
+    }
+    catch (...)
+    {
+        return -5;
+    }
 }
 AIRADIO_API float airadio_pw_get_volume(AIRadioPipeWire *c) {
     return c ? c->backend.volume() : 0.0f;

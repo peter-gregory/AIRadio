@@ -16,6 +16,9 @@ namespace AIRadio.Server.Services.Audio
         Task UnduckAsync(CancellationToken cancellationToken = default);
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
         Task ClearQueueAsync(CancellationToken cancellationToken = default);
+        Task EndUtteranceAsync(
+            bool cancel = false,
+            CancellationToken cancellationToken = default);
         Task WaitForCompletionAsync(CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
@@ -101,11 +104,30 @@ namespace AIRadio.Server.Services.Audio
             return Task.CompletedTask;
         }
 
+        public async Task EndUtteranceAsync(
+            bool cancel = false,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            /*
+             * The audio work queue only submits PCM to PipeWire. End-of-
+             * utterance is deliberately outside that queue so the native
+             * completion event remains independent of the producer.
+             */
+            await _queue.WaitForIdleAsync(cancellationToken);
+            await _pipeWireAudioClient.EndUtteranceAsync(
+                cancel,
+                cancellationToken);
+        }
+
         public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
-            await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None);
+            await _pipeWireAudioClient.EndUtteranceAsync(
+                cancel: true,
+                CancellationToken.None);
 
             if (IsDucked)
             {

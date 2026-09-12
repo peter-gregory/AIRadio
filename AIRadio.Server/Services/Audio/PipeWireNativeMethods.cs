@@ -4,7 +4,7 @@ namespace AIRadio.Server.Services.Audio;
 
 internal static class PipeWireNativeMethods
 {
-    private const string Library = "libairadio-pipewire.so";
+    private const string Library = "airadio-pipewire";
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct AIRadioPcmSegment
@@ -36,6 +36,11 @@ internal static class PipeWireNativeMethods
         IntPtr client,
         IntPtr segments,
         nuint segmentCount);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int airadio_pw_end_utterance(
+        IntPtr client,
+        int cancel);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int airadio_pw_clear(IntPtr client);

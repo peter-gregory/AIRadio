@@ -17,7 +17,7 @@ namespace AIRadio.Server.Controllers
             _logger = logger;
         }
 
-        [Route("stt")]
+        [Route("text")]
         [HttpPost]
         public async Task<ActionResult> Stt([FromBody] SttData prompt)
         {

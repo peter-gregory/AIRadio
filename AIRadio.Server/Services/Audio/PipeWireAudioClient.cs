@@ -21,6 +21,9 @@ public interface IPipeWireAudioClient : IAsyncDisposable
     Task QueuePcmBatchAsync(
         IReadOnlyList<ReadOnlyMemory<byte>> pcmSegments,
         CancellationToken cancellationToken = default);
+    Task EndUtteranceAsync(
+        bool cancel = false,
+        CancellationToken cancellationToken = default);
     Task WaitForPlaybackCompleteAsync(CancellationToken cancellationToken = default);
     Task ClearQueueAsync(CancellationToken cancellationToken = default);
     Task StopPlaybackAsync(CancellationToken cancellationToken = default);
@@ -98,6 +101,11 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
         IReadOnlyList<ReadOnlyMemory<byte>> pcmSegments,
         CancellationToken cancellationToken = default) =>
         _pipeWire.EnqueueAsync(pcmSegments, cancellationToken);
+
+    public Task EndUtteranceAsync(
+        bool cancel = false,
+        CancellationToken cancellationToken = default) =>
+        _pipeWire.EndUtteranceAsync(cancel, cancellationToken);
 
     public Task WaitForPlaybackCompleteAsync(
         CancellationToken cancellationToken = default)

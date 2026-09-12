@@ -64,6 +64,7 @@ builder.Services.AddSingleton<ITool, RadioTool>();
 builder.Services.AddSingleton<ITool, LocationTool>();
 builder.Services.AddSingleton<ITool, WeatherTool>();
 builder.Services.AddSingleton<ITool, WifiTool>();
+builder.Services.AddSingleton<ILocationService, LocationService>();
 
 builder.Services.AddSingleton<AlarmManagerService>();
 builder.Services.AddSingleton<IAlarmManagerService>(sp =>

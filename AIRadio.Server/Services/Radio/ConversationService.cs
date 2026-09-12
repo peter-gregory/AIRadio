@@ -67,6 +67,16 @@ namespace AIRadio.Server.Services.Radio
                     : await _llama.StartConversationAsync(request.Text, cancellationToken);
 
                 await ProcessLlamaResponseAsync(response, cancellationToken);
+
+                /*
+                 * ProcessLlamaResponseAsync may enqueue multiple sentences and
+                 * may recursively process tool-result responses. Only after
+                 * the complete logical response has been produced do we close
+                 * the native audio utterance.
+                 */
+                await _audioManager.EndUtteranceAsync(
+                    cancel: false,
+                    cancellationToken);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
