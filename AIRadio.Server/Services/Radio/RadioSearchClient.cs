@@ -30,6 +30,8 @@ namespace AIRadio.Server.Services.Radio
             _httpClient = httpClient;
             _logger = logger;
 
+            _logger.LogInformation("Construct RadioSearchClient");
+
             _baseUrl =
                 configuration["RadioBrowser:BaseUrl"]
                 ?? "https://de1.api.radio-browser.info";
@@ -62,6 +64,8 @@ namespace AIRadio.Server.Services.Radio
                     _defaultLimit,
                     1,
                     _maxLimit);
+
+            _logger.LogInformation("Construct finished RadioSearchClient");
         }
 
         public async Task<IReadOnlyList<RadioStation>> SearchAsync(

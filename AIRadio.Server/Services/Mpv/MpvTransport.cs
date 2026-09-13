@@ -41,6 +41,8 @@ namespace AIRadio.Server.Services.Mpv
             _configuration = configuration;
             _logger = logger;
 
+            _logger.LogInformation("Construct MpvTransport");
+
             _serializerOptions = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower

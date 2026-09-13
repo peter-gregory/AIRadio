@@ -37,6 +37,7 @@ namespace AIRadio.Server.Services.Radio
             _audioManager = audioManager;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
+            _logger.LogInformation("Finished starting RadioManagerService");
         }
 
         public Task ProcessSpeechAsync(string text, CancellationToken cancellationToken = default)

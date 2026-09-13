@@ -29,6 +29,8 @@ namespace AIRadio.Server.Services.Sounds
 
         public async Task InitializeAsync(string soundsDirectory, CancellationToken cancellationToken = default)
         {
+            _logger.LogInformation("Initialize SoundEffectManager");
+
             ArgumentException.ThrowIfNullOrWhiteSpace(soundsDirectory);
             if (IsInitialized) return;
             if (!Directory.Exists(soundsDirectory))

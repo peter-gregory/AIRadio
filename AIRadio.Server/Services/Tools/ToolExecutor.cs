@@ -29,9 +29,13 @@ namespace AIRadio.Server.Services.Tools
         {
             _logger = logger;
 
+            _logger.LogInformation("Construct ToolExecutor");
+
             _tools = tools.ToDictionary(
                 x => x.Name,
                 StringComparer.OrdinalIgnoreCase);
+
+            _logger.LogInformation("Construct fininshed ToolExecutor");
         }
 
         public string GetPromptText() =>

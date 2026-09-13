@@ -29,11 +29,15 @@ namespace AIRadio.Server.Services.Radio
             _llama = llama;
             _audioManager = audioManager;
 
+            _logger.LogInformation("Construct conversation service");
+
             ArgumentNullException.ThrowIfNull(tools);
             _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
             _queue = new AsyncWorkQueue<ConversationRequest>();
             _queue.Start(ProcessRequestAsync);
+
+            _logger.LogInformation("Construct finished conversation service");
         }
 
         public Task ProcessAsync(string text, CancellationToken cancellationToken = default)

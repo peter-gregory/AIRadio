@@ -28,11 +28,15 @@ public sealed class PiperClient : IPiperClient
         _cache = cache;
         _logger = logger;
 
+        _logger.LogInformation("Construct PiperClient");
+
         _endpoint = configuration["Piper:Endpoint"]
             ?? throw new InvalidOperationException("Piper endpoint is not configured.");
 
         _voice = configuration["Piper:Voice"]
             ?? throw new InvalidOperationException("Piper voice is not configured.");
+
+        _logger.LogInformation("Construct finished PiperClient");
     }
 
     public async Task<byte[]> GenerateWavAsync(

@@ -38,6 +38,8 @@ namespace AIRadio.Server.Services.Radio
             _configuration = configuration;
             _logger = logger;
             Directory.CreateDirectory(DataDirectory);
+
+            _logger.LogInformation("Construct fininshed StationManager");
         }
 
         // ============================================================

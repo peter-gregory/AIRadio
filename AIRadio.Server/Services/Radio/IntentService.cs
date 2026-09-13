@@ -26,8 +26,12 @@ namespace AIRadio.Server.Services.Radio
             _intentParser = intentParser;
             _conversationService = conversationService;
 
+            _logger.LogInformation("Starting IntentService");
+
             _queue = new AsyncWorkQueue<string>();
             _queue.Start(ProcessIntentAsync);
+
+            _logger.LogInformation("Finished IntentService");
         }
 
         public Task ProcessAsync(

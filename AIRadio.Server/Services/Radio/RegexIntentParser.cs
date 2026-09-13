@@ -32,6 +32,8 @@ namespace AIRadio.Server.Services.Radio
         {
             _logger = logger;
 
+            _logger.LogInformation("Construct RegexIntentParser");
+
             var configuredRules = configuration
                 .GetSection("SpeechIntents")
                 .GetChildren()

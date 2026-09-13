@@ -53,10 +53,15 @@ namespace AIRadio.Server.Services.Audio
             _piperClient = piperClient;
             _mpvManager = mpvManager;
             _mpvClient = mpvClient;
+
+            _logger.LogInformation("Starting AudioManager");
+
             _duckVolume = configuration.GetValue("Mpv:Transport:DuckVolume", 20);
 
             _queue = new AsyncWorkQueue<AudioRequest>();
             _queue.Start(ProcessRequestAsync);
+
+            _logger.LogInformation("Finished AudioManager");
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
