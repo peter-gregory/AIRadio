@@ -5,12 +5,12 @@ namespace AIRadio.Server.Services.Alarms
 {
     public sealed class ScheduleTool : ITool
     {
-        private readonly IAlarmManagerService _alarmManager;
+        private readonly IAlarmService _alarmService;
 
         public ScheduleTool(
-            IAlarmManagerService alarmManager)
+            IAlarmService alarmService)
         {
-            _alarmManager = alarmManager;
+            _alarmService = alarmService;
         }
 
         public string Name =>
@@ -63,7 +63,7 @@ namespace AIRadio.Server.Services.Alarms
         private ToolResult AddEvent(ToolRequest request)
         {
             var scheduledEvent = BuildEvent(request);
-            var added = _alarmManager.AddEvent(scheduledEvent);
+            var added = _alarmService.AddEvent(scheduledEvent);
             return ToolResult.Successful(Name, "Scheduled event added.", added);
         }
 
@@ -74,7 +74,7 @@ namespace AIRadio.Server.Services.Alarms
                 return ToolResult.Failed(Name, "An event ID is required.");
 
             var scheduledEvent = BuildEvent(request, id.Value);
-            if (!_alarmManager.UpdateEvent(scheduledEvent))
+            if (!_alarmService.UpdateEvent(scheduledEvent))
                 return ToolResult.Failed(Name, $"Scheduled event '{id}' was not found.");
 
             return ToolResult.Successful(Name, "Scheduled event updated.", scheduledEvent);
@@ -86,7 +86,7 @@ namespace AIRadio.Server.Services.Alarms
             if (id is null)
                 return ToolResult.Failed(Name, "An event ID is required.");
 
-            if (!_alarmManager.DeleteEvent(id.Value))
+            if (!_alarmService.DeleteEvent(id.Value))
                 return ToolResult.Failed(Name, $"Scheduled event '{id}' was not found.");
 
             return ToolResult.Successful(Name, "Scheduled event deleted.", new { Id = id.Value });
@@ -98,7 +98,7 @@ namespace AIRadio.Server.Services.Alarms
             if (id is null)
                 return ToolResult.Failed(Name, "An event ID is required.");
 
-            if (!_alarmManager.EnableEvent(id.Value))
+            if (!_alarmService.EnableEvent(id.Value))
                 return ToolResult.Failed(Name, $"Scheduled event '{id}' was not found.");
 
             return ToolResult.Successful(Name, "Scheduled event enabled.", new { Id = id.Value, Enabled = true });
@@ -110,7 +110,7 @@ namespace AIRadio.Server.Services.Alarms
             if (id is null)
                 return ToolResult.Failed(Name, "An event ID is required.");
 
-            if (!_alarmManager.DisableEvent(id.Value))
+            if (!_alarmService.DisableEvent(id.Value))
                 return ToolResult.Failed(Name, $"Scheduled event '{id}' was not found.");
 
             return ToolResult.Successful(Name, "Scheduled event disabled.", new { Id = id.Value, Enabled = false });
