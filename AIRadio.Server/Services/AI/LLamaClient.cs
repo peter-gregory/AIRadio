@@ -73,11 +73,17 @@ namespace AIRadio.Server.Services.AI
             _logger.LogInformation("Finish initialize llama client");
         }
 
-        public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, true, cancellationToken);
+        public async Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default)
+        {
+            var result = await ExecuteConversationAsync(userMessage, true, cancellationToken);
+            return result;
+        }
 
-        public Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, false, cancellationToken);
+        public async Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default)
+        {
+            var result = await ExecuteConversationAsync(userMessage, false, cancellationToken);
+            return result;
+        }
 
         public async Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default)
         {
@@ -203,7 +209,7 @@ namespace AIRadio.Server.Services.AI
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
             _systemPrompt = string.Join("\n", sections);
 
-            _logger.LogInformation("Fininshed Build system prompt " + _systemPrompt);
+            _logger.LogInformation("Fininshed Build system prompt");
         }
 
         private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
@@ -212,8 +218,6 @@ namespace AIRadio.Server.Services.AI
             {
                 Messages = _history.ToList()
             };
-
-            _logger.LogInformation("Sending LLama message:\n" + JsonConvert.SerializeObject(message, Formatting.Indented));
 
             var completion = await _llama.CompleteAsync(
                 message,

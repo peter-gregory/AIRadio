@@ -103,9 +103,9 @@ namespace AIRadio.Server.Services.AI
                     System.Text.Encoding.UTF8,
                     "application/json");
 
-            _logger.LogDebug(
-                "Sending Llama completion request to {Endpoint}.",
-                endpoint);
+            _logger.LogInformation(
+                $"Sending Llama completion request to {endpoint}.\n{json}"
+            );
 
             using var response =
                 await _httpClient.PostAsync(
@@ -138,26 +138,11 @@ namespace AIRadio.Server.Services.AI
                     "Llama returned an empty HTTP response.");
             }
 
-            LlamaCompletionResponse? result;
+            _logger.LogInformation(
+                $"Received Llama completion result\n{responseJson}"
+            );
 
-            try
-            {
-                result =
-                    LlamaJsonOptions.Deserialize<
-                        LlamaCompletionResponse>(
-                            responseJson);
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Unable to deserialize Llama completion response: {Response}",
-                    responseJson);
-
-                throw new InvalidOperationException(
-                    "Llama returned an invalid completion response.",
-                    ex);
-            }
+            var result = LlamaJsonOptions.Deserialize<LlamaCompletionResponse>(responseJson);
 
             if (result is null)
             {
