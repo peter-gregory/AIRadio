@@ -33,12 +33,7 @@ namespace AIRadio.Server.Services.AI
         private bool _isInitialized;
         private bool _disposed;
 
-        public ConversationLlamaClient(
-            ILogger<ConversationLlamaClient> logger,
-            ILlamaHttpClient llama,
-            IConfiguration configuration,
-            ISoundEffectManager soundEffectManager,
-            IToolExecutor toolExecutor)
+        public ConversationLlamaClient(ILogger<ConversationLlamaClient> logger, ILlamaHttpClient llama, IConfiguration configuration, ISoundEffectManager soundEffectManager, IToolExecutor toolExecutor)
         {
             _logger = logger;
             _llama = llama;
@@ -55,35 +50,20 @@ namespace AIRadio.Server.Services.AI
         {
             _logger.LogInformation("Starting initialize llama client");
             ThrowIfDisposed();
-            _logger.LogInformation("Lock cancellation token");
             await _requestLock.WaitAsync(cancellationToken);
             try
             {
-                _logger.LogInformation("Test if already initialized");
                 if (_isInitialized) return;
-                _logger.LogInformation("Ensure system prompt");
                 await EnsureSystemPromptAsync(cancellationToken);
-                _logger.LogInformation("Initialize llama http client");
                 await _llama.InitializeAsync(cancellationToken);
-                _logger.LogInformation("Reset history");
                 ResetHistoryInternal();
                 _logger.LogInformation("Conversation Llama client initialized.");
             }
             finally { _requestLock.Release(); }
-            _logger.LogInformation("Finish initialize llama client");
         }
 
-        public async Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default)
-        {
-            var result = await ExecuteConversationAsync(userMessage, true, cancellationToken);
-            return result;
-        }
-
-        public async Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default)
-        {
-            var result = await ExecuteConversationAsync(userMessage, false, cancellationToken);
-            return result;
-        }
+        public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, true, cancellationToken);
+        public Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, false, cancellationToken);
 
         public async Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default)
         {
@@ -169,47 +149,26 @@ namespace AIRadio.Server.Services.AI
         {
             if (_systemPrompt is not null) return;
 
-            _logger.LogInformation("Building system prompt");
-
             var configuredPath = _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException("Application:PromptsDirectory is not configured.");
-            var promptsPath = Path.IsPathRooted(configuredPath)
-                ? configuredPath
-                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
+            var promptsPath = Path.IsPathRooted(configuredPath) ? configuredPath : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
             var promptFile = Path.Combine(promptsPath, "conversation-system.txt");
 
-            if (!File.Exists(promptFile))
-                throw new FileNotFoundException("Conversation Llama system prompt was not found.", promptFile);
-
-            _logger.LogInformation("Load system prompt sound effects");
+            if (!File.Exists(promptFile)) throw new FileNotFoundException("Conversation Llama system prompt was not found.", promptFile);
 
             var soundsDirectory = _configuration["Application:SoundsDirectory"]
                 ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured.");
-            soundsDirectory = Path.IsPathRooted(soundsDirectory)
-                ? soundsDirectory
-                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
+            soundsDirectory = Path.IsPathRooted(soundsDirectory) ? soundsDirectory : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
             await _soundEffectManager.InitializeAsync(soundsDirectory, cancellationToken);
 
-            _logger.LogInformation("Load system prompt from file");
-
             var prompt = (await File.ReadAllTextAsync(promptFile, cancellationToken)).Trim();
-
-            _logger.LogInformation("Load system prompt from tools");
-
             var toolUsage = _toolExecutor.GetPromptText();
-
-            _logger.LogInformation("Load system prompt from sounds");
-
             var soundUsage = _soundEffectManager.GetPromptText();
-
-            _logger.LogInformation("Build system prompt sections");
 
             var sections = new List<string> { prompt };
             if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
             _systemPrompt = string.Join("\n", sections);
-
-            _logger.LogInformation("Fininshed Build system prompt");
         }
 
         private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
@@ -217,13 +176,14 @@ namespace AIRadio.Server.Services.AI
             var message = new LlamaCompletionRequest
             {
                 Messages = _history.ToList(),
-                ResponseFormat = new LlamaResponseFormat()
+                ResponseFormat = new LlamaResponseFormat
+                {
+                    Type = "json_object",
+                    Schema = LlamaResponseSchema.Create()
+                }
             };
 
-            var completion = await _llama.CompleteAsync(
-                message,
-                cancellationToken);
-
+            var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
             return ParseResponse(completion);
         }
