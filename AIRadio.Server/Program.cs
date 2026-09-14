@@ -165,11 +165,14 @@ Log.Logger.Information("Startup: add LocationService ");
 
 builder.Services.AddSingleton<ILocationService, LocationService>();
 
-Log.Logger.Information("Startup: add AlarmManagerService ");
+Log.Logger.Information("Startup: add AlarmService ");
 
-builder.Services.AddSingleton<AlarmManagerService>();
-builder.Services.AddSingleton<IAlarmManagerService>(sp => sp.GetRequiredService<AlarmManagerService>());
-builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmManagerService>());
+builder.Services.AddSingleton<IAlarmService, AlarmService>();
+
+Log.Logger.Information("Startup: add AlarmManager ");
+
+builder.Services.AddSingleton<AlarmManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmManager>());
 
 Log.Logger.Information("Startup: add RadioService ");
 
