@@ -6,14 +6,11 @@ namespace AIRadio.Server.Services.Events
 {
     public sealed class EventTool : ITool
     {
-        private readonly ILogger<EventTool> _logger;
-        private readonly IAlarmManagerService _alarmManager;
+        private readonly IAlarmService _alarmService;
 
-        public EventTool(IAlarmManagerService alarmManager, ILogger<EventTool> logger)
+        public EventTool(IAlarmService alarmService)
         {
-            _alarmManager = alarmManager;
-            _logger = logger;
-            _logger.LogInformation("Fininshed construction EventTool");
+            _alarmService = alarmService;
         }
 
         public string Name => "events";
@@ -28,7 +25,7 @@ namespace AIRadio.Server.Services.Events
             var timestamp = request.GetArgument<DateTime?>("timestamp");
             var includeAlarms = request.GetBoolean("includeAlarms") ?? true;
             var includeReminders = request.GetBoolean("includeReminders") ?? true;
-            var events = _alarmManager.GetEvents(timestamp);
+            var events = _alarmService.GetEvents(timestamp);
 
             var filtered = events.Where(eventItem =>
                 (includeAlarms && eventItem.Type == ScheduledEventType.Alarm) ||
