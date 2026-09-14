@@ -45,6 +45,7 @@ namespace AIRadio.Server.Services.AI
             _configuration = configuration;
             _soundEffectManager = soundEffectManager;
             _toolExecutor = toolExecutor;
+            _logger.LogInformation("Fininshed constructing ConversationLlamaClient");
         }
 
         public bool IsInitialized => _isInitialized;
@@ -52,17 +53,24 @@ namespace AIRadio.Server.Services.AI
 
         public async Task InitializeAsync(CancellationToken cancellationToken = default)
         {
+            _logger.LogInformation("Starting initialize llama client");
             ThrowIfDisposed();
+            _logger.LogInformation("Lock cancellation token");
             await _requestLock.WaitAsync(cancellationToken);
             try
             {
+                _logger.LogInformation("Test if already initialized");
                 if (_isInitialized) return;
+                _logger.LogInformation("Ensure system prompt");
                 await EnsureSystemPromptAsync(cancellationToken);
+                _logger.LogInformation("Initialize llama http client");
                 await _llama.InitializeAsync(cancellationToken);
+                _logger.LogInformation("Reset history");
                 ResetHistoryInternal();
                 _logger.LogInformation("Conversation Llama client initialized.");
             }
             finally { _requestLock.Release(); }
+            _logger.LogInformation("Finish initialize llama client");
         }
 
         public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) =>

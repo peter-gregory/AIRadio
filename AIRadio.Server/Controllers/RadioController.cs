@@ -23,6 +23,7 @@ namespace AIRadio.Server.Controllers
         {
             try
             {
+                _logger.LogInformation("Received POST message " + prompt.Text);
                 var result = await _radioService.Stt(prompt.Text!);
                 return result;
             }

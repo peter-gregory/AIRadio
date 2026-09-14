@@ -25,7 +25,11 @@ namespace AIRadio.Server.Services.Sounds
         public bool IsInitialized { get; private set; }
         public int SoundEffectCount => _soundEffects.Count;
 
-        public SoundEffectManager(ILogger<SoundEffectManager> logger) => _logger = logger;
+        public SoundEffectManager(ILogger<SoundEffectManager> logger)
+        {
+            _logger = logger;
+            _logger.LogInformation("Finished initializing SoundEffectManager");
+        }
 
         public async Task InitializeAsync(string soundsDirectory, CancellationToken cancellationToken = default)
         {

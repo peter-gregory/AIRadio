@@ -43,6 +43,7 @@ namespace AIRadio.Server.Services.Radio
         public Task ProcessSpeechAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
+            _logger.LogInformation("Processing received voice prompt: " + text);
             return _intentService.ProcessAsync(text, cancellationToken);
         }
 

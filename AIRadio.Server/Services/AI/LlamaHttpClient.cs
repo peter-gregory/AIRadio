@@ -36,6 +36,7 @@ namespace AIRadio.Server.Services.AI
             _configuration = configuration;
             _logger = logger;
             _httpClient = httpClient;
+            _logger.LogInformation("Finished creating LlamaHttpClient");
         }
 
         public bool IsInitialized =>

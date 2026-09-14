@@ -41,6 +41,8 @@ namespace AIRadio.Server.Services.Radio
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
 
+            _logger.LogInformation("Processing text prompt: " + text);
+
             if (!_queue.TryEnqueue(text))
             {
                 _logger.LogDebug(
@@ -66,6 +68,7 @@ namespace AIRadio.Server.Services.Radio
         {
             try
             {
+                _logger.LogInformation("Processing intent for " + text);
                 var match = _intentParser.Match(text);
 
                 if (match is not null)
@@ -86,7 +89,7 @@ namespace AIRadio.Server.Services.Radio
                         return;
                     }
 
-                    if (string.Equals(
+                    else if (string.Equals(
                             match.Intent,
                             "WakeUp",
                             StringComparison.OrdinalIgnoreCase))
@@ -99,6 +102,10 @@ namespace AIRadio.Server.Services.Radio
                             "Wake-up detected by regex rule {RuleName}: {Text}.",
                             match.RuleName,
                             text);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Intent is unknown for text " + text);
                     }
                 }
 
