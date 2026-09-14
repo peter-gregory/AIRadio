@@ -213,6 +213,15 @@ namespace AIRadio.Server.Services.AI
 
         [JsonProperty("tool_choice", NullValueHandling = NullValueHandling.Ignore)]
         public object? ToolChoice { get; set; }
+
+        [JsonProperty("response_format", NullValueHandling = NullValueHandling.Ignore)]
+        public LlamaResponseFormat? ResponseFormat { get; set; }
+    }
+
+    public sealed class LlamaResponseFormat
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = "json_object";
     }
 
     public sealed class LlamaToolDefinition
@@ -282,14 +291,14 @@ namespace AIRadio.Server.Services.AI
 
         [JsonIgnore]
         public string? Content =>
-            Choices.FirstOrDefault()?
-                .Message?
-                .Content;
+            Choices.FirstOrDefault()?.
+                Message?.
+                Content;
 
         [JsonIgnore]
         public string? FinishReason =>
-            Choices.FirstOrDefault()?
-                .FinishReason;
+            Choices.FirstOrDefault()?.
+                FinishReason;
     }
 
     public sealed class LlamaCompletionChoice
