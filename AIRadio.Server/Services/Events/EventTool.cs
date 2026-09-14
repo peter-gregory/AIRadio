@@ -6,11 +6,14 @@ namespace AIRadio.Server.Services.Events
 {
     public sealed class EventTool : ITool
     {
+        private readonly ILogger<EventTool> _logger;
         private readonly IAlarmManagerService _alarmManager;
 
-        public EventTool(IAlarmManagerService alarmManager)
+        public EventTool(IAlarmManagerService alarmManager, ILogger<EventTool> logger)
         {
             _alarmManager = alarmManager;
+            _logger = logger;
+            _logger.LogInformation("Fininshed construction EventTool");
         }
 
         public string Name => "events";

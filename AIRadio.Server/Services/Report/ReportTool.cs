@@ -11,17 +11,20 @@ namespace AIRadio.Server.Services.Report
 {
     public sealed class ReportTool : ITool
     {
+        private readonly ILogger<ReportTool> _logger;
         private readonly IAlarmManagerService _alarmManager;
         private readonly IWeatherService _weatherService;
         private readonly INewsService _newsService;
         private readonly ILocationService _locationService;
 
-        public ReportTool(IAlarmManagerService alarmManager, IWeatherService weatherService, INewsService newsService, ILocationService locationService)
+        public ReportTool(IAlarmManagerService alarmManager, IWeatherService weatherService, INewsService newsService, ILocationService locationService, ILogger<ReportTool> logger)
         {
             _alarmManager = alarmManager;
             _weatherService = weatherService;
             _newsService = newsService;
             _locationService = locationService;
+            _logger = logger;
+            _logger.LogInformation("Fininshed construction ReportTool");
         }
 
         public string Name => "report";

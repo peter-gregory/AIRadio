@@ -6,13 +6,16 @@ namespace AIRadio.Server.Services.News
 {
     public sealed class NewsTool : ITool
     {
+        private ILogger<NewsTool> _logger;
         private readonly INewsService _newsService;
         private readonly ILocationService _locationService;
 
-        public NewsTool(INewsService newsService, ILocationService locationService)
+        public NewsTool(INewsService newsService, ILocationService locationService, ILogger<NewsTool> logger)
         {
+            _logger = logger;
             _newsService = newsService;
             _locationService = locationService;
+            _logger.LogInformation("Finished constructing NewsTool");
         }
 
         public string Name => "news";

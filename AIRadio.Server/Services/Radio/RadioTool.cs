@@ -1,6 +1,7 @@
 using AIRadio.Server.Models.Radio;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Mpv;
+using Microsoft.AspNetCore.Identity.Data;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -20,6 +21,7 @@ namespace AIRadio.Server.Services.Radio
             _logger = logger;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
+            _logger.LogInformation("Finished RadioTool construction");
         }
 
         public string Name => "radio";

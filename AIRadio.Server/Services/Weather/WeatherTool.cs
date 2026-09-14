@@ -6,13 +6,16 @@ namespace AIRadio.Server.Services.Weather
 {
     public sealed class WeatherTool : ITool
     {
+        private readonly ILogger<WeatherTool> _logger;
         private readonly IWeatherService _weatherService;
         private readonly ILocationService _locationService;
 
-        public WeatherTool(IWeatherService weatherService, ILocationService locationService)
+        public WeatherTool(IWeatherService weatherService, ILocationService locationService, ILogger<WeatherTool> logger)
         {
+            _logger = logger;
             _weatherService = weatherService;
             _locationService = locationService;
+            _logger.LogInformation("Fininshed construction for WeatherTool");
         }
 
         public string Name => "weather";

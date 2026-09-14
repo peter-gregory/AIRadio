@@ -5,11 +5,14 @@ namespace AIRadio.Server.Services.Network
 {
     public sealed class WifiTool : ITool
     {
+        private readonly ILogger<WifiTool> _logger;
         private readonly IWifiManager _wifiManager;
 
-        public WifiTool(IWifiManager wifiManager)
+        public WifiTool(IWifiManager wifiManager, ILogger<WifiTool> logger)
         {
             _wifiManager = wifiManager ?? throw new ArgumentNullException(nameof(wifiManager));
+            _logger = logger;
+            _logger.LogInformation("Fininshed construct WifiTool");
         }
 
         public string Name => "wifi";

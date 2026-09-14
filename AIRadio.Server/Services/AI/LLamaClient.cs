@@ -163,30 +163,47 @@ namespace AIRadio.Server.Services.AI
         {
             if (_systemPrompt is not null) return;
 
+            _logger.LogInformation("Building system prompt");
+
             var configuredPath = _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException("Application:PromptsDirectory is not configured.");
             var promptsPath = Path.IsPathRooted(configuredPath)
                 ? configuredPath
                 : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
             var promptFile = Path.Combine(promptsPath, "conversation-system.txt");
+
             if (!File.Exists(promptFile))
                 throw new FileNotFoundException("Conversation Llama system prompt was not found.", promptFile);
+
+            _logger.LogInformation("Load system prompt sound effects");
 
             var soundsDirectory = _configuration["Application:SoundsDirectory"]
                 ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured.");
             soundsDirectory = Path.IsPathRooted(soundsDirectory)
                 ? soundsDirectory
                 : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
-
             await _soundEffectManager.InitializeAsync(soundsDirectory, cancellationToken);
+
+            _logger.LogInformation("Load system prompt from file");
+
             var prompt = (await File.ReadAllTextAsync(promptFile, cancellationToken)).Trim();
+
+            _logger.LogInformation("Load system prompt from tools");
+
             var toolUsage = _toolExecutor.GetPromptText();
+
+            _logger.LogInformation("Load system prompt from sounds");
+
             var soundUsage = _soundEffectManager.GetPromptText();
+
+            _logger.LogInformation("Build system prompt sections");
 
             var sections = new List<string> { prompt };
             if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
             _systemPrompt = string.Join("\n", sections);
+
+            _logger.LogInformation("Fininshed Build system prompt " + _systemPrompt);
         }
 
         private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)

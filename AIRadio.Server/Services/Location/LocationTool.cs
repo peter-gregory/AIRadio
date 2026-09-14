@@ -4,11 +4,14 @@ namespace AIRadio.Server.Services.Location
 
     public sealed class LocationTool : ITool
     {
+        private readonly ILogger<LocationTool> _logger;
         private readonly ILocationService _locationService;
 
-        public LocationTool(ILocationService locationService)
+        public LocationTool(ILocationService locationService, ILogger<LocationTool> logger)
         {
+            _logger = logger;
             _locationService = locationService;
+            _logger.LogInformation("Finish construction of LocationTool");
         }
 
         public string Name => "location";

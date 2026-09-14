@@ -6,11 +6,14 @@ namespace AIRadio.Server.Services.Time
 {
     public sealed class TimeTool : ITool
     {
+        private readonly ILogger<TimeTool> _logger;
         private readonly ILocationService _locationService;
 
-        public TimeTool(ILocationService locationService)
+        public TimeTool(ILocationService locationService, ILogger<TimeTool> logger)
         {
             _locationService = locationService;
+            _logger = logger;
+            _logger.LogInformation("Finished construction TimeTool");
         }
 
         public string Name => "time";
