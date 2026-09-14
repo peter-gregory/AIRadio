@@ -12,14 +12,14 @@ namespace AIRadio.Server.Services.Report
     public sealed class ReportTool : ITool
     {
         private readonly ILogger<ReportTool> _logger;
-        private readonly IAlarmManagerService _alarmManager;
+        private readonly IAlarmService _alarmService;
         private readonly IWeatherService _weatherService;
         private readonly INewsService _newsService;
         private readonly ILocationService _locationService;
 
-        public ReportTool(IAlarmManagerService alarmManager, IWeatherService weatherService, INewsService newsService, ILocationService locationService, ILogger<ReportTool> logger)
+        public ReportTool(IAlarmService alarmManager, IWeatherService weatherService, INewsService newsService, ILocationService locationService, ILogger<ReportTool> logger)
         {
-            _alarmManager = alarmManager;
+            _alarmService = alarmManager;
             _weatherService = weatherService;
             _newsService = newsService;
             _locationService = locationService;
@@ -61,7 +61,7 @@ namespace AIRadio.Server.Services.Report
                 {
                     case "events":
                     case "reminders":
-                        events = _alarmManager.GetEvents(timestamp);
+                        events = _alarmService.GetEvents(timestamp);
                         break;
                     case "weather":
                         weather = await _weatherService.GetWeatherAsync(location!, cancellationToken);
