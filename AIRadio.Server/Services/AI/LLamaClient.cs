@@ -216,7 +216,8 @@ namespace AIRadio.Server.Services.AI
         {
             var message = new LlamaCompletionRequest
             {
-                Messages = _history.ToList()
+                Messages = _history.ToList(),
+                ResponseFormat = new LlamaResponseFormat()
             };
 
             var completion = await _llama.CompleteAsync(
@@ -235,8 +236,8 @@ namespace AIRadio.Server.Services.AI
             _isInitialized = true;
         }
 
-        private void AddUserMessage(string message) => _history.Add(new LlamaMessage { Role = LlamaMessageRole.User.ToString(), Content = message });
-        private void AddToolResultToHistory(ToolResult result) => _history.Add(new LlamaMessage { Role = LlamaMessageRole.Tool.ToString(), Content = result.ToJson() });
+        private void AddUserMessage(string message) => _history.Add(new LlamaMessage { Role = LlamaMessageRoles.User, Content = message });
+        private void AddToolResultToHistory(ToolResult result) => _history.Add(new LlamaMessage { Role = LlamaMessageRoles.Tool, Content = result.ToJson() });
 
         private void AddAssistantResponse(LlamaCompletionResponse completion)
         {
