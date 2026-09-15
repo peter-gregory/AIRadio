@@ -15,7 +15,16 @@ namespace AIRadio.Server.Services.Events
 
         public string Name => "events";
 
-        public string GetPromptText() => "events{timestamp?;includeAlarms?=true;includeReminders?=true}";
+        public string GetLlmInstructions() => """
+EVENTS TOOL
+Purpose: Retrieve scheduled alarms and reminders.
+Parameters:
+- timestamp (optional): The date/time for which to retrieve events.
+- includeAlarms (optional): Include alarms; defaults to true.
+- includeReminders (optional): Include reminders; defaults to true.
+Use events when the user asks about scheduled alarms, reminders, or upcoming scheduled events.
+Treat returned event data as authoritative.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
