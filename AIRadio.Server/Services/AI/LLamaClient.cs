@@ -158,7 +158,7 @@ namespace AIRadio.Server.Services.AI
             await _soundEffectManager.InitializeAsync(soundsDirectory, cancellationToken);
 
             var prompt = (await File.ReadAllTextAsync(promptFile, cancellationToken)).Trim();
-            var toolUsage = _toolExecutor.GetPromptText();
+            var toolUsage = _toolExecutor.GetLlmInstructions();
             var soundUsage = _soundEffectManager.GetPromptText();
             var sections = new List<string> { prompt };
             if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
