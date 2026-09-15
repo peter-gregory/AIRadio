@@ -53,6 +53,7 @@ namespace AIRadio.Server.Services.AI
                 if (_isInitialized) return;
                 await EnsureSystemPromptAsync(cancellationToken);
                 await _llama.InitializeAsync(cancellationToken);
+                await WarmSystemPromptAsync(cancellationToken);
                 ResetHistoryInternal();
                 _logger.LogInformation("Conversation Llama client initialized.");
             }
@@ -138,6 +139,7 @@ namespace AIRadio.Server.Services.AI
             if (_isInitialized) return;
             await EnsureSystemPromptAsync(cancellationToken);
             await _llama.InitializeAsync(cancellationToken);
+            await WarmSystemPromptAsync(cancellationToken);
             ResetHistoryInternal();
             _logger.LogInformation("Conversation Llama client initialized on first use.");
         }
@@ -164,6 +166,31 @@ namespace AIRadio.Server.Services.AI
             if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
             _systemPrompt = string.Join("\n", sections);
+        }
+
+        private async Task WarmSystemPromptAsync(CancellationToken cancellationToken)
+        {
+            if (_systemPrompt is null) throw new InvalidOperationException("The system prompt has not been initialized.");
+
+            _logger.LogInformation("Warming Llama system prompt cache.");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var request = new LlamaCompletionRequest
+            {
+                Messages =
+                [
+                    new LlamaMessage
+                    {
+                        Role = LlamaMessageRoles.System,
+                        Content = _systemPrompt
+                    }
+                ],
+                MaxTokens = 1,
+                Stream = false
+            };
+
+            await _llama.CompleteAsync(request, cancellationToken);
+            stopwatch.Stop();
+            _logger.LogInformation("Llama system prompt cache warmed in {ElapsedSeconds:F1} seconds.", stopwatch.Elapsed.TotalSeconds);
         }
 
         private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
