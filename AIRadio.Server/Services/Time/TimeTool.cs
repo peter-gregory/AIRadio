@@ -18,7 +18,12 @@ namespace AIRadio.Server.Services.Time
 
         public string Name => "time";
 
-        public string GetPromptText() => "time{}";
+        public string GetLlmInstructions() => """
+TIME TOOL
+Purpose: Retrieve the accurate current local time and date for the radio's persistent location.
+Use time whenever an accurate current date or time is required. Never guess the current time.
+The tool uses the radio's persistent location to provide local time context.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
