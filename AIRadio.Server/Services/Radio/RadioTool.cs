@@ -1,9 +1,6 @@
 using AIRadio.Server.Models.Radio;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Mpv;
-using Microsoft.AspNetCore.Identity.Data;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Radio
 {
@@ -13,64 +10,42 @@ namespace AIRadio.Server.Services.Radio
         private readonly IMpvManager _mpvManager;
         private readonly IMpvState _mpvState;
 
-        public RadioTool(
-            ILogger<RadioTool> logger,
-            IMpvManager mpvManager,
-            IMpvState mpvState)
+        public RadioTool(ILogger<RadioTool> logger, IMpvManager mpvManager, IMpvState mpvState)
         {
             _logger = logger;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
-            _logger.LogInformation("Finished RadioTool construction");
         }
 
         public string Name => "radio";
 
         public string GetPromptText() =>
-            "radio{command=play|next|previous|stop|volume|current|status|playlist;play:stationId|stationName;volume:0..100}";
+            "radio{action=play|next|previous|stop|volume|current|status|playlist;play:stationId|stationName;volume:0..100}";
 
-        public async Task<ToolResult> ExecuteAsync(
-            ToolRequest request,
-            CancellationToken cancellationToken = default)
+        public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-
             try
             {
-                var command = GetStringArgument(request, "command");
+                // The response parser also provides command for compatibility
+                // with older callers, but action is the model-facing syntax.
+                var action = request.GetString("action") ?? request.GetString("command");
+                if (string.IsNullOrWhiteSpace(action))
+                    return ToolResult.Failed(Name, "Radio tool request did not contain an action.");
 
-                if (string.IsNullOrWhiteSpace(command))
+                return action.ToLowerInvariant() switch
                 {
-                    return ToolResult.Failed(
-                        Name,
-                        "Radio tool request did not contain a command.");
-                }
-
-                switch (command.ToLowerInvariant())
-                {
-                    case "play":
-                        return await PlayAsync(request, cancellationToken);
-                    case "next":
-                        return await NextAsync(cancellationToken);
-                    case "previous":
-                        return await PreviousAsync(cancellationToken);
-                    case "stop":
-                        return await StopAsync(cancellationToken);
-                    case "volume":
-                        return await SetVolumeAsync(request, cancellationToken);
-                    case "current":
-                    case "status":
-                        return GetCurrentStation();
-                    case "playlist":
-                        return GetPlaylist();
-                    default:
-                        return ToolResult.Failed(
-                            Name,
-                            $"Unknown radio command '{command}'.");
-                }
+                    "play" => await PlayAsync(request, cancellationToken),
+                    "next" => await NextAsync(cancellationToken),
+                    "previous" => await PreviousAsync(cancellationToken),
+                    "stop" => await StopAsync(cancellationToken),
+                    "volume" => await SetVolumeAsync(request, cancellationToken),
+                    "current" or "status" => GetCurrentStation(),
+                    "playlist" => GetPlaylist(),
+                    _ => ToolResult.Failed(Name, $"Unknown radio action '{action}'.")
+                };
             }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -81,157 +56,97 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
-        private async Task<ToolResult> PlayAsync(
-            ToolRequest request,
-            CancellationToken cancellationToken)
+        private async Task<ToolResult> PlayAsync(ToolRequest request, CancellationToken cancellationToken)
         {
             var station = GetStationFromRequest(request);
-            if (station is null)
-                return ToolResult.Failed(Name, "No radio station was specified.");
-
+            if (station is null) return ToolResult.Failed(Name, "No radio station was specified.");
             await _mpvManager.PlayAsync(station, cancellationToken);
-            return ToolResult.Successful(
-                Name,
-                $"Playing {station.Name}.",
-                new { Action = "play", Station = station });
+            return ToolResult.Successful(Name, $"Playing {station.Name}.", new { Action = "play", Station = station });
         }
 
-        private async Task<ToolResult> NextAsync(
-            CancellationToken cancellationToken)
+        private async Task<ToolResult> NextAsync(CancellationToken cancellationToken)
         {
             await _mpvManager.PlayNextRadioStationAsync(cancellationToken);
-            return ToolResult.Successful(
-                Name,
-                $"Playing {_mpvState.RadioStation?.Name ?? "next station"}.",
-                CreatePlaybackData());
+            return ToolResult.Successful(Name, $"Playing {_mpvState.RadioStation?.Name ?? "next station"}.", CreatePlaybackData());
         }
 
-        private async Task<ToolResult> PreviousAsync(
-            CancellationToken cancellationToken)
+        private async Task<ToolResult> PreviousAsync(CancellationToken cancellationToken)
         {
             await _mpvManager.PlayPreviousRadioStationAsync(cancellationToken);
-            return ToolResult.Successful(
-                Name,
-                $"Playing {_mpvState.RadioStation?.Name ?? "previous station"}.",
-                CreatePlaybackData());
+            return ToolResult.Successful(Name, $"Playing {_mpvState.RadioStation?.Name ?? "previous station"}.", CreatePlaybackData());
         }
 
-        private async Task<ToolResult> StopAsync(
-            CancellationToken cancellationToken)
+        private async Task<ToolResult> StopAsync(CancellationToken cancellationToken)
         {
             await _mpvManager.StopAsync(cancellationToken);
             return ToolResult.Successful(Name, "Radio playback stopped.", new { Action = "stop" });
         }
 
-        private async Task<ToolResult> SetVolumeAsync(
-            ToolRequest request,
-            CancellationToken cancellationToken)
+        private async Task<ToolResult> SetVolumeAsync(ToolRequest request, CancellationToken cancellationToken)
         {
             var volume = GetIntArgument(request, "volume");
-            if (volume is null)
-                return ToolResult.Failed(Name, "A volume value from 0 to 100 is required.");
-
+            if (volume is null) return ToolResult.Failed(Name, "A volume value from 0 to 100 is required.");
             volume = Math.Clamp(volume.Value, 0, 100);
             await _mpvManager.SetVolumeAsync(volume.Value, cancellationToken);
-            return ToolResult.Successful(
-                Name,
-                $"Radio volume set to {volume}.",
-                new { Action = "volume", Volume = volume });
+            return ToolResult.Successful(Name, $"Radio volume set to {volume}.", new { Action = "volume", Volume = volume });
         }
 
         private ToolResult GetCurrentStation()
         {
             var station = _mpvState.RadioStation;
             if (station is null)
-            {
-                return ToolResult.Successful(
-                    Name,
-                    "No radio station is currently playing.",
-                    new { IsPlaying = false });
-            }
+                return ToolResult.Successful(Name, "No radio station is currently playing.", new { IsPlaying = false });
 
-            return ToolResult.Successful(
-                Name,
-                $"Currently playing {station.Name}.",
-                new
-                {
-                    IsPlaying = _mpvState.IsPlaying,
-                    Station = station,
-                    Title = _mpvState.Title,
-                    Artist = _mpvState.Artist,
-                    Album = _mpvState.Album
-                });
+            return ToolResult.Successful(Name, $"Currently playing {station.Name}.", new
+            {
+                IsPlaying = _mpvState.IsPlaying,
+                Station = station,
+                Title = _mpvState.Title,
+                Artist = _mpvState.Artist,
+                Album = _mpvState.Album
+            });
         }
 
         private ToolResult GetPlaylist()
         {
             var playlist = _mpvState.RadioPlaylist;
-            return ToolResult.Successful(
-                Name,
-                $"The current radio playlist contains {playlist.Count} station(s).",
-                new
-                {
-                    Count = playlist.Count,
-                    CurrentIndex = _mpvState.RadioPlaylistIndex,
-                    Source = _mpvState.RadioPlaylistSource?.ToString(),
-                    Stations = playlist
-                });
+            return ToolResult.Successful(Name, $"The current radio playlist contains {playlist.Count} station(s).", new
+            {
+                Count = playlist.Count,
+                CurrentIndex = _mpvState.RadioPlaylistIndex,
+                Source = _mpvState.RadioPlaylistSource?.ToString(),
+                Stations = playlist
+            });
         }
 
         private RadioStation? GetStationFromRequest(ToolRequest request)
         {
-            var stationId = GetStringArgument(request, "stationId");
+            var stationId = request.GetString("stationId");
             if (!string.IsNullOrWhiteSpace(stationId))
-            {
-                return _mpvState.RadioPlaylist.FirstOrDefault(
-                    station => string.Equals(
-                        station.Id,
-                        stationId,
-                        StringComparison.OrdinalIgnoreCase));
-            }
+                return _mpvState.RadioPlaylist.FirstOrDefault(station => string.Equals(station.Id, stationId, StringComparison.OrdinalIgnoreCase));
 
-            var stationName = GetStringArgument(request, "stationName");
+            var stationName = request.GetString("stationName");
             if (!string.IsNullOrWhiteSpace(stationName))
-            {
-                return _mpvState.RadioPlaylist.FirstOrDefault(
-                    station => string.Equals(
-                        station.Name,
-                        stationName,
-                        StringComparison.OrdinalIgnoreCase));
-            }
+                return _mpvState.RadioPlaylist.FirstOrDefault(station => string.Equals(station.Name, stationName, StringComparison.OrdinalIgnoreCase));
 
             return null;
         }
 
-        private object CreatePlaybackData() =>
-            new
-            {
-                IsPlaying = _mpvState.IsPlaying,
-                Station = _mpvState.RadioStation,
-                PlaylistIndex = _mpvState.RadioPlaylistIndex,
-                PlaylistCount = _mpvState.RadioPlaylist.Count,
-                PlaylistSource = _mpvState.RadioPlaylistSource?.ToString(),
-                Title = _mpvState.Title,
-                Artist = _mpvState.Artist,
-                Album = _mpvState.Album
-            };
-
-        private static string? GetStringArgument(
-            ToolRequest request,
-            string name)
+        private object CreatePlaybackData() => new
         {
-            if (request.Arguments is null ||
-                !request.Arguments.TryGetValue(name, out var value))
-                return null;
+            IsPlaying = _mpvState.IsPlaying,
+            Station = _mpvState.RadioStation,
+            PlaylistIndex = _mpvState.RadioPlaylistIndex,
+            PlaylistCount = _mpvState.RadioPlaylist.Count,
+            PlaylistSource = _mpvState.RadioPlaylistSource?.ToString(),
+            Title = _mpvState.Title,
+            Artist = _mpvState.Artist,
+            Album = _mpvState.Album
+        };
 
-            return value?.ToString();
-        }
-
-        private static int? GetIntArgument(
-            ToolRequest request,
-            string name)
+        private static int? GetIntArgument(ToolRequest request, string name)
         {
-            var value = GetStringArgument(request, name);
+            var value = request.GetString(name);
             return int.TryParse(value, out var result) ? result : null;
         }
     }
