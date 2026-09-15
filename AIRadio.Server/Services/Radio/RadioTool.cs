@@ -19,8 +19,19 @@ namespace AIRadio.Server.Services.Radio
 
         public string Name => "radio";
 
-        public string GetPromptText() =>
-            "radio{action=play|next|previous|stop|volume|current|status|playlist;play:stationId|stationName;volume:0..100}";
+        public string GetLlmInstructions() => """
+RADIO TOOL
+Purpose: Control radio playback and inspect the current radio state.
+Actions:
+- play: Start a station from the current playlist. Requires stationId or stationName.
+- next: Play the next station in the current playlist.
+- previous: Play the previous station in the current playlist.
+- stop: Stop radio playback.
+- volume: Set playback volume. Requires volume from 0 to 100.
+- current or status: Get the current station and playback metadata.
+- playlist: Get the available stations in the current playlist.
+Use radio when the request depends on radio playback or radio state.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
