@@ -32,11 +32,14 @@ namespace AIRadio.Server.Services.Report
         public string GetLlmInstructions() => """
 REPORT TOOL
 Purpose: Gather a general current summary for the user.
-Parameters:
-- sections: One or more sections to retrieve: events, reminders, weather, or news.
-Use report when the user asks what is going on, what's happening, what's new, a morning report, or another general current summary.
-Select only the sections needed to answer the request.
-Use the returned data as authoritative and combine it into a concise spoken summary.
+Parameter:
+- sections: Required. Comma-separated list of events, reminders, weather, and/or news. Quote the value because commas separate tool parameters.
+Use report for general requests such as "what's happening" or "give me a morning report". Select only needed sections. Treat returned data as authoritative and summarize it naturally.
+Examples:
+"Give me a morning report" -> {tool:report,sections="events,weather,news"}
+"What's the weather and news?" -> {tool:report,sections="weather,news"}
+"What are my reminders?" -> {tool:report,sections="reminders"}
+"What's happening?" -> {tool:report,sections="events,weather,news"}
 """;
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
@@ -44,7 +47,11 @@ Use the returned data as authoritative and combine it into a concise spoken summ
             ArgumentNullException.ThrowIfNull(request);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var sections = request.GetArgument<List<string>>("sections") ?? [];
+            var sectionsText = request.GetString("sections");
+            var sections = sectionsText?
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList() ?? [];
+
             if (sections.Count == 0)
                 return ToolResult.Failed(Name, "No report sections were specified.");
 
