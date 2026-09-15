@@ -21,12 +21,15 @@ namespace AIRadio.Server.Services.Weather
         public string Name => "weather";
 
         public string GetLlmInstructions() => """
-WEATHER TOOL
-Purpose: Retrieve current weather conditions and forecast information.
-Parameters:
-- location (optional): The location to query. If omitted, use the radio's persistent current location.
-Use weather for temperature, precipitation, humidity, wind, forecasts, and other weather requests.
-An explicit location is only a query location; do not change the radio's persistent location because of it.
+WEATHER
+Get current weather or forecasts.
+location: optional city, state, ZIP/postal code, or recognizable place. Omit to use the radio's persistent location.
+An explicit location is only for this query; it does not change the persistent location. Use weather for temperature, conditions, rain, snow, humidity, wind, or forecast. Never invent weather.
+Examples:
+"What's the weather?" -> {tool:weather}
+"What's the weather in Miami?" -> {tool:weather,location=Miami}
+"What's the weather in Miami, Florida?" -> {tool:weather,location="Miami, Florida"}
+"Will it rain in Orlando?" -> {tool:weather,location=Orlando}
 """;
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
