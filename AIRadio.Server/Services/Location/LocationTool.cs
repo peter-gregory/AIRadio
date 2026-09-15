@@ -16,7 +16,14 @@ namespace AIRadio.Server.Services.Location
 
         public string Name => "location";
 
-        public string GetPromptText() => "location{location?;omit=read current;set current=location}";
+        public string GetLlmInstructions() => """
+LOCATION TOOL
+Purpose: Read or update the radio's persistent current location.
+Parameters:
+- location: The location to set. Omit it to read the current location.
+Use this tool when the user explicitly gives a new location for the radio or when the current persistent location is needed.
+A location supplied only to weather or news is a query location and must not update the persistent location.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
