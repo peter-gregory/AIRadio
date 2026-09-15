@@ -1,0 +1,277 @@
+using AIRadio.Server.Models.LLama;
+using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
+
+namespace AIRadio.Server.Services.AI;
+
+public static class LlamaResponseParser
+{
+    private const string ToolPrefix = "{tool:";
+
+    public static LlamaResponse Parse(string content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(content);
+
+        var toolRequests = new List<ToolRequest>();
+        var spokenText = new System.Text.StringBuilder(content.Length);
+        var index = 0;
+
+        while (index < content.Length)
+        {
+            var start = content.IndexOf(ToolPrefix, index, StringComparison.OrdinalIgnoreCase);
+            if (start < 0)
+            {
+                spokenText.Append(content, index, content.Length - index);
+                break;
+            }
+
+            spokenText.Append(content, index, start - index);
+
+            if (!TryParseToolTag(content, start, out var end, out var request))
+            {
+                // An invalid tool tag is left in the spoken text rather than
+                // silently deleting model output.
+                spokenText.Append(content, start, ToolPrefix.Length);
+                index = start + ToolPrefix.Length;
+                continue;
+            }
+
+            toolRequests.Add(request);
+            index = end;
+        }
+
+        var response = new LlamaResponse
+        {
+            SpokenText = spokenText.ToString().Trim()
+        };
+        response.ToolRequests.AddRange(toolRequests);
+        return response;
+    }
+
+    private static bool TryParseToolTag(
+        string content,
+        int start,
+        out int end,
+        out ToolRequest request)
+    {
+        end = start;
+        request = new ToolRequest();
+
+        var cursor = start + ToolPrefix.Length;
+        var close = FindClosingBrace(content, cursor);
+        if (close < 0)
+            return false;
+
+        var body = content[cursor..close];
+        var fields = SplitFields(body);
+        if (fields.Count == 0 || string.IsNullOrWhiteSpace(fields[0]))
+            return false;
+
+        var name = fields[0].Trim();
+        if (!IsSimpleIdentifier(name))
+            return false;
+
+        var arguments = new JObject();
+        foreach (var field in fields.Skip(1))
+        {
+            var equals = IndexOfUnquoted(field, '=');
+            if (equals <= 0)
+                return false;
+
+            var key = field[..equals].Trim();
+            if (!IsSimpleIdentifier(key))
+                return false;
+
+            var value = ParseValue(field[(equals + 1)..].Trim());
+            if (value is null)
+                return false;
+
+            arguments[key] = value;
+
+            // Existing tools use "command" for their operation selector.
+            // Keep that API compatible while exposing the new model-facing
+            // syntax as "action".
+            if (key.Equals("action", StringComparison.OrdinalIgnoreCase) &&
+                arguments["command"] is null)
+            {
+                arguments["command"] = value;
+            }
+        }
+
+        request = new ToolRequest
+        {
+            Name = name,
+            Arguments = arguments
+        };
+        end = close + 1;
+        return true;
+    }
+
+    private static int FindClosingBrace(string text, int start)
+    {
+        var quoted = false;
+        var escaped = false;
+
+        for (var i = start; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (quoted && c == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (c == '}' && !quoted)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static List<string> SplitFields(string text)
+    {
+        var fields = new List<string>();
+        var start = 0;
+        var quoted = false;
+        var escaped = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (quoted && c == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (c == ',' && !quoted)
+            {
+                fields.Add(text[start..i].Trim());
+                start = i + 1;
+            }
+        }
+
+        if (quoted || escaped)
+            return [];
+
+        fields.Add(text[start..].Trim());
+        return fields;
+    }
+
+    private static int IndexOfUnquoted(string text, char target)
+    {
+        var quoted = false;
+        var escaped = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (quoted && c == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (c == target && !quoted)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static JToken? ParseValue(string value)
+    {
+        if (value.Length == 0)
+            return JValue.CreateString(string.Empty);
+
+        if (value[0] == '"')
+        {
+            if (value.Length < 2 || value[^1] != '"')
+                return null;
+
+            var inner = value[1..^1];
+            try
+            {
+                return JValue.CreateString(Unescape(inner));
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
+
+        if (value.Contains('"'))
+            return null;
+
+        return JValue.CreateString(value);
+    }
+
+    private static string Unescape(string value)
+    {
+        var result = new System.Text.StringBuilder(value.Length);
+        var escaped = false;
+
+        foreach (var c in value)
+        {
+            if (escaped)
+            {
+                if (c is not ('"' or '\\'))
+                    throw new FormatException("Unsupported escape sequence.");
+                result.Append(c);
+                escaped = false;
+            }
+            else if (c == '\\')
+            {
+                escaped = true;
+            }
+            else
+            {
+                result.Append(c);
+            }
+        }
+
+        if (escaped)
+            throw new FormatException("Incomplete escape sequence.");
+
+        return result.ToString();
+    }
+
+    private static bool IsSimpleIdentifier(string value) =>
+        value.Length > 0 && value.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.');
+}
