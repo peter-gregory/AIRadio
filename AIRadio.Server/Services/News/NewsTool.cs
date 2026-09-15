@@ -20,7 +20,16 @@ namespace AIRadio.Server.Services.News
 
         public string Name => "news";
 
-        public string GetPromptText() => "news{location?;category?;limit?=5}";
+        public string GetLlmInstructions() => """
+NEWS TOOL
+Purpose: Retrieve current news headlines.
+Parameters:
+- location (optional): The location for local news. If omitted, use the radio's persistent location when local context is implied.
+- category (optional): The requested news category or topic.
+- limit (optional): Maximum number of headlines; defaults to 5.
+Use news for current headlines, breaking news, local/national/world news, topic news, and similar requests.
+An explicit location is only a query location; do not change the radio's persistent location because of it.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
