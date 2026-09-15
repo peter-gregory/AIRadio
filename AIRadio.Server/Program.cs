@@ -169,6 +169,10 @@ Log.Logger.Information("Startup: add AlarmService ");
 
 builder.Services.AddSingleton<IAlarmService, AlarmService>();
 
+Log.Logger.Information("Startup: add ScheduleTool ");
+
+builder.Services.AddSingleton<ITool, ScheduleTool>();
+
 Log.Logger.Information("Startup: add AlarmManager ");
 
 builder.Services.AddSingleton<AlarmManager>();
