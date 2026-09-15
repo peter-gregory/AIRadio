@@ -4,7 +4,7 @@ namespace AIRadio.Server.Models.Tools
     {
         string Name { get; }
 
-        string GetPromptText();
+        string GetLlmInstructions();
 
         Task<ToolResult> ExecuteAsync(
             ToolRequest request,
