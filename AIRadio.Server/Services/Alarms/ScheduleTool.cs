@@ -42,7 +42,7 @@ Parameters:
 - pattern: Required for add/update. One of Once, Daily, Weekly, Monthly, Yearly.
 - date: Optional date for a Once schedule. Use a calendar date such as 2026-09-20.
 - timeOfDay: Optional time of day for an alarm, such as 07:30 or 7:30 AM. Alarms require this value. Reminders do not use timeOfDay.
-- daysOfWeek: Required for a Weekly schedule. Use day names such as Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, or Sunday.
+- daysOfWeek: Required for a Weekly schedule. Give one or more weekday names in a quoted string, separated by spaces. Also accept commas or the word 'and'. Use Weekdays for Monday-Friday and Weekends for Saturday-Sunday. Examples: "Monday Wednesday Friday", "Monday and Thursday", "Weekdays", "Weekends".
 - month: Optional month number 1-12 for a Yearly schedule. January is 1 and December is 12.
 - dayOfMonth: Optional day of month 1-31 for Monthly or Yearly schedules.
 - weekOfMonth: Optional week number for a monthly ordinal weekday schedule. Use 1, 2, 3, 4, or -1 for last.
@@ -84,8 +84,14 @@ User: "Set a daily alarm for 6:30 AM."
 User: "Remind me about the meeting every Monday."
 {tool:schedule,operation=add,type=Reminder,content="Meeting",pattern=Weekly,daysOfWeek="Monday"}
 
-User: "Remind me about trash day every Monday and Thursday."
-{tool:schedule,operation=add,type=Reminder,content="Take out the trash",pattern=Weekly,daysOfWeek="Monday,Thursday"}
+User: "Remind me about trash day every Monday Wednesday and Friday."
+{tool:schedule,operation=add,type=Reminder,content="Take out the trash",pattern=Weekly,daysOfWeek="Monday Wednesday Friday"}
+
+User: "Remind me every weekday to check the mail."
+{tool:schedule,operation=add,type=Reminder,content="Check the mail",pattern=Weekly,daysOfWeek="Weekdays"}
+
+User: "Remind me every weekend to check the pool."
+{tool:schedule,operation=add,type=Reminder,content="Check the pool",pattern=Weekly,daysOfWeek="Weekends"}
 
 User: "Remind me on the first Thursday of every month to check the meter."
 {tool:schedule,operation=add,type=Reminder,content="Check the meter",pattern=Monthly,weekOfMonth=1,weekdayOfMonth=Thursday}
@@ -242,12 +248,61 @@ First retrieve the event ID if it is not already known, then use:
                 Type = type,
                 Date = request.GetArgument<DateOnly?>("date"),
                 TimeOfDay = request.GetArgument<TimeSpan?>("timeOfDay"),
-                DaysOfWeek = request.GetArgument<DayOfWeek[]>("daysOfWeek") ?? [],
+                DaysOfWeek = ParseDaysOfWeek(request.GetString("daysOfWeek")),
                 Month = request.GetInt32("month"),
                 DayOfMonth = request.GetInt32("dayOfMonth"),
                 WeekOfMonth = request.GetInt32("weekOfMonth"),
                 WeekdayOfMonth = request.GetArgument<DayOfWeek?>("weekdayOfMonth")
             };
+        }
+
+        private static DayOfWeek[] ParseDaysOfWeek(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return [];
+
+            var normalized = value.Trim();
+
+            if (normalized.Equals("weekdays", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("every weekday", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    DayOfWeek.Monday,
+                    DayOfWeek.Tuesday,
+                    DayOfWeek.Wednesday,
+                    DayOfWeek.Thursday,
+                    DayOfWeek.Friday
+                ];
+            }
+
+            if (normalized.Equals("weekends", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("every weekend", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    DayOfWeek.Saturday,
+                    DayOfWeek.Sunday
+                ];
+            }
+
+            var tokens = normalized
+                .Replace(",", " ", StringComparison.Ordinal)
+                .Replace(" and ", " ", StringComparison.OrdinalIgnoreCase)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var days = new List<DayOfWeek>();
+
+            foreach (var token in tokens)
+            {
+                if (!Enum.TryParse<DayOfWeek>(token, true, out var day))
+                    throw new ArgumentException($"Unknown weekday '{token}'. Use Monday through Sunday, Weekdays, or Weekends.");
+
+                if (!days.Contains(day))
+                    days.Add(day);
+            }
+
+            return [.. days];
         }
 
         private static ScheduledEventType ParseEventType(string? value)
