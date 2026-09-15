@@ -32,12 +32,7 @@ namespace AIRadio.Server.Services.AI
         private bool _isInitialized;
         private bool _disposed;
 
-        public ConversationLlamaClient(
-            ILogger<ConversationLlamaClient> logger,
-            ILlamaHttpClient llama,
-            IConfiguration configuration,
-            ISoundEffectManager soundEffectManager,
-            IToolExecutor toolExecutor)
+        public ConversationLlamaClient(ILogger<ConversationLlamaClient> logger, ILlamaHttpClient llama, IConfiguration configuration, ISoundEffectManager soundEffectManager, IToolExecutor toolExecutor)
         {
             _logger = logger;
             _llama = llama;
@@ -64,21 +59,15 @@ namespace AIRadio.Server.Services.AI
             finally { _requestLock.Release(); }
         }
 
-        public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, true, cancellationToken);
+        public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, true, cancellationToken);
+        public Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, false, cancellationToken);
 
-        public Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default) =>
-            ExecuteConversationAsync(userMessage, false, cancellationToken);
-
-        public async Task<LlamaResponse> ContinueAsync(
-            IEnumerable<ToolResult> toolResults,
-            CancellationToken cancellationToken = default)
+        public async Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(toolResults);
             var results = toolResults.ToList();
-            if (results.Count == 0)
-                throw new ArgumentException("At least one tool result is required.", nameof(toolResults));
+            if (results.Count == 0) throw new ArgumentException("At least one tool result is required.", nameof(toolResults));
 
             await _requestLock.WaitAsync(cancellationToken);
             try
@@ -87,9 +76,7 @@ namespace AIRadio.Server.Services.AI
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
-                    foreach (var result in results)
-                        AddToolResultToHistory(result);
-
+                    foreach (var result in results) AddToolResultToHistory(result);
                     return await CompleteAsync(requestToken);
                 }
                 finally { EndRequest(); }
@@ -124,10 +111,7 @@ namespace AIRadio.Server.Services.AI
             return _history.ToList();
         }
 
-        private async Task<LlamaResponse> ExecuteConversationAsync(
-            string userMessage,
-            bool resetConversation,
-            CancellationToken cancellationToken)
+        private async Task<LlamaResponse> ExecuteConversationAsync(string userMessage, bool resetConversation, CancellationToken cancellationToken)
         {
             ThrowIfDisposed();
             ArgumentException.ThrowIfNullOrWhiteSpace(userMessage);
@@ -164,25 +148,18 @@ namespace AIRadio.Server.Services.AI
 
             var configuredPath = _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException("Application:PromptsDirectory is not configured.");
-            var promptsPath = Path.IsPathRooted(configuredPath)
-                ? configuredPath
-                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
+            var promptsPath = Path.IsPathRooted(configuredPath) ? configuredPath : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
             var promptFile = Path.Combine(promptsPath, "conversation-system.txt");
-
-            if (!File.Exists(promptFile))
-                throw new FileNotFoundException("Conversation Llama system prompt was not found.", promptFile);
+            if (!File.Exists(promptFile)) throw new FileNotFoundException("Conversation Llama system prompt was not found.", promptFile);
 
             var soundsDirectory = _configuration["Application:SoundsDirectory"]
                 ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured.");
-            soundsDirectory = Path.IsPathRooted(soundsDirectory)
-                ? soundsDirectory
-                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
+            soundsDirectory = Path.IsPathRooted(soundsDirectory) ? soundsDirectory : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
             await _soundEffectManager.InitializeAsync(soundsDirectory, cancellationToken);
 
             var prompt = (await File.ReadAllTextAsync(promptFile, cancellationToken)).Trim();
             var toolUsage = _toolExecutor.GetPromptText();
             var soundUsage = _soundEffectManager.GetPromptText();
-
             var sections = new List<string> { prompt };
             if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
@@ -191,11 +168,7 @@ namespace AIRadio.Server.Services.AI
 
         private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
         {
-            var message = new LlamaCompletionRequest
-            {
-                Messages = _history.ToList()
-            };
-
+            var message = new LlamaCompletionRequest { Messages = _history.ToList() };
             var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
             return ParseResponse(completion);
@@ -203,43 +176,26 @@ namespace AIRadio.Server.Services.AI
 
         private void ResetHistoryInternal()
         {
-            if (_systemPrompt is null)
-                throw new InvalidOperationException("The system prompt has not been initialized.");
-
+            if (_systemPrompt is null) throw new InvalidOperationException("The system prompt has not been initialized.");
             _history.Clear();
-            _history.Add(new LlamaMessage
-            {
-                Role = LlamaMessageRoles.System,
-                Content = _systemPrompt
-            });
+            _history.Add(new LlamaMessage { Role = LlamaMessageRoles.System, Content = _systemPrompt });
             _isInitialized = true;
         }
 
-        private void AddUserMessage(string message) =>
-            _history.Add(new LlamaMessage
-            {
-                Role = LlamaMessageRoles.User,
-                Content = message
-            });
+        private void AddUserMessage(string message) => _history.Add(new LlamaMessage { Role = LlamaMessageRoles.User, Content = message });
 
         private void AddToolResultToHistory(ToolResult result) =>
             _history.Add(new LlamaMessage
             {
                 Role = LlamaMessageRoles.Tool,
-                Name = result.Tool,
+                Name = result.ToolName,
                 Content = result.ToJson()
             });
 
         private void AddAssistantResponse(LlamaCompletionResponse completion)
         {
             if (!string.IsNullOrWhiteSpace(completion.Content))
-            {
-                _history.Add(new LlamaMessage
-                {
-                    Role = LlamaMessageRoles.Assistant,
-                    Content = completion.Content
-                });
-            }
+                _history.Add(new LlamaMessage { Role = LlamaMessageRoles.Assistant, Content = completion.Content });
         }
 
         private CancellationToken BeginRequest(CancellationToken cancellationToken)
@@ -258,7 +214,6 @@ namespace AIRadio.Server.Services.AI
         {
             if (string.IsNullOrWhiteSpace(completion.Content))
                 throw new InvalidOperationException("Llama completion contained no content.");
-
             return LlamaResponseParser.Parse(completion.Content);
         }
 
