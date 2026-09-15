@@ -16,8 +16,10 @@ namespace AIRadio.Server.Services.Alarms
         public string Name =>
             "schedule";
 
-        public string GetPromptText() =>
-            "schedule{operation=add|update|delete|enable|disable;type=Alarm|Reminder;id?;content?;pattern=Once|Daily|Weekly|Monthly|Yearly;date?;timeOfDay?;daysOfWeek?;month?;dayOfMonth?;weekOfMonth?;weekdayOfMonth?;startOffset?;endOffset?;enabled?=true}";
+        public string GetLlmInstructions()
+        {
+            return "schedule{operation=add|update|delete|enable|disable;type=Alarm|Reminder;id?;content?;pattern=Once|Daily|Weekly|Monthly|Yearly;date?;timeOfDay?;daysOfWeek?;month?;dayOfMonth?;weekOfMonth?;weekdayOfMonth?;startOffset?;endOffset?;enabled?=true}";
+        }
 
         public Task<ToolResult> ExecuteAsync(
             ToolRequest request,
