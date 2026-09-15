@@ -29,7 +29,15 @@ namespace AIRadio.Server.Services.Report
 
         public string Name => "report";
 
-        public string GetPromptText() => "report{sections=events|reminders|weather|news}";
+        public string GetLlmInstructions() => """
+REPORT TOOL
+Purpose: Gather a general current summary for the user.
+Parameters:
+- sections: One or more sections to retrieve: events, reminders, weather, or news.
+Use report when the user asks what is going on, what's happening, what's new, a morning report, or another general current summary.
+Select only the sections needed to answer the request.
+Use the returned data as authoritative and combine it into a concise spoken summary.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
