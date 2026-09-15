@@ -16,7 +16,16 @@ namespace AIRadio.Server.Services.Network
         }
 
         public string Name => "wifi";
-        public string GetPromptText() => "wifi{action=scan|status|connect;connect:number|ssid;password?}";
+
+        public string GetLlmInstructions() => """
+WIFI TOOL
+Purpose: Inspect WiFi connectivity, scan for networks, and connect to a network.
+Actions:
+- scan: Find nearby WiFi networks. The results are numbered so the user can choose one.
+- status: Check whether the radio is connected to WiFi.
+- connect: Connect to a scanned network by number, or to a named network using ssid. password is optional.
+When connecting after a scan, prefer the network number returned by the scan.
+""";
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
