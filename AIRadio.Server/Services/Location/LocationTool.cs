@@ -17,12 +17,13 @@ namespace AIRadio.Server.Services.Location
         public string Name => "location";
 
         public string GetLlmInstructions() => """
-LOCATION TOOL
-Purpose: Read or update the radio's persistent current location.
-Parameters:
-- location: The location to set. Omit it to read the current location.
-Use this tool when the user explicitly gives a new location for the radio or when the current persistent location is needed.
-A location supplied only to weather or news is a query location and must not update the persistent location.
+LOCATION
+Read or change the radio's persistent current location.
+location: optional city, state, ZIP/postal code, or recognizable place. Omit it to read the current setting; supply it to change the setting. A changed location becomes the default for weather, news, and time. Weather/news locations are query-only and do not change it.
+Examples:
+"Where am I set to?" -> {tool:location}
+"Set my location to Miami" -> {tool:location,location=Miami}
+"Change the radio location to Orlando, Florida" -> {tool:location,location="Orlando, Florida"}
 """;
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
