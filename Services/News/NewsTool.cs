@@ -1,0 +1,92 @@
+using AIRadio.Server.Models.Location;
+using AIRadio.Server.Models.Tools;
+using AIRadio.Server.Services.Location;
+
+namespace AIRadio.Server.Services.News
+{
+    public sealed class NewsTool : ITool
+    {
+        private ILogger<NewsTool> _logger;
+        private readonly INewsService _newsService;
+        private readonly ILocationService _locationService;
+
+        public NewsTool(INewsService newsService, ILocationService locationService, ILogger<NewsTool> logger)
+        {
+            _logger = logger;
+            _newsService = newsService;
+            _locationService = locationService;
+            _logger.LogInformation("Finished constructing NewsTool");
+        }
+
+        public string Name => "news";
+
+        public string GetLlmInstructions() => """
+NEWS TOOL
+Use the news tool to retrieve current news headlines.
+
+Parameters:
+- location: Optional location for the news query. If omitted, use the radio's persistent current location. Use this for local or location-specific news.
+- category: Optional news category or topic, such as local, national, world, sports, business, technology, or another requested topic.
+- limit: Optional integer specifying the maximum number of headlines. Defaults to 5.
+
+Use news for current headlines, breaking news, local news, national news, world news, topic news, and similar requests.
+
+Important:
+- If the user names a location, pass it as location.
+- If the user asks for local news without naming a place, omit location so the radio's current location is used.
+- An explicit location is only a query location. It does not change the radio's persistent location.
+- If the user asks for a particular number of stories, pass that number as limit.
+- Do not invent headlines or news facts.
+
+Examples:
+User: "What's the news?"
+{tool:news}
+
+User: "What's the local news?"
+{tool:news}
+
+User: "What's the news in Miami?"
+{tool:news,location=Miami}
+
+User: "Give me the latest technology news"
+{tool:news,category=technology}
+
+User: "Give me the top 3 sports stories"
+{tool:news,category=sports,limit=3}
+
+User: "What's the news in Orlando about business?"
+{tool:news,location=Orlando,category=business}
+""";
+
+        public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var locationName = request.GetString("location");
+            RadioLocation? location = string.IsNullOrWhiteSpace(locationName)
+                ? _locationService.GetCurrentLocation()
+                : await _locationService.ResolveLocationAsync(locationName.Trim(), cancellationToken);
+
+            if (location is null)
+                return ToolResult.Failed(Name, "Unable to determine the requested location.");
+
+            var query = new NewsQuery
+            {
+                Location = GetLocationName(location),
+                Category = request.GetString("category"),
+                Limit = request.GetInt32("limit") ?? 5
+            };
+
+            var articles = await _newsService.GetHeadlinesAsync(query, cancellationToken);
+            return ToolResult.Successful(Name, "News retrieved successfully.", articles);
+        }
+
+        private static string GetLocationName(RadioLocation location)
+        {
+            if (!string.IsNullOrWhiteSpace(location.City) && !string.IsNullOrWhiteSpace(location.State))
+                return $"{location.City}, {location.State}";
+            if (!string.IsNullOrWhiteSpace(location.City))
+                return location.City;
+            return location.Raw;
+        }
+    }
+}
