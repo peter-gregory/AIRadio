@@ -27,7 +27,10 @@ builder.Services.AddControllers();
 
 Log.Logger.Information("Startup: add LlamaHttpClient");
 
-builder.Services.AddHttpClient<ILlamaHttpClient, LlamaHttpClient>();
+builder.Services.AddHttpClient<ILlamaHttpClient, LlamaHttpClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(300);
+});
 
 Log.Logger.Information("Startup: add RadioBrowser ");
 
