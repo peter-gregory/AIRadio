@@ -4,7 +4,7 @@ namespace AIRadio.Server.Services.Tools
 {
     public interface IToolExecutor
     {
-        string GetPromptText();
+        string GetLlmInstructions();
 
         Task<ToolResult> ExecuteAsync(
             ToolRequest request,
@@ -38,12 +38,12 @@ namespace AIRadio.Server.Services.Tools
             _logger.LogInformation("Construct fininshed ToolExecutor");
         }
 
-        public string GetPromptText() =>
+        public string GetLlmInstructions() =>
             string.Join(
                 '\n',
                 _tools.Values
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
-                    .Select(static tool => tool.GetPromptText())
+                    .Select(static tool => tool.GetLlmInstructions())
                     .Where(static text => !string.IsNullOrWhiteSpace(text)));
 
         public async Task<ToolResult> ExecuteAsync(
