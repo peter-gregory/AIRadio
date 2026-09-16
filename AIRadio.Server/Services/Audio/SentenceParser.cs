@@ -46,7 +46,7 @@ public static class SentenceParser
                 continue;
             }
 
-            if (c is '!' or '?')
+            if (c is '!' or '?' or ',')
             {
                 var boundaryEnd = ConsumePunctuationRun(text, i + 1);
                 var end = boundaryEnd;

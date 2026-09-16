@@ -97,14 +97,15 @@ public sealed class PiperClient : IPiperClient
         string text,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Sending text to TTS: " + text);
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             _endpoint)
         {
             Content = JsonContent.Create(new
             {
-                text,
-                voice = _voice
+                Text = text,
+                Voice = _voice
             })
         };
 

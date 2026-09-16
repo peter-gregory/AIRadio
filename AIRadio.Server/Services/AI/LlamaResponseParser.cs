@@ -12,6 +12,12 @@ public static class LlamaResponseParser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(content);
 
+        content = content.Trim();
+        if (content.StartsWith("\"") && content.EndsWith("\""))
+        {
+            content = content.Substring(1, content.Length - 1).Trim();
+        }
+
         var toolRequests = new List<ToolRequest>();
         var spokenText = new System.Text.StringBuilder(content.Length);
         var index = 0;
