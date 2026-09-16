@@ -5,6 +5,8 @@ namespace AIRadio.Server.Services.Tools
     public interface IToolExecutor
     {
         string GetLlmInstructions();
+        string GetLlmInstructions(IEnumerable<string> toolNames);
+        string GetLlmCatalog();
         IReadOnlyList<string> GetToolNames();
 
         Task<ToolResult> ExecuteAsync(
@@ -44,6 +46,13 @@ namespace AIRadio.Server.Services.Tools
                 .OrderBy(static name => name, StringComparer.Ordinal)
                 .ToArray();
 
+        public string GetLlmCatalog() =>
+            string.Join(
+                '\n',
+                _tools.Values
+                    .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+                    .Select(static tool => $"{tool.Name} - {tool.GetLlmSummary()}"));
+
         public string GetLlmInstructions() =>
             string.Join(
                 '\n',
@@ -51,6 +60,23 @@ namespace AIRadio.Server.Services.Tools
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
                     .Select(static tool => tool.GetLlmInstructions())
                     .Where(static text => !string.IsNullOrWhiteSpace(text)));
+
+        public string GetLlmInstructions(IEnumerable<string> toolNames)
+        {
+            ArgumentNullException.ThrowIfNull(toolNames);
+
+            var requested = new HashSet<string>(
+                toolNames.Where(static name => !string.IsNullOrWhiteSpace(name)),
+                StringComparer.OrdinalIgnoreCase);
+
+            return string.Join(
+                '\n',
+                _tools.Values
+                    .Where(tool => requested.Contains(tool.Name))
+                    .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+                    .Select(static tool => tool.GetLlmInstructions())
+                    .Where(static text => !string.IsNullOrWhiteSpace(text)));
+        }
 
         public async Task<ToolResult> ExecuteAsync(
             ToolRequest request,
