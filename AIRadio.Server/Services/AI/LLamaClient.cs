@@ -79,7 +79,7 @@ namespace AIRadio.Server.Services.AI
                 if (_activeToolNames.Count == 0)
                     throw new InvalidOperationException("Tool results were supplied without an active tool round.");
 
-                SetSystemPrompt(_toolExecutionSystemPrompt!);
+                SetSystemPrompt(BuildToolExecutionPrompt());
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
@@ -188,6 +188,18 @@ namespace AIRadio.Server.Services.AI
 
             _conversationSystemPrompt = string.Join("\n", conversationSections);
             _toolExecutionSystemPrompt = string.Join("\n", executionSections);
+        }
+
+        private string BuildToolExecutionPrompt()
+        {
+            if (_toolExecutionSystemPrompt is null)
+                throw new InvalidOperationException("The tool execution system prompt has not been initialized.");
+
+            var toolInstructions = _toolExecutor.GetLlmInstructions(_activeToolNames);
+            if (string.IsNullOrWhiteSpace(toolInstructions))
+                return _toolExecutionSystemPrompt;
+
+            return _toolExecutionSystemPrompt + "\n" + toolInstructions;
         }
 
         private async Task WarmSystemPromptAsync(CancellationToken cancellationToken)
