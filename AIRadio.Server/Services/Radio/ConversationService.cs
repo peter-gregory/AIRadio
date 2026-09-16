@@ -56,7 +56,9 @@ namespace AIRadio.Server.Services.Radio
                     : await _llama.StartConversationAsync(request.Text, cancellationToken);
 
                 await ProcessLlamaResponseAsync(response, cancellationToken);
+
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
+                _logger.LogInformation("llama utterance is complete");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

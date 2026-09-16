@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System.Diagnostics;
 using System.Text;
 
@@ -45,6 +46,8 @@ public sealed class PiperClient : IPiperClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
+        _logger.LogInformation("Generate text for " + text);
+
         text = text.Trim();
         var cacheKey = $"{_voice}:{text}";
         var cacheId = Convert.ToHexString(
@@ -54,7 +57,7 @@ public sealed class PiperClient : IPiperClient
         var cached = await _cache.GetAsync(cacheKey, cancellationToken);
         if (cached is not null)
         {
-            _logger.LogDebug(
+            _logger.LogInformation(
                 "Piper cache hit. CacheId={CacheId}, Bytes={Bytes}",
                 cacheId,
                 cached.Length);
@@ -97,26 +100,39 @@ public sealed class PiperClient : IPiperClient
         string text,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Sending text to TTS: " + text);
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            _endpoint)
+        var json = JsonConvert.SerializeObject(new { Text = text });
+
+        _logger.LogInformation("Sending text to TTS: {Json}", json);
+
+        using var content = new StringContent(
+            json,
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _httpClient.PostAsync(
+            _endpoint,
+            content,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
         {
-            Content = JsonContent.Create(new
-            {
-                Text = text,
-                Voice = _voice
-            })
-        };
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
+            _logger.LogError(
+                "TTS returned {StatusCode}: {Error}",
+                response.StatusCode,
+                error);
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        var wavData = await response.Content.ReadAsByteArrayAsync(
             cancellationToken);
 
-        response.EnsureSuccessStatusCode();
+        _logger.LogInformation(
+            "Received wav data from text to TTS: {Length} bytes",
+            wavData.Length);
 
-        return await response.Content.ReadAsByteArrayAsync(
-            cancellationToken);
+        return wavData;
     }
 }

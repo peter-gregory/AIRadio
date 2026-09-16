@@ -133,6 +133,7 @@ namespace AIRadio.Server.Services.Audio
             if (string.IsNullOrWhiteSpace(text)) return;
             foreach (var sentence in SentenceParser.Split(text))
             {
+                _logger.LogInformation("Queue speech: " + sentence);
                 cancellationToken.ThrowIfCancellationRequested();
                 EnqueueAsync(new(AudioRequestType.Speech, sentence, null), cancellationToken);
             }
