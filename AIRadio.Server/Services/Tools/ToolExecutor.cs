@@ -5,6 +5,7 @@ namespace AIRadio.Server.Services.Tools
     public interface IToolExecutor
     {
         string GetLlmInstructions();
+        IReadOnlyList<string> GetToolNames();
 
         Task<ToolResult> ExecuteAsync(
             ToolRequest request,
@@ -37,6 +38,11 @@ namespace AIRadio.Server.Services.Tools
 
             _logger.LogInformation("Construct fininshed ToolExecutor");
         }
+
+        public IReadOnlyList<string> GetToolNames() =>
+            _tools.Keys
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToArray();
 
         public string GetLlmInstructions() =>
             string.Join(
