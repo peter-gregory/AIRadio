@@ -33,12 +33,23 @@ struct Generation {
             blocks.push_back(std::move(b));
         }
     }
+
     std::vector<std::unique_ptr<PcmBlock>> blocks;
-    // tail = first populated/non-reusable block.
-    // active = first ready-to-send block / PipeWire-active boundary.
-    // head = first free/work block.
-    size_t head = 0, active = 0, tail = 0;
-    bool full = false;
+
+    // Each generation is a ring with one slot permanently left empty.
+    // tail   = oldest block still owned by the queue/PipeWire.
+    // active = oldest block not yet submitted to PipeWire.
+    // head   = next block to be written by enqueue().
+    //
+    // The state of every block is therefore implicit:
+    //   tail -> active : submitted to PipeWire, awaiting completion
+    //   active -> head  : ready to submit
+    //   head -> tail    : free
+    //
+    // No full flag is required. A generation is full when next(head)==tail.
+    size_t head = 0;
+    size_t active = 0;
+    size_t tail = 0;
     Generation *next = nullptr;
 };
 
@@ -160,10 +171,12 @@ public:
                 if (head_fill_bytes_ == block_bytes_) {
                     producer_->head = next(*producer_, producer_->head);
                     head_fill_bytes_ = 0;
-                    if (producer_->head == producer_->tail) {
-                        producer_->full = true;
+
+                    // Leave one slot empty. Once the producer reaches the
+                    // slot immediately before tail, this generation is full
+                    // and all subsequent samples go into a new generation.
+                    if (is_full(*producer_))
                         create_generation();
-                    }
                 }
             }
         }
@@ -194,10 +207,9 @@ public:
                 0, block_bytes_ - head_fill_bytes_);
             producer_->head = next(*producer_, producer_->head);
             head_fill_bytes_ = 0;
-            if (producer_->head == producer_->tail) {
-                producer_->full = true;
+
+            if (is_full(*producer_))
                 create_generation();
-            }
         }
 
         service_pipewire();
@@ -275,21 +287,28 @@ private:
         return (i + 1) % g.blocks.size();
     }
 
-    size_t distance(const Generation &g, size_t from, size_t to) const noexcept {
-        if (from == to) return g.full ? g.blocks.size() - 1 : 0;
+    static bool is_empty(const Generation &g) noexcept {
+        return g.tail == g.head;
+    }
+
+    static bool is_full(const Generation &g) noexcept {
+        return next(g, g.head) == g.tail;
+    }
+
+    static size_t distance(const Generation &g, size_t from, size_t to) noexcept {
         return to >= from ? to - from : g.blocks.size() - from + to;
     }
 
-    size_t populated(const Generation &g) const noexcept {
-        return g.full ? g.blocks.size() - 1 : distance(g, g.tail, g.head);
+    static size_t queued(const Generation &g) noexcept {
+        return distance(g, g.tail, g.head);
     }
 
-    size_t submitted(const Generation &g) const noexcept {
+    static size_t outstanding(const Generation &g) noexcept {
         return distance(g, g.tail, g.active);
     }
 
-    bool has_ready(const Generation &g) const noexcept {
-        return populated(g) > submitted(g);
+    static size_t ready(const Generation &g) noexcept {
+        return distance(g, g.active, g.head);
     }
 
     void create_generation() {
@@ -306,25 +325,44 @@ private:
     }
 
     void discard_ready() {
+        // Keep blocks already submitted to PipeWire. Discard everything
+        // from active through head in every generation. After this, the
+        // newest generation is the producer and has no ready data.
         for (Generation *g = active_generation_; g; g = g->next) {
             g->head = g->active;
-            g->full = false;
             if (g == producer_) break;
         }
-        if (producer_) producer_->head = producer_->active;
+        if (producer_)
+            producer_->head = producer_->active;
     }
 
     size_t queued_blocks() const noexcept {
         size_t n = 0;
         for (Generation *g = tail_generation_; g; g = g->next)
-            n += populated(*g) - submitted(*g);
+            n += queued(*g) - outstanding(*g);
         return n;
     }
 
     bool any_ready() const noexcept {
         for (Generation *g = active_generation_; g; g = g->next)
-            if (has_ready(*g)) return true;
+            if (ready(*g) != 0) return true;
         return false;
+    }
+
+    Generation *find_ready_generation() {
+        for (Generation *g = active_generation_; g; g = g->next) {
+            if (ready(*g) != 0)
+                return g;
+        }
+        return nullptr;
+    }
+
+    Generation *find_outstanding_generation() {
+        for (Generation *g = tail_generation_; g; g = g->next) {
+            if (outstanding(*g) != 0)
+                return g;
+        }
+        return nullptr;
     }
 
     void service_pipewire() {
@@ -348,18 +386,11 @@ private:
     }
 
     void submit(pw_buffer *buffer) {
-        while (active_generation_ &&
-               !has_ready(*active_generation_) &&
-               active_generation_->next)
-            active_generation_ = active_generation_->next;
-
-        if (!active_generation_ || !has_ready(*active_generation_)) {
+        Generation *g = find_ready_generation();
+        if (!g) {
             idle_buffer_ = buffer;
             return;
         }
-
-        Generation *g = active_generation_;
-        PcmBlock *block = g->blocks[g->active].get();
 
         if (!buffer || !buffer->buffer) return;
         spa_buffer *sb = buffer->buffer;
@@ -375,6 +406,7 @@ private:
             return;
         }
 
+        PcmBlock *block = g->blocks[g->active].get();
         std::memcpy(d->data, block->data.get(), block_bytes_);
         d->chunk->offset = 0;
         d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
@@ -388,6 +420,8 @@ private:
 
         int r = pw_stream_queue_buffer(stream_, buffer);
         if (r < 0) {
+            // Restore active because the block was not accepted by PipeWire.
+            g->active = (g->active + g->blocks.size() - 1) % g->blocks.size();
             --pipewire_active_count_;
             uint64_t current = outstanding_frames_.load(std::memory_order_relaxed);
             outstanding_frames_.store(
@@ -417,22 +451,24 @@ private:
     }
 
     void complete_tail(PcmBlock *block) {
-        Generation *g = nullptr;
-        for (Generation *candidate = tail_generation_; candidate; candidate = candidate->next) {
-            auto it = std::find_if(
-                candidate->blocks.begin(), candidate->blocks.end(),
-                [block](const std::unique_ptr<PcmBlock> &b) { return b.get() == block; });
-            if (it != candidate->blocks.end()) { g = candidate; break; }
+        Generation *g = find_outstanding_generation();
+        if (!g) return;
+
+        // PipeWire returns buffers in playback order. The oldest generation
+        // with an outstanding block therefore owns the completed block.
+        PcmBlock *expected = g->blocks[g->tail].get();
+        if (block && block != expected) {
+            last_error_ = "PipeWire completed an unexpected PCM block";
+            queue_error_callback(-5, last_error_);
+            return;
         }
-        if (!g || g != tail_generation_) return;
 
         g->tail = next(*g, g->tail);
-        if (g->full && g->tail == g->head) g->full = false;
     }
 
     void reclaim() {
         while (generations_.size() > 1 && tail_generation_) {
-            if (populated(*tail_generation_) != 0) break;
+            if (!is_empty(*tail_generation_)) break;
 
             Generation *old = tail_generation_;
             tail_generation_ = old->next;
@@ -443,8 +479,9 @@ private:
     }
 
     bool unprocessed() const noexcept {
-        for (Generation *g = tail_generation_; g; g = g->next)
-            if (populated(*g) != 0) return true;
+        for (Generation *g = tail_generation_; g; g = g->next) {
+            if (!is_empty(*g)) return true;
+        }
         return false;
     }
 
@@ -660,7 +697,9 @@ AIRADIO_API void airadio_pw_set_error_callback(
     if (c) c->backend.set_error_callback(cb, ud);
 }
 AIRADIO_API const char *airadio_pw_last_error(AIRadioPipeWire *c) {
-    return c ? c->backend.last_error() : "Invalid AIRadioPipeWire handle.";
+    return c ? c->backend.last_error() : "invalid context";
 }
-AIRADIO_API void airadio_pw_destroy(AIRadioPipeWire *c) { delete c; }
+AIRADIO_API void airadio_pw_destroy(AIRadioPipeWire *c) {
+    delete c;
+}
 }
