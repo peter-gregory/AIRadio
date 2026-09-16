@@ -161,10 +161,18 @@ namespace AIRadio.Server.Services.AI
 
             var prompt = (await File.ReadAllTextAsync(promptFile, cancellationToken)).Trim();
             var toolUsage = _toolExecutor.GetLlmInstructions();
+            var toolNames = string.Join(", ", _toolExecutor.GetToolNames());
             var soundUsage = _soundEffectManager.GetPromptText();
-            var sections = new List<string> { prompt };
-            if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add("TOOLS\n" + toolUsage);
+
+            var sections = new List<string>
+            {
+                prompt,
+                $"TOOLS\nValid tool names: {toolNames}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(toolUsage)) sections.Add(toolUsage);
             if (!string.IsNullOrWhiteSpace(soundUsage)) sections.Add("SOUNDS\n" + soundUsage);
+
             _systemPrompt = string.Join("\n", sections);
         }
 
