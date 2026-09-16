@@ -51,14 +51,15 @@ namespace AIRadio.Server.Services.Radio
         {
             try
             {
-                var response = _llama.IsInitialized
-                    ? await _llama.ContinueAsync(request.Text, cancellationToken)
-                    : await _llama.StartConversationAsync(request.Text, cancellationToken);
+                // The wake phrase starts every conversation. Tool rounds are
+                // continued internally by ProcessLlamaResponseAsync; a later
+                // utterance never inherits the previous conversation history.
+                var response = await _llama.StartConversationAsync(request.Text, cancellationToken);
 
                 await ProcessLlamaResponseAsync(response, cancellationToken);
 
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
-                _logger.LogInformation("llama utterance is complete");
+                _logger.LogInformation("llama conversation is complete");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -67,6 +68,19 @@ namespace AIRadio.Server.Services.Radio
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Conversation processing failed.");
+            }
+            finally
+            {
+                // No tool requests means the LLM response completed the
+                // conversation. Reset before the next wake phrase.
+                try
+                {
+                    await _llama.ResetAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to reset the Llama conversation.");
+                }
             }
         }
 
