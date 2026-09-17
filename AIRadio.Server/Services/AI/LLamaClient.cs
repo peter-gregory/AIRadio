@@ -11,7 +11,8 @@ namespace AIRadio.Server.Services.AI
         bool IsBusy { get; }
         Task InitializeAsync(CancellationToken cancellationToken = default);
         Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default);
-        Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default);
+        Task<LlamaResponse> ContinueToolAsync(CancellationToken cancellationToken = default);
+        Task<LlamaResponse> ContinueToolAsync(string userMessage, CancellationToken cancellationToken = default);
         Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default);
         Task CancelAsync();
         Task ResetAsync(CancellationToken cancellationToken = default);
@@ -63,7 +64,8 @@ namespace AIRadio.Server.Services.AI
         }
 
         public Task<LlamaResponse> StartConversationAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, true, cancellationToken);
-        public Task<LlamaResponse> ContinueAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteConversationAsync(userMessage, false, cancellationToken);
+        public Task<LlamaResponse> ContinueToolAsync(CancellationToken cancellationToken = default) => ExecuteToolRoundAsync(null, cancellationToken);
+        public Task<LlamaResponse> ContinueToolAsync(string userMessage, CancellationToken cancellationToken = default) => ExecuteToolRoundAsync(userMessage, cancellationToken);
 
         public async Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default)
         {
@@ -140,6 +142,30 @@ namespace AIRadio.Server.Services.AI
             finally { _requestLock.Release(); }
         }
 
+        private async Task<LlamaResponse> ExecuteToolRoundAsync(string? userMessage, CancellationToken cancellationToken)
+        {
+            ThrowIfDisposed();
+            await _requestLock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureInitializedAsync(cancellationToken);
+                if (_activeToolNames.Count == 0)
+                    throw new InvalidOperationException("A tool round was requested without an active tool.");
+
+                SetSystemPrompt(BuildToolExecutionPrompt());
+                var requestToken = BeginRequest(cancellationToken);
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(userMessage))
+                        AddUserMessage(userMessage);
+
+                    return await CompleteAsync(requestToken);
+                }
+                finally { EndRequest(); }
+            }
+            finally { _requestLock.Release(); }
+        }
+
         private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
         {
             if (_isInitialized) return;
@@ -178,8 +204,9 @@ namespace AIRadio.Server.Services.AI
                 conversationPrompt,
                 toolCatalog
             };
-            if (!string.IsNullOrWhiteSpace(soundUsage)) conversationSections.Add("SOUNDS\n" + soundUsage);
 
+            // Sounds are intentionally excluded from the first-round prompt.
+            // They are only needed once a specific tool has been selected.
             var executionSections = new List<string>
             {
                 executionPrompt
