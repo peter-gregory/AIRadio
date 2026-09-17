@@ -55,18 +55,9 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
-                LlamaResponse response;
-
-                if (_awaitingToolInput)
-                {
-                    _logger.LogInformation("Continuing active tool conversation with user input: {Text}", request.Text);
-                    response = await _llama.ContinueToolAsync(request.Text, cancellationToken);
-                }
-                else
-                {
-                    _logger.LogInformation("Starting new conversation for: {Text}", request.Text);
-                    response = await _llama.StartConversationAsync(request.Text, cancellationToken);
-                }
+                var response = _awaitingToolInput
+                    ? await _llama.ContinueToolAsync(request.Text, cancellationToken)
+                    : await _llama.StartConversationAsync(request.Text, cancellationToken);
 
                 conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
 
@@ -114,6 +105,9 @@ namespace AIRadio.Server.Services.Radio
                 return true;
             }
 
+            // A tool request containing !required! is an interactive request,
+            // not an executable request. Speak the question and keep the
+            // conversation alive for the next utterance.
             if (response.ToolRequests.Any(request => request.HasMissingRequiredArguments))
             {
                 _awaitingToolInput = true;
@@ -129,21 +123,23 @@ namespace AIRadio.Server.Services.Radio
             }
 
             _awaitingToolInput = false;
-            await ExecuteToolsAsync(response.ToolRequests, cancellationToken);
-            return true;
+            if (response.HasSpeech)
+                await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
+
+            return await ExecuteToolsAsync(response.ToolRequests, cancellationToken);
         }
 
-        private async Task ExecuteToolsAsync(IEnumerable<ToolRequest> toolRequests, CancellationToken cancellationToken)
+        private async Task<bool> ExecuteToolsAsync(IEnumerable<ToolRequest> toolRequests, CancellationToken cancellationToken)
         {
             var requests = toolRequests.ToList();
-            if (requests.Count == 0) return;
+            if (requests.Count == 0) return true;
 
             var resultTasks = requests.Select(request => ExecuteToolAsync(request, cancellationToken)).ToArray();
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
             var response = await _llama.ContinueAsync(results, cancellationToken);
-            await ProcessLlamaResponseAsync(response, cancellationToken);
+            return await ProcessLlamaResponseAsync(response, cancellationToken);
         }
 
         private async Task<ToolResult> ExecuteToolAsync(ToolRequest request, CancellationToken cancellationToken)
