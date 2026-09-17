@@ -19,11 +19,24 @@ namespace AIRadio.Server.Services.Location
         public string GetLlmInstructions() => """
 LOCATION
 Read or change the radio's persistent current location.
-location: optional city, state, ZIP/postal code, or recognizable place. Omit it to read the current setting; supply it to change the setting. A changed location becomes the default for weather, news, and time. Weather/news locations are query-only and do not change it.
+
+Parameters:
+- location: Optional city, state, ZIP/postal code, or recognizable place.
+- Omit location to read the current setting.
+- Supply location only when the user explicitly wants to change the setting.
+
+Rules:
+- Use this tool for location requests and location configuration only.
+- Do not call this tool just because another tool is available.
+- The time tool does not require this tool.
+- A changed location remains the default for weather and news.
+- Weather and news may use their own query location without changing this setting.
+
 Examples:
 "Where am I set to?" -> {tool:location}
 "Set my location to Miami" -> {tool:location,location=Miami}
 "Change the radio location to Orlando, Florida" -> {tool:location,location="Orlando, Florida"}
+"What time is it?" -> do not call location; use {tool:time}
 """;
 
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
