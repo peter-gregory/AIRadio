@@ -1,6 +1,4 @@
-﻿using AIRadio.Server.Services;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json;
 
 namespace AIRadio.Server.Models.Tools
 {
@@ -20,6 +18,12 @@ namespace AIRadio.Server.Models.Tools
         /// When set, ConversationService can skip the second LLM round.
         /// </summary>
         public string? ExactPrompt { get; set; }
+
+        /// <summary>
+        /// Tool request to resume when the tool needs additional user input.
+        /// Missing values are represented by ToolRequest.RequiredValue.
+        /// </summary>
+        public ToolRequest? PendingRequest { get; set; }
 
         public string? Error { get; set; }
 
@@ -48,13 +52,17 @@ namespace AIRadio.Server.Models.Tools
 
         public static ToolResult Failed(
             string toolName,
-            string error)
+            string error,
+            string? exactPrompt = null,
+            ToolRequest? pendingRequest = null)
         {
             return new ToolResult
             {
                 ToolName = toolName,
                 Success = false,
-                Error = error
+                Error = error,
+                ExactPrompt = exactPrompt,
+                PendingRequest = pendingRequest
             };
         }
     }
