@@ -15,6 +15,12 @@ namespace AIRadio.Server.Models.Tools
 
         public object? Data { get; set; }
 
+        /// <summary>
+        /// Optional exact speech to send directly to the audio pipeline.
+        /// When set, ConversationService can skip the second LLM round.
+        /// </summary>
+        public string? ExactPrompt { get; set; }
+
         public string? Error { get; set; }
 
         public string ToJson()
@@ -27,14 +33,16 @@ namespace AIRadio.Server.Models.Tools
         public static ToolResult Successful(
             string toolName,
             string? message = null,
-            object? data = null)
+            object? data = null,
+            string? exactPrompt = null)
         {
             return new ToolResult
             {
                 ToolName = toolName,
                 Success = true,
                 Message = message,
-                Data = data
+                Data = data,
+                ExactPrompt = exactPrompt
             };
         }
 
