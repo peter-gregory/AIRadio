@@ -1,6 +1,7 @@
 using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Location;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Weather;
 
@@ -15,37 +16,62 @@ public sealed class WeatherTool : ITool
         _locationService = locationService;
     }
 
-    public string Name => "weather";
+    public string Name => "weather-current";
 
     public string GetLlmInstructions() => """
-WEATHER
+WEATHER-CURRENT
 Get current weather conditions.
 Parameters:
-- location: optional city, state, ZIP/postal code, or recognizable place. Omit to use the radio's persistent location.
+- City: required city and state, ZIP/postal code, or recognizable place. The application may supply a persistent location when available.
 Use for what the weather is like now. Future weather belongs to forecast.
-An explicit location does not change the persistent location.
 Examples:
-"What's the weather?" -> {tool:weather}
-"What's the weather in Miami?" -> {tool:weather,location=Miami}
-"Give me a weather report" -> {tool:weather}
+"What's the weather?" -> {tool:weather-current}
+"What's the weather in Miami?" -> {tool:weather-current,City="Miami, Florida"}
+"Give me a weather report" -> {tool:weather-current}
 """;
 
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var locationName = request.GetString("location");
-        RadioLocation? location = string.IsNullOrWhiteSpace(locationName)
-            ? _locationService.GetCurrentLocation()
-            : await _locationService.ResolveLocationAsync(locationName.Trim(), cancellationToken);
 
-        if (location is null)
-            return ToolResult.Failed(Name, string.IsNullOrWhiteSpace(locationName)
-                ? "The radio's current location is not available."
-                : $"Unable to determine the location '{locationName}'.");
+        var cityName = request.GetString("City");
+
+        if (string.IsNullOrWhiteSpace(cityName))
+        {
+            var location = _locationService.GetCurrentLocation();
+            if (location is not null)
+                cityName = location.City;
+
+            if (string.IsNullOrWhiteSpace(cityName))
+            {
+                var pendingRequest = new ToolRequest
+                {
+                    Name = Name,
+                    Arguments = new JObject
+                    {
+                        ["City"] = ToolRequest.RequiredValue
+                    }
+                };
+
+                return ToolResult.Failed(
+                    Name,
+                    "A city and state are required to get the current weather.",
+                    exactPrompt: "I need to know where we are. What is the name of the city and state where we are currently located?",
+                    pendingRequest: pendingRequest);
+            }
+        }
+
+        var locationForWeather =
+            await _locationService.ResolveLocationAsync(cityName.Trim(), cancellationToken);
+
+        if (locationForWeather is null)
+            return ToolResult.Failed(
+                Name,
+                $"Unable to determine the location '{cityName}'.");
 
         try
         {
-            var weather = await _weatherService.GetWeatherAsync(location, cancellationToken);
+            var weather = await _weatherService.GetWeatherAsync(locationForWeather, cancellationToken);
             return ToolResult.Successful(Name, "Current weather retrieved successfully.", weather);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
