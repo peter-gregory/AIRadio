@@ -29,29 +29,17 @@ Rules:
 - The tool uses the radio system's configured local time zone automatically.
 - Never guess the current time or date.
 - The tool result is authoritative.
-- If the user asks for the current time, after the tool result speak only its Time value.
-- If the user asks for the current date or day, after the tool result speak only its Date value.
-- If the user asks for both time and date, after the tool result speak both values.
-- Do not repeat the user's question.
-- Do not ask the user's question again.
-- Do not add greetings, acknowledgements, explanations, location wording, or other conversational filler to a time/date-only response.
+- Do not repeat or ask the user's question.
 - Never mention the tool or internal processing.
 
-Examples:
-User: "What time is it?"
-{tool:time}
-Tool result: Time="9:38 AM"
-Assistant: 9:38 AM
-
-User: "What's the date today?"
-{tool:time}
-Tool result: Date="Friday, September 18, 2026"
-Assistant: Friday, September 18, 2026
-
-User: "What time is it and what date is it?"
-{tool:time}
-Tool result: Time="9:38 AM", Date="Friday, September 18, 2026"
-Assistant: 9:38 AM, Friday, September 18, 2026
+TIME RESULT
+- Use only values returned by the tool.
+- Time only: speak the time naturally. Example: "The time is 10:05 AM."
+- Date/day only: speak the date naturally. Example: "Today is Friday, September 18th."
+- Time and date: speak both naturally. Example: "Today is Friday, September 18th. The time is 10:05 AM."
+- Never include Time when only Date was requested.
+- Never include Date when only Time was requested.
+- Do not add location, timezone, year, greeting, filler, or explanation unless requested.
 """;
 
         public Task<ToolResult> ExecuteAsync(
