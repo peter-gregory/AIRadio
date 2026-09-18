@@ -142,7 +142,7 @@ namespace AIRadio.Server.Services.Radio
 
             // Some tools can provide deterministic speech directly. When a single
             // tool supplies an exact prompt, skip the expensive second LLM round.
-            if (results.Count == 1 &&
+            if (results.Count() == 1 &&
                 results[0].Success &&
                 !string.IsNullOrWhiteSpace(results[0].ExactPrompt))
             {
