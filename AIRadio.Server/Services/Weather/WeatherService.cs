@@ -33,6 +33,7 @@ namespace AIRadio.Server.Services.Weather
             RadioLocation location,
             CancellationToken cancellationToken = default)
         {
+            _logger.LogInformation("Start weather client request");
             ArgumentNullException.ThrowIfNull(location);
 
             var latitude =
@@ -50,6 +51,8 @@ namespace AIRadio.Server.Services.Weather
                     latitude,
                     longitude);
 
+            _logger.LogInformation("request for weather using URL " + url);
+
             try
             {
                 var response =
@@ -59,14 +62,17 @@ namespace AIRadio.Server.Services.Weather
 
                 response.EnsureSuccessStatusCode();
 
-                await using var stream =
-                    await response.Content.ReadAsStreamAsync(
+                var stream =
+                    await response.Content.ReadAsStringAsync(
                         cancellationToken);
 
+                _logger.LogInformation("received weather reply:\n" + stream);
+
                 using var document =
-                    await JsonDocument.ParseAsync(
-                        stream,
-                        cancellationToken: cancellationToken);
+                    JsonDocument.Parse(
+                        stream);
+
+                _logger.LogInformation("parse weather reply");
 
                 return ParseWeather(
                     document.RootElement,

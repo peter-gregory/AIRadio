@@ -220,6 +220,7 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
+                _logger.LogInformation("Execute tool " + tool.Name);
                 var result = await tool.ExecuteAsync(request, cancellationToken);
                 return result ?? ToolResult.Failed(request.Name, $"Tool '{request.Name}' returned no result.");
             }

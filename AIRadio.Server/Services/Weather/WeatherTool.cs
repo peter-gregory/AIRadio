@@ -9,11 +9,13 @@ public sealed class WeatherTool : ITool
 {
     private readonly IWeatherService _weatherService;
     private readonly ILocationService _locationService;
+    private readonly ILogger<WeatherTool> _logger;
 
-    public WeatherTool(IWeatherService weatherService, ILocationService locationService)
+    public WeatherTool(IWeatherService weatherService, ILocationService locationService, ILogger<WeatherTool> logger)
     {
         _weatherService = weatherService;
         _locationService = locationService;
+        _logger = logger;
     }
 
     public string Name => "weather-current";
@@ -32,18 +34,21 @@ Examples:
 
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation("Start execute tool weather-current");
         ArgumentNullException.ThrowIfNull(request);
 
         var cityName = request.GetString("City");
 
         if (string.IsNullOrWhiteSpace(cityName))
         {
+            _logger.LogInformation("City name is not defined - use current locations to get it");
             var location = _locationService.GetCurrentLocation();
             if (location is not null)
                 cityName = location.City;
 
             if (string.IsNullOrWhiteSpace(cityName))
             {
+                _logger.LogInformation("Current location does not have city name");
                 var pendingRequest = new ToolRequest
                 {
                     Name = Name,
@@ -61,16 +66,22 @@ Examples:
             }
         }
 
+        _logger.LogInformation("Resolve location for city name " + cityName);
+
         var locationForWeather =
             await _locationService.ResolveLocationAsync(cityName.Trim(), cancellationToken);
 
         if (locationForWeather is null)
+        {
+            _logger.LogInformation("Failed to resolve location for city name " + cityName);
             return ToolResult.Failed(
-                Name,
-                $"Unable to determine the location '{cityName}'.");
+                    Name,
+                    $"Unable to determine the location '{cityName}'.");
+        }
 
         try
         {
+            _logger.LogInformation("Get weather from weather client");
             var weather = await _weatherService.GetWeatherAsync(locationForWeather, cancellationToken);
             return ToolResult.Successful(Name, "Current weather retrieved successfully.", weather);
         }
