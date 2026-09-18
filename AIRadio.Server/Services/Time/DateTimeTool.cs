@@ -12,7 +12,6 @@ public sealed class DateTimeTool : TimeToolBase
 DATETIME
 Use when the user explicitly asks for both the current date and time.
 Parameters: none.
-Speak the date and time naturally. Do not add location, timezone, year, or filler unless requested.
 Example: "What's the date and time?" -> {tool:datetime}
 """;
 
@@ -20,13 +19,18 @@ Example: "What's the date and time?" -> {tool:datetime}
     {
         Validate(request, cancellationToken);
         var now = TimeService.GetNow();
+        var date = TimeService.FormatDate(now);
+        var time = now.ToString("h:mm tt");
+        var speech = $"The current date and time is {date}, {time}.";
+
         return Task.FromResult(ToolResult.Successful(
             Name,
             "Current local date and time retrieved.",
             new
             {
-                Date = TimeService.FormatDate(now),
-                Time = now.ToString("h:mm tt")
-            }));
+                Date = date,
+                Time = time
+            },
+            speech));
     }
 }
