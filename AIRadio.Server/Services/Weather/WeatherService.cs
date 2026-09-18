@@ -1,5 +1,6 @@
 ﻿using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Weather;
+using AIRadio.Server.Services.Location;
 using Newtonsoft.Json;
 using System.Globalization;
 using System.Text.Json;
@@ -16,15 +17,18 @@ namespace AIRadio.Server.Services.Weather
     public sealed class WeatherService : IWeatherService
     {
         private readonly HttpClient _httpClient;
+        private readonly IWeatherLocationResolver _locationResolver;
         private readonly IConfiguration _configuration;
         private readonly ILogger<WeatherService> _logger;
 
         public WeatherService(
             HttpClient httpClient,
+            IWeatherLocationResolver locationResolver,
             IConfiguration configuration,
             ILogger<WeatherService> logger)
         {
             _httpClient = httpClient;
+            _locationResolver = locationResolver;
             _configuration = configuration;
             _logger = logger;
         }
@@ -34,24 +38,36 @@ namespace AIRadio.Server.Services.Weather
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(location);
-
-            var latitude =
-                GetRequiredDouble(
-                    location,
-                    "Latitude");
-
-            var longitude =
-                GetRequiredDouble(
-                    location,
-                    "Longitude");
-
-            var url =
-                BuildWeatherUrl(
-                    latitude,
-                    longitude);
+            cancellationToken.ThrowIfCancellationRequested();
 
             try
             {
+                // RadioLocation deliberately contains only the generic
+                // location supplied by the user. Weather-specific
+                // coordinates are resolved here immediately before the
+                // forecast request.
+                var coordinates =
+                    await _locationResolver.ResolveAsync(
+                        location,
+                        cancellationToken);
+
+                if (coordinates is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Unable to determine weather coordinates for '{BuildLocationName(location)}'.");
+                }
+
+                _logger.LogDebug(
+                    "Resolved weather location {Location} to {Latitude}, {Longitude}.",
+                    BuildLocationName(location),
+                    coordinates.Latitude,
+                    coordinates.Longitude);
+
+                var url =
+                    BuildWeatherUrl(
+                        coordinates.Latitude,
+                        coordinates.Longitude);
+
                 var response =
                     await _httpClient.GetAsync(
                         url,
@@ -337,18 +353,6 @@ namespace AIRadio.Server.Services.Weather
             }
 
             return location.Raw;
-        }
-
-        private static double GetRequiredDouble(
-            RadioLocation location,
-            string name)
-        {
-            /*
-             * This assumes latitude/longitude will eventually be added
-             * to RadioLocation. If they are supplied by a separate
-             * geocoding result, this should instead use that source.
-             */
-            throw new NotImplementedException();
         }
 
         private static double GetDouble(
