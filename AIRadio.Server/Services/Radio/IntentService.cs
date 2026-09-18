@@ -86,6 +86,10 @@ namespace AIRadio.Server.Services.Radio
                         await _conversationService.CancelAsync(
                             cancellationToken);
 
+                        await _conversationService.ProcessAsync(
+                            text,
+                            cancellationToken);
+
                         return;
                     }
 
@@ -102,16 +106,20 @@ namespace AIRadio.Server.Services.Radio
                             "Wake-up detected by regex rule {RuleName}: {Text}.",
                             match.RuleName,
                             text);
+
+                        await _conversationService.ProcessAsync(
+                            text,
+                            cancellationToken);
                     }
                     else
                     {
                         _logger.LogInformation("Intent is unknown for text " + text);
                     }
+                } 
+                else
+                {
+                    _logger.LogInformation("No match for intent " + text);
                 }
-
-                await _conversationService.ProcessAsync(
-                    text,
-                    cancellationToken);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)

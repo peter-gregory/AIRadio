@@ -2,6 +2,7 @@ using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.AI;
 using AIRadio.Server.Services.Audio;
+using System.Numerics;
 
 namespace AIRadio.Server.Services.Radio
 {
@@ -132,6 +133,7 @@ namespace AIRadio.Server.Services.Radio
         private async Task<bool> ExecuteToolsAsync(IEnumerable<ToolRequest> toolRequests, CancellationToken cancellationToken)
         {
             var requests = toolRequests.ToList();
+            _logger.LogInformation("Processing " + requests.Count + " tool requests");
             if (requests.Count == 0) return true;
 
             var resultTasks = requests.Select(request => ExecuteToolAsync(request, cancellationToken)).ToArray();
@@ -145,6 +147,8 @@ namespace AIRadio.Server.Services.Radio
         private async Task<ToolResult> ExecuteToolAsync(ToolRequest request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            _logger.LogInformation("Processing tool " + request.Name);
 
             if (string.IsNullOrWhiteSpace(request.Name))
                 return ToolResult.Failed("tool_dispatcher", "The tool request did not specify a tool name.");

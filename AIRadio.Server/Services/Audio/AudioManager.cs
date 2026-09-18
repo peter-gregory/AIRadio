@@ -199,12 +199,14 @@ namespace AIRadio.Server.Services.Audio
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _logger.LogInformation("Play sound effect " + tag);
             var sound = _soundEffectManager.GetRandomSound(tag);
             if (sound is null)
             {
                 _logger.LogWarning("No sound effect found for tag '{Tag}'.", tag);
                 return;
             }
+            _logger.LogInformation($"Queue sound {tag} ({sound.FileName}) with {sound.WavData.Length} bytes");
             await _pipeWireAudioClient.QueueWavAsync(sound.WavData, cancellationToken);
         }
 

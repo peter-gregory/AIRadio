@@ -1,4 +1,5 @@
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json;
 
 namespace AIRadio.Server.Services.Time
 {
@@ -56,6 +57,7 @@ User: "What day is it?"
                 Time = now.ToString("h:mm tt"),
                 Date = now.ToString("dddd, MMMM d, yyyy")
             };
+            _logger.LogInformation("Process Tool: Time. Result = " + JsonConvert.SerializeObject(result));
 
             return Task.FromResult(
                 ToolResult.Successful(Name, "Current local time retrieved.", result));
