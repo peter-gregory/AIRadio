@@ -22,7 +22,8 @@ ROUTING
 - Future weather -> forecast
 - Current news -> news
 - Scheduled/upcoming events -> events
-- Play a radio station -> radioPlay
+- Play a known station -> radioPlay
+- Find/search for a station or genre -> radioSearch
 - Stop radio -> radioStop
 - Next station -> radioNext
 - Previous station -> radioPrevious
