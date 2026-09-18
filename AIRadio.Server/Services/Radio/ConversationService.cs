@@ -8,6 +8,8 @@ namespace AIRadio.Server.Services.Radio
 {
     public interface IConversationService
     {
+        bool IsWaitingForInput { get; }
+
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
@@ -20,6 +22,8 @@ namespace AIRadio.Server.Services.Radio
         private readonly IReadOnlyDictionary<string, ITool> _tools;
         private readonly AsyncWorkQueue<ConversationRequest> _queue;
         private ToolRequest? _pendingToolRequest;
+
+        public bool IsWaitingForInput => _pendingToolRequest is not null;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
         {
@@ -100,9 +104,7 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
-        private async Task<bool> ExecutePendingToolAsync(
-            ToolRequest request,
-            CancellationToken cancellationToken)
+        private async Task<bool> ExecutePendingToolAsync(ToolRequest request, CancellationToken cancellationToken)
         {
             var result = await ExecuteToolAsync(request, cancellationToken);
 
