@@ -2,7 +2,7 @@ using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.AI;
 using AIRadio.Server.Services.Audio;
-using System.Numerics;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Radio
 {
@@ -19,7 +19,7 @@ namespace AIRadio.Server.Services.Radio
         private readonly IAudioManager _audioManager;
         private readonly IReadOnlyDictionary<string, ITool> _tools;
         private readonly AsyncWorkQueue<ConversationRequest> _queue;
-        private bool _awaitingToolInput;
+        private ToolRequest? _pendingToolRequest;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
         {
@@ -46,7 +46,7 @@ namespace AIRadio.Server.Services.Radio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
-            _awaitingToolInput = false;
+            _pendingToolRequest = null;
             _queue.Resume();
         }
 
@@ -56,9 +56,18 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
-                var response = _awaitingToolInput
-                    ? await _llama.ContinueToolAsync(request.Text, cancellationToken)
-                    : await _llama.StartConversationAsync(request.Text, cancellationToken);
+                LlamaResponse response;
+
+                if (_pendingToolRequest is not null)
+                {
+                    var pendingRequest = ApplyPendingToolInput(request.Text);
+                    _pendingToolRequest = null;
+                    response = await ExecutePendingToolAsync(pendingRequest, cancellationToken);
+                }
+                else
+                {
+                    response = await _llama.StartConversationAsync(request.Text, cancellationToken);
+                }
 
                 conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
 
@@ -81,7 +90,7 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
-                    _awaitingToolInput = false;
+                    _pendingToolRequest = null;
                     try
                     {
                         await _llama.ResetAsync(CancellationToken.None);
@@ -94,37 +103,68 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
+        private async Task<LlamaResponse> ExecutePendingToolAsync(
+            ToolRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await ExecuteToolAsync(request, cancellationToken);
+
+            if (result.Success)
+                return await _llama.ContinueAsync([result], cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
+                await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
+
+            if (result.PendingRequest is not null)
+            {
+                _pendingToolRequest = result.PendingRequest;
+                return new LlamaResponse();
+            }
+
+            return await _llama.ContinueAsync([result], cancellationToken);
+        }
+
+        private ToolRequest ApplyPendingToolInput(string text)
+        {
+            if (_pendingToolRequest is null)
+                throw new InvalidOperationException("No pending tool request exists.");
+
+            var arguments = (JObject)_pendingToolRequest.Arguments.DeepClone();
+            var missing = arguments.Properties()
+                .FirstOrDefault(property =>
+                    string.Equals(
+                        property.Value.Value<string>(),
+                        ToolRequest.RequiredValue,
+                        StringComparison.Ordinal));
+
+            if (missing is null)
+                throw new InvalidOperationException("The pending tool request has no missing parameter.");
+
+            arguments[missing.Name] = text.Trim();
+
+            return new ToolRequest
+            {
+                Name = _pendingToolRequest.Name,
+                Arguments = arguments
+            };
+        }
+
         private async Task<bool> ProcessLlamaResponseAsync(LlamaResponse response, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!response.HasToolRequests)
             {
-                _awaitingToolInput = false;
                 if (response.HasSpeech)
                     await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
                 return true;
             }
 
-            // A tool request containing !required! is an interactive request,
-            // not an executable request. Speak the question and keep the
-            // conversation alive for the next utterance.
-            if (response.ToolRequests.Any(request => request.HasMissingRequiredArguments))
-            {
-                _awaitingToolInput = true;
-                _logger.LogInformation(
-                    "Tool input required for {Tools}: {Arguments}",
-                    string.Join(", ", response.ToolRequests.Select(request => request.Name)),
-                    string.Join(", ", response.ToolRequests.SelectMany(request => request.MissingRequiredArguments)));
-
-                if (response.HasSpeech)
-                    await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
-
-                return false;
-            }
-
-            _awaitingToolInput = false;
-            return await ExecuteToolsAsync(response.ToolRequests, response.SpokenText, response.HasSpeech, cancellationToken);
+            return await ExecuteToolsAsync(
+                response.ToolRequests,
+                response.SpokenText,
+                response.HasSpeech,
+                cancellationToken);
         }
 
         private async Task<bool> ExecuteToolsAsync(
@@ -141,19 +181,21 @@ namespace AIRadio.Server.Services.Radio
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Some tools provide deterministic speech directly. Do not speak the
-            // first-round filler for these tools; it only adds latency and produces
-            // an unnecessary "let me check" phrase before the exact response.
             if (results.Count() == 1 &&
-                results[0].Success &&
                 !string.IsNullOrWhiteSpace(results[0].ExactPrompt))
             {
                 await _audioManager.PlaySpeechAsync(results[0].ExactPrompt, cancellationToken);
-                return true;
+
+                if (results[0].PendingRequest is not null)
+                {
+                    _pendingToolRequest = results[0].PendingRequest;
+                    return false;
+                }
+
+                if (results[0].Success)
+                    return true;
             }
 
-            // Other tools still use the second LLM round, so preserve the natural
-            // first-round acknowledgement before continuing.
             if (hasPreToolSpeech && !string.IsNullOrWhiteSpace(preToolSpeech))
                 await _audioManager.PlaySpeechAsync(preToolSpeech, cancellationToken);
 
