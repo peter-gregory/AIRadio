@@ -27,9 +27,12 @@ TOOL RESULT
 - Do not mention tools or internal processing.
 
 CONTINUATION
-- Treat a user reply while required values remain missing as the answer to the current missing value.
-- When all required values are available, return the tool request.
-- After execution, give the final spoken answer.
+- When a tool needs a required value, it returns the spoken question and a pending tool request containing the values it knows and !required! for the missing value.
+- AIRadio speaks that question and waits for the user's reply.
+- The user's reply supplies the next missing parameter directly; do not call the LLM to interpret it.
+- The application inserts the reply into the pending tool request and executes that tool request.
+- Only after the tool succeeds is its raw result sent to the LLM for the final human response.
+- If more required values remain, repeat the question-and-wait cycle.
 
 OUTPUT
 Output only words AIRadio should speak plus tool directives.
