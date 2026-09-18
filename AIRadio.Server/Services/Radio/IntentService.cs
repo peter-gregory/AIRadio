@@ -69,6 +69,23 @@ namespace AIRadio.Server.Services.Radio
             try
             {
                 _logger.LogInformation("Processing intent for " + text);
+
+                // A pending conversation takes precedence over the normal
+                // intent parser. The user's response is an answer to the
+                // conversation's outstanding question, not a new intent.
+                if (_conversationService.IsWaitingForInput)
+                {
+                    _logger.LogInformation(
+                        "Conversation is waiting for input; forwarding text directly to ConversationService: {Text}",
+                        text);
+
+                    await _conversationService.ProcessAsync(
+                        text,
+                        cancellationToken);
+
+                    return;
+                }
+
                 var match = _intentParser.Match(text);
 
                 if (match is not null)
@@ -93,7 +110,7 @@ namespace AIRadio.Server.Services.Radio
                         return;
                     }
 
-                    else if (string.Equals(
+                    if (string.Equals(
                             match.Intent,
                             "WakeUp",
                             StringComparison.OrdinalIgnoreCase))
@@ -115,7 +132,7 @@ namespace AIRadio.Server.Services.Radio
                     {
                         _logger.LogInformation("Intent is unknown for text " + text);
                     }
-                } 
+                }
                 else
                 {
                     _logger.LogInformation("No match for intent " + text);
