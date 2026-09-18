@@ -56,20 +56,17 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
-                LlamaResponse response;
-
                 if (_pendingToolRequest is not null)
                 {
                     var pendingRequest = ApplyPendingToolInput(request.Text);
                     _pendingToolRequest = null;
-                    response = await ExecutePendingToolAsync(pendingRequest, cancellationToken);
+                    conversationComplete = await ExecutePendingToolAsync(pendingRequest, cancellationToken);
                 }
                 else
                 {
-                    response = await _llama.StartConversationAsync(request.Text, cancellationToken);
+                    var response = await _llama.StartConversationAsync(request.Text, cancellationToken);
+                    conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
                 }
-
-                conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
 
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
                 _logger.LogInformation(
@@ -103,14 +100,17 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
-        private async Task<LlamaResponse> ExecutePendingToolAsync(
+        private async Task<bool> ExecutePendingToolAsync(
             ToolRequest request,
             CancellationToken cancellationToken)
         {
             var result = await ExecuteToolAsync(request, cancellationToken);
 
             if (result.Success)
-                return await _llama.ContinueAsync([result], cancellationToken);
+            {
+                var response = await _llama.ContinueAsync([result], cancellationToken);
+                return await ProcessLlamaResponseAsync(response, cancellationToken);
+            }
 
             if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
                 await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
@@ -118,10 +118,11 @@ namespace AIRadio.Server.Services.Radio
             if (result.PendingRequest is not null)
             {
                 _pendingToolRequest = result.PendingRequest;
-                return new LlamaResponse();
+                return false;
             }
 
-            return await _llama.ContinueAsync([result], cancellationToken);
+            var failureResponse = await _llama.ContinueAsync([result], cancellationToken);
+            return await ProcessLlamaResponseAsync(failureResponse, cancellationToken);
         }
 
         private ToolRequest ApplyPendingToolInput(string text)
