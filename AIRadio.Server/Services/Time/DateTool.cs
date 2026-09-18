@@ -12,7 +12,6 @@ public sealed class DateTool : TimeToolBase
 DATE
 Use for the current date or day only.
 Parameters: none.
-Speak only the returned Date value. Do not include the time, location, timezone, or filler.
 Example: "What date is it?" -> {tool:date}
 """;
 
@@ -20,9 +19,13 @@ Example: "What date is it?" -> {tool:date}
     {
         Validate(request, cancellationToken);
         var now = TimeService.GetNow();
+        var date = TimeService.FormatDate(now);
+        var speech = $"Today's date is {date}.";
+
         return Task.FromResult(ToolResult.Successful(
             Name,
             "Current local date retrieved.",
-            new { Date = TimeService.FormatDate(now) }));
+            new { Date = date },
+            speech));
     }
 }

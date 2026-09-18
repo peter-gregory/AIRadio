@@ -13,7 +13,6 @@ public sealed class TimeTool : TimeToolBase
 TIME
 Use for the current time only.
 Parameters: none.
-Speak only the returned Time value. Do not include the date, location, timezone, year, or filler.
 Example: "What time is it?" -> {tool:time}
 """;
 
@@ -21,9 +20,12 @@ Example: "What time is it?" -> {tool:time}
     {
         Validate(request, cancellationToken);
         var now = TimeService.GetNow();
+        var speech = $"The current time is {now:h:mm tt}.";
+
         return Task.FromResult(ToolResult.Successful(
             Name,
             "Current local time retrieved.",
-            new { Time = now.ToString("h:mm tt") }));
+            new { Time = now.ToString("h:mm tt") },
+            speech));
     }
 }
