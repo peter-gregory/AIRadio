@@ -197,7 +197,6 @@ namespace AIRadio.Server.Services.AI
             var conversationPrompt = (await File.ReadAllTextAsync(conversationFile, cancellationToken)).Trim();
             var executionPrompt = (await File.ReadAllTextAsync(executionFile, cancellationToken)).Trim();
             var toolCatalog = _toolExecutor.GetLlmCatalog();
-            var soundUsage = _soundEffectManager.GetPromptText();
 
             var conversationSections = new List<string>
             {
@@ -207,14 +206,8 @@ namespace AIRadio.Server.Services.AI
 
             // Sounds are intentionally excluded from the first-round prompt.
             // They are only needed once a specific tool has been selected.
-            var executionSections = new List<string>
-            {
-                executionPrompt
-            };
-            if (!string.IsNullOrWhiteSpace(soundUsage)) executionSections.Add("SOUNDS\n" + soundUsage);
-
             _conversationSystemPrompt = string.Join("\n", conversationSections);
-            _toolExecutionSystemPrompt = string.Join("\n", executionSections);
+            _toolExecutionSystemPrompt = executionPrompt;
         }
 
         private string BuildToolExecutionPrompt()
@@ -222,11 +215,17 @@ namespace AIRadio.Server.Services.AI
             if (_toolExecutionSystemPrompt is null)
                 throw new InvalidOperationException("The tool execution system prompt has not been initialized.");
 
-            var toolInstructions = _toolExecutor.GetLlmInstructions(_activeToolNames);
-            if (string.IsNullOrWhiteSpace(toolInstructions))
-                return _toolExecutionSystemPrompt;
+            var sections = new List<string> { _toolExecutionSystemPrompt };
 
-            return _toolExecutionSystemPrompt + "\n" + toolInstructions;
+            var toolInstructions = _toolExecutor.GetLlmInstructions(_activeToolNames);
+            if (!string.IsNullOrWhiteSpace(toolInstructions))
+                sections.Add(toolInstructions);
+
+            var soundUsage = _soundEffectManager.GetPromptText(_activeToolNames);
+            if (!string.IsNullOrWhiteSpace(soundUsage))
+                sections.Add("SOUNDS\n" + soundUsage);
+
+            return string.Join("\n", sections);
         }
 
         private async Task WarmSystemPromptAsync(CancellationToken cancellationToken)

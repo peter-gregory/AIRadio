@@ -6,6 +6,9 @@
 
         public required IReadOnlyList<SoundEffectWave> Effects { get; init; }
 
+        // Tool names that are allowed to use this sound effect.
+        public required IReadOnlyList<string> AllowedTools { get; init; }
+
         public SoundEffectWave GetRandom()
         {
             if (Effects.Count == 0)

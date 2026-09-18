@@ -13,13 +13,25 @@ namespace AIRadio.Server.Services.Sounds
         SoundEffectWave? GetRandomSound(string tag);
         IReadOnlyList<string> GetTags();
         string GetPromptText();
+        string GetPromptText(IEnumerable<string> toolNames);
         void Clear();
     }
 
     public sealed class SoundEffectManager : ISoundEffectManager
     {
+        private static readonly IReadOnlyDictionary<string, string> CategoryTools =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["alarm"] = "schedule",
+                ["events"] = "events",
+                ["news"] = "news",
+                ["radio"] = "radio",
+                ["weather"] = "weather"
+            };
+
         private readonly ILogger<SoundEffectManager> _logger;
         private Dictionary<string, SoundEffect> _soundEffects = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, string> _promptEntries = new(StringComparer.OrdinalIgnoreCase);
         private string _promptText = string.Empty;
 
         public bool IsInitialized { get; private set; }
@@ -41,14 +53,31 @@ namespace AIRadio.Server.Services.Sounds
                 throw new DirectoryNotFoundException($"Sound effects directory was not found: {soundsDirectory}");
 
             var discovered = new Dictionary<string, List<SoundEffectWave>>(StringComparer.OrdinalIgnoreCase);
+            var allowedTools = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var file in Directory.EnumerateFiles(soundsDirectory, "*.wav", SearchOption.AllDirectories))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
                 var directory = Path.GetDirectoryName(file);
                 var tag = string.IsNullOrWhiteSpace(directory) ? null : Path.GetFileName(directory);
                 if (string.IsNullOrWhiteSpace(tag))
                 {
                     _logger.LogWarning("Ignoring sound effect with invalid tag directory: {File}", file);
+                    continue;
+                }
+
+                var category = directory is null
+                    ? null
+                    : Directory.GetParent(directory)?.Name;
+
+                if (string.IsNullOrWhiteSpace(category) ||
+                    !CategoryTools.TryGetValue(category, out var toolName))
+                {
+                    _logger.LogWarning(
+                        "Ignoring sound effect with unknown category '{Category}': {File}",
+                        category ?? "<none>",
+                        file);
                     continue;
                 }
 
@@ -75,18 +104,47 @@ namespace AIRadio.Server.Services.Sounds
                     discovered.Add(tag, effects);
                 }
 
-                effects.Add(new SoundEffectWave { FileName = Path.GetFileName(file), WavData = wavData });
+                effects.Add(new SoundEffectWave
+                {
+                    FileName = Path.GetFileName(file),
+                    WavData = wavData
+                });
+
+                if (!allowedTools.TryGetValue(tag, out var tools))
+                {
+                    tools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    allowedTools.Add(tag, tools);
+                }
+
+                tools.Add(toolName);
             }
 
             var soundEffects = new Dictionary<string, SoundEffect>(StringComparer.OrdinalIgnoreCase);
             foreach (var (tag, effects) in discovered)
             {
                 if (effects.Count == 0) continue;
-                soundEffects.Add(tag, new SoundEffect { Tag = tag, Effects = effects });
+
+                soundEffects.Add(tag, new SoundEffect
+                {
+                    Tag = tag,
+                    Effects = effects,
+                    AllowedTools = allowedTools[tag]
+                        .OrderBy(static x => x, StringComparer.OrdinalIgnoreCase)
+                        .ToArray()
+                });
             }
 
             _soundEffects = soundEffects;
-            _promptText = await BuildPromptTextAsync(soundsDirectory, _soundEffects.Keys, cancellationToken);
+            _promptEntries = await BuildPromptEntriesAsync(
+                soundsDirectory,
+                _soundEffects.Values,
+                cancellationToken);
+            _promptText = string.Join(
+                '\n',
+                _promptEntries
+                    .OrderBy(static x => x.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(static x => x.Value));
+
             IsInitialized = true;
 
             _logger.LogInformation(
@@ -119,30 +177,54 @@ namespace AIRadio.Server.Services.Sounds
             return _soundEffects.TryGetValue(tag, out var soundEffect) ? soundEffect.GetRandom() : null;
         }
 
-        public IReadOnlyList<string> GetTags() => _soundEffects.Keys.OrderBy(static x => x).ToArray();
+        public IReadOnlyList<string> GetTags() =>
+            _soundEffects.Keys.OrderBy(static x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+
         public string GetPromptText() => _promptText;
+
+        public string GetPromptText(IEnumerable<string> toolNames)
+        {
+            ArgumentNullException.ThrowIfNull(toolNames);
+
+            var requestedTools = toolNames
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (requestedTools.Count == 0)
+                return string.Empty;
+
+            return string.Join(
+                '\n',
+                _soundEffects.Values
+                    .Where(sound => sound.AllowedTools.Any(requestedTools.Contains))
+                    .OrderBy(static sound => sound.Tag, StringComparer.OrdinalIgnoreCase)
+                    .Select(sound => _promptEntries.GetValueOrDefault(sound.Tag))
+                    .Where(static text => !string.IsNullOrWhiteSpace(text)));
+        }
 
         public void Clear()
         {
             _soundEffects = new(StringComparer.OrdinalIgnoreCase);
+            _promptEntries = new(StringComparer.OrdinalIgnoreCase);
             _promptText = string.Empty;
             IsInitialized = false;
         }
 
-        private async Task<string> BuildPromptTextAsync(
+        private async Task<Dictionary<string, string>> BuildPromptEntriesAsync(
             string soundsDirectory,
-            IEnumerable<string> tags,
+            IEnumerable<SoundEffect> soundEffects,
             CancellationToken cancellationToken)
         {
-            var descriptions = new List<string>();
+            var entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var tag in tags.OrderBy(static x => x))
+            foreach (var soundEffect in soundEffects)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var tagDirectory = FindTagDirectory(soundsDirectory, tag);
+
+                var tagDirectory = FindTagDirectory(soundsDirectory, soundEffect.Tag);
                 if (tagDirectory is null)
                 {
-                    _logger.LogWarning("Unable to locate sound directory for tag '{Tag}'.", tag);
+                    _logger.LogWarning("Unable to locate sound directory for tag '{Tag}'.", soundEffect.Tag);
                     continue;
                 }
 
@@ -152,16 +234,14 @@ namespace AIRadio.Server.Services.Sounds
                 var usage = (await File.ReadAllTextAsync(usageFile, cancellationToken)).Trim();
                 if (string.IsNullOrWhiteSpace(usage)) continue;
 
-                // Keep only functional guidance. Markdown formatting and repeated whitespace
-                // add tokens without improving tool selection.
                 usage = string.Join(
                     ' ',
                     usage.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-                descriptions.Add($"{{sound:{tag}}}={usage}");
+                entries[soundEffect.Tag] = $"{{sound:{soundEffect.Tag}}}={usage}";
             }
 
-            return string.Join('\n', descriptions);
+            return entries;
         }
 
         private static string? FindTagDirectory(string soundsDirectory, string tag)
