@@ -23,7 +23,7 @@ ROUTING
 - "what is today", "what day is it", "what's today's date" -> date
 - "what time is it", "what's the time", "what time" -> time
 - Only use datetime when the user explicitly asks for both the current date and time.
-- Current weather -> weather
+- Current weather -> weather-current
 - Future weather -> forecast
 - Current news -> news
 - Scheduled/upcoming events -> events
@@ -45,7 +45,7 @@ ROUTING
 - Create/change alarms or reminders -> schedule
 
 IMPORTANT
-- "report" is not a tool. Words such as "weather report", "news report", or "events report" route to weather, news, or events.
+- "report" is not a tool. Words such as "weather report", "news report", or "events report" route to weather-current, news, or events.
 - Never use location for a time or date request.
 - Never invent a tool name.
 - Never include tool parameters in the first round.
