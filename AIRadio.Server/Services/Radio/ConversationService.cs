@@ -124,13 +124,14 @@ namespace AIRadio.Server.Services.Radio
             }
 
             _awaitingToolInput = false;
-            if (response.HasSpeech)
-                await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
-
-            return await ExecuteToolsAsync(response.ToolRequests, cancellationToken);
+            return await ExecuteToolsAsync(response.ToolRequests, response.SpokenText, response.HasSpeech, cancellationToken);
         }
 
-        private async Task<bool> ExecuteToolsAsync(IEnumerable<ToolRequest> toolRequests, CancellationToken cancellationToken)
+        private async Task<bool> ExecuteToolsAsync(
+            IEnumerable<ToolRequest> toolRequests,
+            string? preToolSpeech,
+            bool hasPreToolSpeech,
+            CancellationToken cancellationToken)
         {
             var requests = toolRequests.ToList();
             _logger.LogInformation("Processing " + requests.Count + " tool requests");
@@ -140,8 +141,9 @@ namespace AIRadio.Server.Services.Radio
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Some tools can provide deterministic speech directly. When a single
-            // tool supplies an exact prompt, skip the expensive second LLM round.
+            // Some tools provide deterministic speech directly. Do not speak the
+            // first-round filler for these tools; it only adds latency and produces
+            // an unnecessary "let me check" phrase before the exact response.
             if (results.Count() == 1 &&
                 results[0].Success &&
                 !string.IsNullOrWhiteSpace(results[0].ExactPrompt))
@@ -149,6 +151,11 @@ namespace AIRadio.Server.Services.Radio
                 await _audioManager.PlaySpeechAsync(results[0].ExactPrompt, cancellationToken);
                 return true;
             }
+
+            // Other tools still use the second LLM round, so preserve the natural
+            // first-round acknowledgement before continuing.
+            if (hasPreToolSpeech && !string.IsNullOrWhiteSpace(preToolSpeech))
+                await _audioManager.PlaySpeechAsync(preToolSpeech, cancellationToken);
 
             var response = await _llama.ContinueAsync(results, cancellationToken);
             return await ProcessLlamaResponseAsync(response, cancellationToken);
