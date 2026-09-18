@@ -19,14 +19,18 @@ namespace AIRadio.Server.Services.Sounds
 
     public sealed class SoundEffectManager : ISoundEffectManager
     {
-        private static readonly IReadOnlyDictionary<string, string> CategoryTools =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        private static readonly IReadOnlyDictionary<string, string[]> CategoryTools =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
             {
-                ["alarm"] = "schedule",
-                ["events"] = "events",
-                ["news"] = "news",
-                ["radio"] = "radio",
-                ["weather"] = "weather"
+                ["alarm"] = ["schedule"],
+                ["events"] = ["events"],
+                ["news"] = ["news"],
+                ["radio"] =
+                [
+                    "radioPlay", "radioStop", "radioNext", "radioPrevious",
+                    "radioVolume", "radioCurrent", "radioStatus", "radioPlaylist", "radioSearch"
+                ],
+                ["weather"] = ["weather", "forecast"]
             };
 
         private readonly ILogger<SoundEffectManager> _logger;
@@ -72,7 +76,7 @@ namespace AIRadio.Server.Services.Sounds
                     : Directory.GetParent(directory)?.Name;
 
                 if (string.IsNullOrWhiteSpace(category) ||
-                    !CategoryTools.TryGetValue(category, out var toolName))
+                    !CategoryTools.ContainsKey(category))
                 {
                     _logger.LogWarning(
                         "Ignoring sound effect with unknown category '{Category}': {File}",
@@ -116,7 +120,8 @@ namespace AIRadio.Server.Services.Sounds
                     allowedTools.Add(tag, tools);
                 }
 
-                tools.Add(toolName);
+                foreach (var toolName in CategoryTools[category])
+                    tools.Add(toolName);
             }
 
             var soundEffects = new Dictionary<string, SoundEffect>(StringComparer.OrdinalIgnoreCase);
