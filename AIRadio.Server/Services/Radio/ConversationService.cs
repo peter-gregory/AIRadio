@@ -138,6 +138,16 @@ namespace AIRadio.Server.Services.Radio
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Some tools can provide deterministic speech directly. When a single
+            // tool supplies an exact prompt, skip the expensive second LLM round.
+            if (results.Count == 1 &&
+                results[0].Success &&
+                !string.IsNullOrWhiteSpace(results[0].ExactPrompt))
+            {
+                await _audioManager.PlaySpeechAsync(results[0].ExactPrompt, cancellationToken);
+                return true;
+            }
+
             var response = await _llama.ContinueAsync(results, cancellationToken);
             return await ProcessLlamaResponseAsync(response, cancellationToken);
         }
