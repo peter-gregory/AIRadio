@@ -114,6 +114,10 @@ For a notably windy report:
                 ? $"{locationForWeather.City}, {locationForWeather.State}"
                 : locationForWeather.Raw;
 
+            _logger.LogInformation(
+                "Weather location resolved to {Location}; returning preamble before weather request.",
+                displayLocation);
+
             return ToolResult.Preamble(
                 Name,
                 $"Here's your current weather conditions for {displayLocation}. {{sound:weather-intro}}",
