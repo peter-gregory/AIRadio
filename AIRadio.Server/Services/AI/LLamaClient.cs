@@ -31,6 +31,7 @@ namespace AIRadio.Server.Services.AI
         private readonly SemaphoreSlim _requestLock = new(1, 1);
         private string? _conversationSystemPrompt;
         private string? _toolExecutionSystemPrompt;
+        private string? _toolResponseSystemPrompt;
         private CancellationTokenSource? _requestCancellation;
         private bool _isInitialized;
         private bool _disposed;
@@ -81,7 +82,7 @@ namespace AIRadio.Server.Services.AI
                 if (_activeToolNames.Count == 0)
                     throw new InvalidOperationException("Tool results were supplied without an active tool round.");
 
-                SetSystemPrompt(BuildToolExecutionPrompt());
+                SetSystemPrompt(BuildToolResponsePrompt());
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
@@ -178,7 +179,10 @@ namespace AIRadio.Server.Services.AI
 
         private async Task EnsureSystemPromptsAsync(CancellationToken cancellationToken)
         {
-            if (_conversationSystemPrompt is not null && _toolExecutionSystemPrompt is not null) return;
+            if (_conversationSystemPrompt is not null &&
+                _toolExecutionSystemPrompt is not null &&
+                _toolResponseSystemPrompt is not null)
+                return;
 
             var configuredPath = _configuration["Application:PromptsDirectory"]
                 ?? throw new InvalidOperationException("Application:PromptsDirectory is not configured.");
@@ -186,8 +190,11 @@ namespace AIRadio.Server.Services.AI
 
             var conversationFile = Path.Combine(promptsPath, "conversation-system.txt");
             var executionFile = Path.Combine(promptsPath, "tool-execution-system.txt");
+            var responseFile = Path.Combine(promptsPath, "tool-response-system.txt");
+
             if (!File.Exists(conversationFile)) throw new FileNotFoundException("Conversation Llama system prompt was not found.", conversationFile);
             if (!File.Exists(executionFile)) throw new FileNotFoundException("Tool execution Llama system prompt was not found.", executionFile);
+            if (!File.Exists(responseFile)) throw new FileNotFoundException("Tool response Llama system prompt was not found.", responseFile);
 
             var soundsDirectory = _configuration["Application:SoundsDirectory"]
                 ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured.");
@@ -196,6 +203,7 @@ namespace AIRadio.Server.Services.AI
 
             var conversationPrompt = (await File.ReadAllTextAsync(conversationFile, cancellationToken)).Trim();
             var executionPrompt = (await File.ReadAllTextAsync(executionFile, cancellationToken)).Trim();
+            var responsePrompt = (await File.ReadAllTextAsync(responseFile, cancellationToken)).Trim();
             var toolCatalog = _toolExecutor.GetLlmCatalog();
 
             var conversationSections = new List<string>
@@ -204,10 +212,9 @@ namespace AIRadio.Server.Services.AI
                 toolCatalog
             };
 
-            // Sounds are intentionally excluded from the first-round prompt.
-            // They are only needed once a specific tool has been selected.
             _conversationSystemPrompt = string.Join("\n", conversationSections);
             _toolExecutionSystemPrompt = executionPrompt;
+            _toolResponseSystemPrompt = responsePrompt;
         }
 
         private string BuildToolExecutionPrompt()
@@ -218,6 +225,24 @@ namespace AIRadio.Server.Services.AI
             var sections = new List<string> { _toolExecutionSystemPrompt };
 
             var toolInstructions = _toolExecutor.GetLlmInstructions(_activeToolNames);
+            if (!string.IsNullOrWhiteSpace(toolInstructions))
+                sections.Add(toolInstructions);
+
+            var soundUsage = _soundEffectManager.GetPromptText(_activeToolNames);
+            if (!string.IsNullOrWhiteSpace(soundUsage))
+                sections.Add("SOUNDS\n" + soundUsage);
+
+            return string.Join("\n", sections);
+        }
+
+        private string BuildToolResponsePrompt()
+        {
+            if (_toolResponseSystemPrompt is null)
+                throw new InvalidOperationException("The tool response system prompt has not been initialized.");
+
+            var sections = new List<string> { _toolResponseSystemPrompt };
+
+            var toolInstructions = _toolExecutor.GetLlmResponseInstructions(_activeToolNames);
             if (!string.IsNullOrWhiteSpace(toolInstructions))
                 sections.Add(toolInstructions);
 
