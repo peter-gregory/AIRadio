@@ -30,3 +30,6 @@ SOUND EFFECTS
 
 AVAILABLE SOUND EFFECTS
 The following effects are the only sound effects available for this tool:
+
+- For ordinary conversation, prefer 25-40 words unless the user asks for more detail.
+- For simple capability questions, answer in 2-3 short sentences and stop.
