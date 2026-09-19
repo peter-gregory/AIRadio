@@ -13,6 +13,12 @@ namespace AIRadio.Server.Models.Tools
         [JsonProperty("arguments")]
         public JObject Arguments { get; init; } = new();
 
+        /// <summary>
+        /// Internal continuation state. It is not exposed to the LLM.
+        /// </summary>
+        [JsonIgnore]
+        public ToolRequestState State { get; init; } = ToolRequestState.Initial;
+
         public T? GetArgument<T>(string name)
         {
             var token = Arguments[name];
@@ -41,5 +47,19 @@ namespace AIRadio.Server.Models.Tools
                 .ToArray();
 
         public override string ToString() => JsonConvert.SerializeObject(this);
+
+        public ToolRequest WithState(ToolRequestState state) =>
+            new()
+            {
+                Name = Name,
+                Arguments = (JObject)Arguments.DeepClone(),
+                State = state
+            };
+    }
+
+    public enum ToolRequestState
+    {
+        Initial,
+        PreambleComplete
     }
 }
