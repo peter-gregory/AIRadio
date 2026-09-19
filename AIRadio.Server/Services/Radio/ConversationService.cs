@@ -107,8 +107,16 @@ namespace AIRadio.Server.Services.Radio
         private async Task<bool> ExecutePendingToolAsync(ToolRequest request, CancellationToken cancellationToken)
         {
             var result = await ExecuteToolAsync(request, cancellationToken);
+            var handling = await HandleToolResultAsync(result, cancellationToken);
 
-            return await HandleToolResultAsync(result, cancellationToken);
+            if (handling.Waiting)
+                return false;
+
+            if (handling.Result is null)
+                return true;
+
+            var response = await _llama.ContinueAsync([handling.Result], cancellationToken);
+            return await ProcessLlamaResponseAsync(response, cancellationToken);
         }
 
         private ToolRequest ApplyPendingToolInput(string text)
@@ -170,12 +178,17 @@ namespace AIRadio.Server.Services.Radio
 
             if (results.Count == 1)
             {
-                var handled = await HandleToolResultAsync(results[0], cancellationToken);
-                if (!handled)
+                var handling = await HandleToolResultAsync(results[0], cancellationToken);
+                if (handling.Waiting)
                     return false;
 
-                if (results[0].Status == ToolResultStatus.Preamble)
-                    return true;
+                if (handling.Result is not null)
+                {
+                    var response = await _llama.ContinueAsync([handling.Result], cancellationToken);
+                    return await ProcessLlamaResponseAsync(response, cancellationToken);
+                }
+
+                return true;
             }
 
             if (hasPreToolSpeech && !string.IsNullOrWhiteSpace(preToolSpeech))
@@ -185,7 +198,7 @@ namespace AIRadio.Server.Services.Radio
             return await ProcessLlamaResponseAsync(response, cancellationToken);
         }
 
-        private async Task<bool> HandleToolResultAsync(
+        private async Task<(bool Waiting, ToolResult? Result)> HandleToolResultAsync(
             ToolResult result,
             CancellationToken cancellationToken)
         {
@@ -198,37 +211,37 @@ namespace AIRadio.Server.Services.Radio
                     if (result.PendingRequest is not null)
                     {
                         _pendingToolRequest = result.PendingRequest;
-                        return false;
+                        return (true, null);
                     }
 
-                    break;
+                    return (false, result);
 
                 case ToolResultStatus.Preamble:
                     if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
                         await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
 
-                    if (result.PendingRequest is not null)
-                    {
-                        var continuation = await ExecuteToolAsync(result.PendingRequest, cancellationToken);
-                        if (continuation.Status == ToolResultStatus.Preamble)
-                            throw new InvalidOperationException(
-                                $"Tool '{result.ToolName}' returned a repeated preamble without advancing state.");
+                    if (result.PendingRequest is null)
+                        return (false, null);
 
-                        return await HandleToolResultAsync(continuation, cancellationToken);
-                    }
+                    var continuation = await ExecuteToolAsync(result.PendingRequest, cancellationToken);
+                    if (continuation.Status == ToolResultStatus.Preamble)
+                        throw new InvalidOperationException(
+                            $"Tool '{result.ToolName}' returned a repeated preamble without advancing state.");
 
-                    return true;
+                    return await HandleToolResultAsync(continuation, cancellationToken);
 
                 case ToolResultStatus.Result:
                     if (result.ExactPrompt is not null && result.Success)
+                    {
                         await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
-                    return true;
+                        return (false, null);
+                    }
+
+                    return (false, result);
 
                 default:
                     throw new ArgumentOutOfRangeException();
             }
-
-            return false;
         }
 
         private async Task<ToolResult> ExecuteToolAsync(ToolRequest request, CancellationToken cancellationToken)
