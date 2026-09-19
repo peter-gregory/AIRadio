@@ -33,7 +33,8 @@ Examples:
 "Give me a weather report" -> {tool:weather-current}
 """;
 
-    public string GetLlmResponseInstructions() => """\nWEATHER RESPONSE
+    public string GetLlmResponseInstructions() => """
+WEATHER RESPONSE
 - Give a natural spoken weather summary rather than reciting the available fields.
 - Lead with the location and overall current conditions.
 - Include the temperature and, when useful, the feels-like temperature.
