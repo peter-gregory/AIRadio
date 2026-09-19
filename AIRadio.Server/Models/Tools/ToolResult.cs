@@ -2,10 +2,18 @@
 
 namespace AIRadio.Server.Models.Tools
 {
+    public enum ToolResultStatus
+    {
+        Result,
+        MissingParameter,
+        Preamble
+    }
+
     public sealed class ToolResult
     {
-        public string ToolName { get; set; } =
-            string.Empty;
+        public string ToolName { get; set; } = string.Empty;
+
+        public ToolResultStatus Status { get; set; }
 
         public bool Success { get; set; }
 
@@ -14,25 +22,20 @@ namespace AIRadio.Server.Models.Tools
         public object? Data { get; set; }
 
         /// <summary>
-        /// Optional exact speech to send directly to the audio pipeline.
-        /// When set, ConversationService can skip the second LLM round.
+        /// Direct speech for MissingParameter or Preamble.
+        /// May contain embedded sound-effect tags.
         /// </summary>
         public string? ExactPrompt { get; set; }
 
         /// <summary>
-        /// Tool request to resume when the tool needs additional user input.
-        /// Missing values are represented by ToolRequest.RequiredValue.
+        /// Tool request to resume after MissingParameter or Preamble.
         /// </summary>
         public ToolRequest? PendingRequest { get; set; }
 
         public string? Error { get; set; }
 
-        public string ToJson()
-        {
-            return JsonConvert.SerializeObject(
-                this,
-                Formatting.None);
-        }
+        public string ToJson() =>
+            JsonConvert.SerializeObject(this, Formatting.None);
 
         public static ToolResult Successful(
             string toolName,
@@ -43,6 +46,7 @@ namespace AIRadio.Server.Models.Tools
             return new ToolResult
             {
                 ToolName = toolName,
+                Status = ToolResultStatus.Result,
                 Success = true,
                 Message = message,
                 Data = data,
@@ -59,10 +63,45 @@ namespace AIRadio.Server.Models.Tools
             return new ToolResult
             {
                 ToolName = toolName,
+                Status = ToolResultStatus.Result,
                 Success = false,
                 Error = error,
                 ExactPrompt = exactPrompt,
                 PendingRequest = pendingRequest
+            };
+        }
+
+        public static ToolResult MissingParameter(
+            string toolName,
+            string prompt,
+            ToolRequest pendingRequest)
+        {
+            ArgumentNullException.ThrowIfNull(pendingRequest);
+
+            return new ToolResult
+            {
+                ToolName = toolName,
+                Status = ToolResultStatus.MissingParameter,
+                Success = false,
+                ExactPrompt = prompt,
+                PendingRequest = pendingRequest
+            };
+        }
+
+        public static ToolResult Preamble(
+            string toolName,
+            string prompt,
+            ToolRequest continuation)
+        {
+            ArgumentNullException.ThrowIfNull(continuation);
+
+            return new ToolResult
+            {
+                ToolName = toolName,
+                Status = ToolResultStatus.Preamble,
+                Success = true,
+                ExactPrompt = prompt,
+                PendingRequest = continuation
             };
         }
     }
