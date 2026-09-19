@@ -30,7 +30,7 @@ namespace AIRadio.Server.Services.Sounds
                     "radioPlay", "radioStop", "radioNext", "radioPrevious",
                     "radioVolume", "radioCurrent", "radioStatus", "radioPlaylist", "radioSearch"
                 ],
-                ["weather"] = ["weather", "forecast"]
+                ["weather"] = ["weather-current", "forecast"]
             };
 
         private readonly ILogger<SoundEffectManager> _logger;
@@ -50,7 +50,6 @@ namespace AIRadio.Server.Services.Sounds
         public async Task InitializeAsync(string soundsDirectory, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Initialize SoundEffectManager");
-
             ArgumentException.ThrowIfNullOrWhiteSpace(soundsDirectory);
             if (IsInitialized) return;
             if (!Directory.Exists(soundsDirectory))
@@ -71,17 +70,12 @@ namespace AIRadio.Server.Services.Sounds
                     continue;
                 }
 
-                var category = directory is null
-                    ? null
-                    : Directory.GetParent(directory)?.Name;
-
-                if (string.IsNullOrWhiteSpace(category) ||
-                    !CategoryTools.ContainsKey(category))
+                var category = directory is null ? null : Directory.GetParent(directory)?.Name;
+                if (string.IsNullOrWhiteSpace(category) || !CategoryTools.ContainsKey(category))
                 {
                     _logger.LogWarning(
                         "Ignoring sound effect with unknown category '{Category}': {File}",
-                        category ?? "<none>",
-                        file);
+                        category ?? "<none>", file);
                     continue;
                 }
 
@@ -140,22 +134,13 @@ namespace AIRadio.Server.Services.Sounds
             }
 
             _soundEffects = soundEffects;
-            _promptEntries = await BuildPromptEntriesAsync(
-                soundsDirectory,
-                _soundEffects.Values,
-                cancellationToken);
-            _promptText = string.Join(
-                '\n',
-                _promptEntries
-                    .OrderBy(static x => x.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(static x => x.Value));
-
+            _promptEntries = await BuildPromptEntriesAsync(soundsDirectory, _soundEffects.Values, cancellationToken);
+            _promptText = string.Join('\n', _promptEntries.OrderBy(static x => x.Key, StringComparer.OrdinalIgnoreCase).Select(static x => x.Value));
             IsInitialized = true;
 
             _logger.LogInformation(
                 "Sound effect library initialized: {SoundEffectCount} tags, {WaveCount} WAV files.",
-                _soundEffects.Count,
-                _soundEffects.Values.Sum(x => x.Effects.Count));
+                _soundEffects.Count, _soundEffects.Values.Sum(x => x.Effects.Count));
         }
 
         public bool HasSoundEffect(string tag)
@@ -195,8 +180,7 @@ namespace AIRadio.Server.Services.Sounds
                 .Where(static name => !string.IsNullOrWhiteSpace(name))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            if (requestedTools.Count == 0)
-                return string.Empty;
+            if (requestedTools.Count == 0) return string.Empty;
 
             return string.Join(
                 '\n',
@@ -239,10 +223,7 @@ namespace AIRadio.Server.Services.Sounds
                 var usage = (await File.ReadAllTextAsync(usageFile, cancellationToken)).Trim();
                 if (string.IsNullOrWhiteSpace(usage)) continue;
 
-                usage = string.Join(
-                    ' ',
-                    usage.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
+                usage = string.Join(' ', usage.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
                 entries[soundEffect.Tag] = $"{{sound:{soundEffect.Tag}}}={usage}";
             }
 
