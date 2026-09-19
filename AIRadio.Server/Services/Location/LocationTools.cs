@@ -1,4 +1,5 @@
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Location;
 
@@ -39,7 +40,22 @@ Example: "Set my location to Miami" -> {tool:locationSet,location=Miami}
         ArgumentNullException.ThrowIfNull(request);
         var location = request.GetString("location");
         if (string.IsNullOrWhiteSpace(location))
-            return ToolResult.Failed(Name, "A location is required.");
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = new JObject
+                {
+                    ["location"] = ToolRequest.RequiredValue
+                }
+            };
+
+            return ToolResult.MissingParameter(
+                Name,
+                "What city and state should I use for the radio's location?",
+                pending);
+        }
+
         var updated = await _service.UpdateCurrentLocationAsync(location.Trim(), cancellationToken);
         return updated is null
             ? ToolResult.Failed(Name, $"Unable to determine location '{location}'.")
