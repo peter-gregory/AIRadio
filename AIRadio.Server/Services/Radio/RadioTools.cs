@@ -1,6 +1,7 @@
 using AIRadio.Server.Models.Radio;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Mpv;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Radio;
 
@@ -44,6 +45,25 @@ Use the station value from a previous radio search/playlist result. Never invent
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
+        var stationId = request.GetString("stationId");
+        var stationName = request.GetString("stationName");
+        if (string.IsNullOrWhiteSpace(stationId) && string.IsNullOrWhiteSpace(stationName))
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = new JObject
+                {
+                    ["stationName"] = ToolRequest.RequiredValue
+                }
+            };
+
+            return ToolResult.MissingParameter(
+                Name,
+                "Which radio station would you like me to play?",
+                pending);
+        }
+
         var station = FindStation(request);
         if (station is null) return ToolResult.Failed(Name, "The requested station was not found in the current playlist.");
         await Mpv.PlayAsync(station, cancellationToken);
@@ -101,7 +121,22 @@ Parameters:
     {
         Validate(request, cancellationToken);
         var value = request.GetInt32("volume");
-        if (!value.HasValue) return ToolResult.Failed(Name, "A volume from 0 to 100 is required.");
+        if (!value.HasValue)
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = new Newtonsoft.Json.Linq.JObject
+                {
+                    ["volume"] = ToolRequest.RequiredValue
+                }
+            };
+
+            return ToolResult.MissingParameter(
+                Name,
+                "What volume should I set the radio to, from 0 to 100?",
+                pending);
+        }
         value = Math.Clamp(value.Value, 0, 100);
         await Mpv.SetVolumeAsync(value.Value, cancellationToken);
         return ToolResult.Successful(Name, $"Radio volume set to {value}.", new { Volume = value });
@@ -164,7 +199,22 @@ Never invent search results.
     {
         ArgumentNullException.ThrowIfNull(request);
         var query = request.GetString("query");
-        if (string.IsNullOrWhiteSpace(query)) return ToolResult.Failed(Name, "A search query is required.");
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = new Newtonsoft.Json.Linq.JObject
+                {
+                    ["query"] = ToolRequest.RequiredValue
+                }
+            };
+
+            return ToolResult.MissingParameter(
+                Name,
+                "What radio station, genre, artist, or topic should I search for?",
+                pending);
+        }
         var results = await _search.SearchAsync(new RadioSearchCriteria { Query = query.Trim() }, cancellationToken);
         return ToolResult.Successful(Name, $"Found {results.Count} radio station(s).", results);
     }
