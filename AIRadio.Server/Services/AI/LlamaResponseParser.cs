@@ -46,9 +46,21 @@ public static class LlamaResponseParser
             index = end;
         }
 
+        // The first round must select a tool. If the local model fails to
+        // emit a tool tag, route the request through conversation rather than
+        // accidentally speaking first-round model output.
+        if (toolRequests.Count == 0)
+        {
+            toolRequests.Add(new ToolRequest
+            {
+                Name = "conversation",
+                Arguments = new JObject()
+            });
+        }
+
         var response = new LlamaResponse
         {
-            SpokenText = spokenText.ToString().Trim()
+            SpokenText = string.Empty
         };
         response.ToolRequests.AddRange(toolRequests);
         return response;
