@@ -14,11 +14,13 @@ namespace AIRadio.Server.Services.Location
         : IWeatherLocationResolver
     {
         private readonly HttpClient _httpClient;
+        private ILogger<OpenMeteoLocationResolver> _logger;
 
         public OpenMeteoLocationResolver(
-            HttpClient httpClient)
+            HttpClient httpClient, ILogger<OpenMeteoLocationResolver> logger)
         {
             _httpClient = httpClient;
+            _logger = logger;
         }
 
         public async Task<WeatherCoordinates?> ResolveAsync(
@@ -42,16 +44,22 @@ namespace AIRadio.Server.Services.Location
                 "&language=en" +
                 "&format=json";
 
+            _logger.LogInformation($"Get location lat/long using {url}");
+
             using var response =
                 await _httpClient.GetAsync(
                     url,
                     cancellationToken);
+
+            _logger.LogInformation($"Response: {response}");
 
             response.EnsureSuccessStatusCode();
 
             var json =
                 await response.Content.ReadAsStringAsync(
                     cancellationToken);
+
+            _logger.LogInformation($"Received location reply {json}");
 
             var result =
                 JsonConvert.DeserializeObject<OpenMeteoGeocodingResponse>(

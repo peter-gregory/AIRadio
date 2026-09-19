@@ -41,8 +41,6 @@ namespace AIRadio.Server.Services.Weather
             ArgumentNullException.ThrowIfNull(location);
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.LogInformation("request for weather using URL " + url);
-
             try
             {
                 // RadioLocation deliberately contains only the generic
