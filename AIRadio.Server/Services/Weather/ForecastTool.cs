@@ -58,7 +58,10 @@ FORECAST RESPONSE
         try
         {
             var result = await _weatherService.GetWeatherAsync(location, cancellationToken);
-            return ToolResult.Successful(Name, "Weather forecast retrieved successfully.", result);
+            return ToolResult.Successful(
+                Name,
+                "Weather forecast retrieved successfully.",
+                new WeatherForecastReport(result));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
