@@ -177,7 +177,7 @@ namespace AIRadio.Server.Services.Radio
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (results.Count == 1)
+            if (results.Count() == 1)
             {
                 var handling = await HandleToolResultAsync(results[0], cancellationToken);
                 if (handling.Waiting)
@@ -185,8 +185,8 @@ namespace AIRadio.Server.Services.Radio
 
                 if (handling.Result is not null)
                 {
-                    var response = await _llama.ContinueAsync([handling.Result], cancellationToken);
-                    return await ProcessLlamaResponseAsync(response, cancellationToken);
+                    var continueResponse = await _llama.ContinueAsync([handling.Result], cancellationToken);
+                    return await ProcessLlamaResponseAsync(continueResponse, cancellationToken);
                 }
 
                 return true;
