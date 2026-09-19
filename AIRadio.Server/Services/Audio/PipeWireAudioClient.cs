@@ -48,7 +48,7 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
     {
         _pipeWire = pipeWire;
         _logger = logger;
-        _sampleRate = configuration.GetValue("AudioFormat:SampleRate", 48000);
+        _sampleRate = configuration.GetValue("AudioFormat:SampleRate", 16000);
         _channels = configuration.GetValue<short>("AudioFormat:Channels", 1);
         _bitsPerSample = configuration.GetValue<short>("AudioFormat:BitsPerSample", 16);
     }
