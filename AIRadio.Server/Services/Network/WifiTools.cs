@@ -1,4 +1,5 @@
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Network;
 
@@ -68,16 +69,70 @@ Examples:
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
         var number = request.GetInt32("number");
         var ssid = request.GetString("ssid")?.Trim();
+
         if (number is null && string.IsNullOrWhiteSpace(ssid))
-            return ToolResult.Failed(Name, "A WiFi network number or SSID is required.");
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = new JObject
+                {
+                    ["ssid"] = ToolRequest.RequiredValue
+                }
+            };
+
+            return ToolResult.MissingParameter(
+                Name,
+                "Which WiFi network should I connect to? Give me the network name.",
+                pending);
+        }
 
         if (number.HasValue)
         {
             if (!_manager.TryGetScannedNetwork(number.Value, out var network) || network is null)
                 return ToolResult.Failed(Name, $"WiFi network number {number.Value} is not in the current scan.");
+
             ssid = network.Ssid;
+
+            if (network.IsSecured && string.IsNullOrWhiteSpace(request.GetString("password")))
+            {
+                var pending = new ToolRequest
+                {
+                    Name = Name,
+                    Arguments = (JObject)request.Arguments.DeepClone()
+                };
+                pending.Arguments["password"] = ToolRequest.RequiredValue;
+
+                return ToolResult.MissingParameter(
+                    Name,
+                    $"What's the password for {ssid}?",
+                    pending);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(ssid) &&
+                 string.IsNullOrWhiteSpace(request.GetString("password")))
+        {
+            var scanned = await _manager.ScanAsync(cancellationToken);
+            var network = scanned.FirstOrDefault(x =>
+                string.Equals(x.Ssid, ssid, StringComparison.Ordinal));
+
+            if (network?.IsSecured == true)
+            {
+                var pending = new ToolRequest
+                {
+                    Name = Name,
+                    Arguments = (JObject)request.Arguments.DeepClone()
+                };
+                pending.Arguments["password"] = ToolRequest.RequiredValue;
+
+                return ToolResult.MissingParameter(
+                    Name,
+                    $"What's the password for {ssid}?",
+                    pending);
+            }
         }
 
         var connected = await _manager.ConnectAsync(ssid!, request.GetString("password"), cancellationToken);
