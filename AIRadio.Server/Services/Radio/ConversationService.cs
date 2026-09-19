@@ -108,23 +108,7 @@ namespace AIRadio.Server.Services.Radio
         {
             var result = await ExecuteToolAsync(request, cancellationToken);
 
-            if (result.Success)
-            {
-                var response = await _llama.ContinueAsync([result], cancellationToken);
-                return await ProcessLlamaResponseAsync(response, cancellationToken);
-            }
-
-            if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
-                await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
-
-            if (result.PendingRequest is not null)
-            {
-                _pendingToolRequest = result.PendingRequest;
-                return false;
-            }
-
-            var failureResponse = await _llama.ContinueAsync([result], cancellationToken);
-            return await ProcessLlamaResponseAsync(failureResponse, cancellationToken);
+            return await HandleToolResultAsync(result, cancellationToken);
         }
 
         private ToolRequest ApplyPendingToolInput(string text)
@@ -184,18 +168,13 @@ namespace AIRadio.Server.Services.Radio
             var results = await Task.WhenAll(resultTasks);
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (results.Count() == 1 &&
-                !string.IsNullOrWhiteSpace(results[0].ExactPrompt))
+            if (results.Count == 1)
             {
-                await _audioManager.PlaySpeechAsync(results[0].ExactPrompt, cancellationToken);
-
-                if (results[0].PendingRequest is not null)
-                {
-                    _pendingToolRequest = results[0].PendingRequest;
+                var handled = await HandleToolResultAsync(results[0], cancellationToken);
+                if (!handled)
                     return false;
-                }
 
-                if (results[0].Success)
+                if (results[0].Status == ToolResultStatus.Preamble)
                     return true;
             }
 
@@ -204,6 +183,52 @@ namespace AIRadio.Server.Services.Radio
 
             var response = await _llama.ContinueAsync(results, cancellationToken);
             return await ProcessLlamaResponseAsync(response, cancellationToken);
+        }
+
+        private async Task<bool> HandleToolResultAsync(
+            ToolResult result,
+            CancellationToken cancellationToken)
+        {
+            switch (result.Status)
+            {
+                case ToolResultStatus.MissingParameter:
+                    if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
+                        await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
+
+                    if (result.PendingRequest is not null)
+                    {
+                        _pendingToolRequest = result.PendingRequest;
+                        return false;
+                    }
+
+                    break;
+
+                case ToolResultStatus.Preamble:
+                    if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
+                        await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
+
+                    if (result.PendingRequest is not null)
+                    {
+                        var continuation = await ExecuteToolAsync(result.PendingRequest, cancellationToken);
+                        if (continuation.Status == ToolResultStatus.Preamble)
+                            throw new InvalidOperationException(
+                                $"Tool '{result.ToolName}' returned a repeated preamble without advancing state.");
+
+                        return await HandleToolResultAsync(continuation, cancellationToken);
+                    }
+
+                    return true;
+
+                case ToolResultStatus.Result:
+                    if (result.ExactPrompt is not null && result.Success)
+                        await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
+                    return true;
+
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+
+            return false;
         }
 
         private async Task<ToolResult> ExecuteToolAsync(ToolRequest request, CancellationToken cancellationToken)
