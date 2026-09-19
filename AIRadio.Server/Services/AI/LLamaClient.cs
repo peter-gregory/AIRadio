@@ -284,7 +284,7 @@ namespace AIRadio.Server.Services.AI
             };
             var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
-            return ParseResponse(completion);
+            return ParseResponse(completion, fallbackToConversation);
         }
 
         private void ResetHistoryInternal()
@@ -335,7 +335,7 @@ namespace AIRadio.Server.Services.AI
             _requestCancellation = null;
         }
 
-        private LlamaResponse ParseResponse(LlamaCompletionResponse completion)
+        private LlamaResponse ParseResponse(LlamaCompletionResponse completion, bool fallbackToConversation = false)
         {
             if (string.IsNullOrWhiteSpace(completion.Content))
                 throw new InvalidOperationException("Llama completion contained no content.");
