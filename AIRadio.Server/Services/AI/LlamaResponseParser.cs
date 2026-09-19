@@ -8,7 +8,7 @@ public static class LlamaResponseParser
 {
     private const string ToolPrefix = "{tool:";
 
-    public static LlamaResponse Parse(string content)
+    public static LlamaResponse Parse(string content, bool fallbackToConversation = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(content);
 
@@ -46,10 +46,10 @@ public static class LlamaResponseParser
             index = end;
         }
 
-        // The first round must select a tool. If the local model fails to
-        // emit a tool tag, route the request through conversation rather than
-        // accidentally speaking first-round model output.
-        if (toolRequests.Count == 0)
+        // Only the first intent round requires a tool. Later rounds are
+        // expected to return spoken text, so never turn a normal response
+        // into another conversation tool request.
+        if (fallbackToConversation && toolRequests.Count == 0)
         {
             toolRequests.Add(new ToolRequest
             {
@@ -60,7 +60,7 @@ public static class LlamaResponseParser
 
         var response = new LlamaResponse
         {
-            SpokenText = string.Empty
+            SpokenText = toolRequests.Count == 0 ? spokenText.ToString().Trim() : string.Empty
         };
         response.ToolRequests.AddRange(toolRequests);
         return response;
