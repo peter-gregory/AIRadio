@@ -32,6 +32,7 @@ namespace AIRadio.Server.Services.AI
         private string? _conversationSystemPrompt;
         private string? _toolExecutionSystemPrompt;
         private string? _toolResponseSystemPrompt;
+        private string? _conversationResponseSystemPrompt;
         private CancellationTokenSource? _requestCancellation;
         private bool _isInitialized;
         private bool _disposed;
@@ -82,12 +83,24 @@ namespace AIRadio.Server.Services.AI
                 if (_activeToolNames.Count == 0)
                     throw new InvalidOperationException("Tool results were supplied without an active tool round.");
 
-                SetSystemPrompt(BuildToolResponsePrompt());
+                var isConversation = results.Count == 1 &&
+                    results[0].ToolName.Equals("conversation", StringComparison.OrdinalIgnoreCase);
+
+                if (isConversation)
+                {
+                    SetSystemPrompt(BuildConversationResponsePrompt());
+                    RemoveLastAssistantResponse();
+                }
+                else
+                {
+                    SetSystemPrompt(BuildToolResponsePrompt());
+                    foreach (var result in results) AddToolResultToHistory(result);
+                }
+
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
-                    foreach (var result in results) AddToolResultToHistory(result);
-                    return await CompleteAsync(requestToken, 48);
+                    return await CompleteAsync(requestToken, isConversation ? 40 : 48);
                 }
                 finally { EndRequest(); }
             }
@@ -181,7 +194,8 @@ namespace AIRadio.Server.Services.AI
         {
             if (_conversationSystemPrompt is not null &&
                 _toolExecutionSystemPrompt is not null &&
-                _toolResponseSystemPrompt is not null)
+                _toolResponseSystemPrompt is not null &&
+                _conversationResponseSystemPrompt is not null)
                 return;
 
             var configuredPath = _configuration["Application:PromptsDirectory"]
@@ -191,10 +205,12 @@ namespace AIRadio.Server.Services.AI
             var conversationFile = Path.Combine(promptsPath, "conversation-system.txt");
             var executionFile = Path.Combine(promptsPath, "tool-execution-system.txt");
             var responseFile = Path.Combine(promptsPath, "tool-response-system.txt");
+            var conversationResponseFile = Path.Combine(promptsPath, "conversation-response-system.txt");
 
             if (!File.Exists(conversationFile)) throw new FileNotFoundException("Conversation Llama system prompt was not found.", conversationFile);
             if (!File.Exists(executionFile)) throw new FileNotFoundException("Tool execution Llama system prompt was not found.", executionFile);
             if (!File.Exists(responseFile)) throw new FileNotFoundException("Tool response Llama system prompt was not found.", responseFile);
+            if (!File.Exists(conversationResponseFile)) throw new FileNotFoundException("Conversation response Llama system prompt was not found.", conversationResponseFile);
 
             var soundsDirectory = _configuration["Application:SoundsDirectory"]
                 ?? throw new InvalidOperationException("Application:SoundsDirectory is not configured.");
@@ -204,6 +220,7 @@ namespace AIRadio.Server.Services.AI
             var conversationPrompt = (await File.ReadAllTextAsync(conversationFile, cancellationToken)).Trim();
             var executionPrompt = (await File.ReadAllTextAsync(executionFile, cancellationToken)).Trim();
             var responsePrompt = (await File.ReadAllTextAsync(responseFile, cancellationToken)).Trim();
+            var conversationResponsePrompt = (await File.ReadAllTextAsync(conversationResponseFile, cancellationToken)).Trim();
             var toolCatalog = _toolExecutor.GetLlmCatalog();
 
             var conversationSections = new List<string>
@@ -215,6 +232,7 @@ namespace AIRadio.Server.Services.AI
             _conversationSystemPrompt = string.Join("\n", conversationSections);
             _toolExecutionSystemPrompt = executionPrompt;
             _toolResponseSystemPrompt = responsePrompt;
+            _conversationResponseSystemPrompt = conversationResponsePrompt;
         }
 
         private string BuildToolExecutionPrompt()
@@ -229,6 +247,14 @@ namespace AIRadio.Server.Services.AI
                 sections.Add(toolInstructions);
 
             return string.Join("\n", sections);
+        }
+
+        private string BuildConversationResponsePrompt()
+        {
+            if (_conversationResponseSystemPrompt is null)
+                throw new InvalidOperationException("The conversation response system prompt has not been initialized.");
+
+            return _conversationResponseSystemPrompt;
         }
 
         private string BuildToolResponsePrompt()
@@ -316,6 +342,18 @@ namespace AIRadio.Server.Services.AI
                 Name = result.ToolName,
                 Content = result.ToJson()
             });
+
+        private void RemoveLastAssistantResponse()
+        {
+            for (var i = _history.Count - 1; i >= 1; i--)
+            {
+                if (_history[i].Role == LlamaMessageRoles.Assistant)
+                {
+                    _history.RemoveAt(i);
+                    return;
+                }
+            }
+        }
 
         private void AddAssistantResponse(LlamaCompletionResponse completion)
         {
