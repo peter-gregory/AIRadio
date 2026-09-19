@@ -136,7 +136,7 @@ namespace AIRadio.Server.Services.AI
                 try
                 {
                     AddUserMessage(userMessage);
-                    return await CompleteAsync(requestToken, 12);
+                    return await CompleteAsync(requestToken, 12, fallbackToConversation: true);
                 }
                 finally { EndRequest(); }
             }
@@ -274,7 +274,7 @@ namespace AIRadio.Server.Services.AI
             _logger.LogInformation("Llama system prompt cache warmed in {ElapsedSeconds:F1} seconds.", stopwatch.Elapsed.TotalSeconds);
         }
 
-        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken, int maxTokens)
+        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken, int maxTokens, bool fallbackToConversation = false)
         {
             var message = new LlamaCompletionRequest
             {
@@ -340,7 +340,7 @@ namespace AIRadio.Server.Services.AI
             if (string.IsNullOrWhiteSpace(completion.Content))
                 throw new InvalidOperationException("Llama completion contained no content.");
 
-            var response = LlamaResponseParser.Parse(completion.Content);
+            var response = LlamaResponseParser.Parse(completion.Content, fallbackToConversation);
             _activeToolNames.Clear();
             foreach (var request in response.ToolRequests)
             {
