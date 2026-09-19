@@ -76,6 +76,7 @@ builder.Services.AddSingleton<ITool, WifiStatusTool>();
 builder.Services.AddSingleton<ITool, WifiNetworksTool>();
 builder.Services.AddSingleton<ITool, WifiConnectTool>();
 builder.Services.AddSingleton<ITool, ScheduleTool>();
+builder.Services.AddSingleton<ITool, ConversationTool>();
 
 builder.Services.AddSingleton<AlarmManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AlarmManager>());
