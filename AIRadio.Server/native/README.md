@@ -6,7 +6,7 @@ The native backend owns the PipeWire stream and the playback PCM queue. C# only 
 
 - PipeWire initialization and stream creation.
 - SPA format construction using PipeWire's `spa_format_audio_raw_build()`.
-- 48 kHz/S16 playback format negotiated from the C# configuration.
+- 16 kHz/S16 playback format negotiated from the C# configuration.
 - Native expanding PCM ring buffer.
 - Native PipeWire process callback.
 - Volume control.
