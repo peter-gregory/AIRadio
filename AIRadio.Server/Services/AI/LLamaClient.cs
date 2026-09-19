@@ -87,7 +87,7 @@ namespace AIRadio.Server.Services.AI
                 try
                 {
                     foreach (var result in results) AddToolResultToHistory(result);
-                    return await CompleteAsync(requestToken);
+                    return await CompleteAsync(requestToken, 48);
                 }
                 finally { EndRequest(); }
             }
@@ -136,7 +136,7 @@ namespace AIRadio.Server.Services.AI
                 try
                 {
                     AddUserMessage(userMessage);
-                    return await CompleteAsync(requestToken);
+                    return await CompleteAsync(requestToken, 12);
                 }
                 finally { EndRequest(); }
             }
@@ -160,7 +160,7 @@ namespace AIRadio.Server.Services.AI
                     if (!string.IsNullOrWhiteSpace(userMessage))
                         AddUserMessage(userMessage);
 
-                    return await CompleteAsync(requestToken);
+                    return await CompleteAsync(requestToken, 24);
                 }
                 finally { EndRequest(); }
             }
@@ -274,9 +274,14 @@ namespace AIRadio.Server.Services.AI
             _logger.LogInformation("Llama system prompt cache warmed in {ElapsedSeconds:F1} seconds.", stopwatch.Elapsed.TotalSeconds);
         }
 
-        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken)
+        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken, int maxTokens)
         {
-            var message = new LlamaCompletionRequest { Messages = _history.ToList() };
+            var message = new LlamaCompletionRequest
+            {
+                Messages = _history.ToList(),
+                MaxTokens = maxTokens,
+                Temperature = 0.2
+            };
             var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
             return ParseResponse(completion);
