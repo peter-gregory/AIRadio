@@ -87,11 +87,10 @@ For a notably windy report:
                     }
                 };
 
-                return ToolResult.Failed(
+                return ToolResult.MissingParameter(
                     Name,
-                    "A city and state are required to get the current weather.",
-                    exactPrompt: "I need to know where we are. What is the name of the city and state where we are currently located?",
-                    pendingRequest: pendingRequest);
+                    "I need to know where we are. What is the name of the city and state where we are currently located?",
+                    pendingRequest);
             }
         }
 
@@ -106,6 +105,19 @@ For a notably windy report:
             return ToolResult.Failed(
                     Name,
                     $"Unable to determine the location '{cityName}'.");
+        }
+
+        if (request.State == ToolRequestState.Initial)
+        {
+            var displayLocation = !string.IsNullOrWhiteSpace(locationForWeather.City) &&
+                                  !string.IsNullOrWhiteSpace(locationForWeather.State)
+                ? $"{locationForWeather.City}, {locationForWeather.State}"
+                : locationForWeather.Raw;
+
+            return ToolResult.Preamble(
+                Name,
+                $"Here's your current weather conditions for {displayLocation}. {{sound:weather-intro}}",
+                request.WithState(ToolRequestState.PreambleComplete));
         }
 
         try
