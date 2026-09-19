@@ -1,5 +1,6 @@
 ﻿using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Alarms
 {
@@ -116,21 +117,16 @@ First retrieve the event ID if it is not already known, then use:
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var operation =
-                request.GetString("operation");
+            var operation = request.GetString("operation");
 
-            if (string.IsNullOrWhiteSpace(operation))
-            {
-                return Task.FromResult(
-                    ToolResult.Failed(
-                        Name,
-                        "No schedule operation was specified."));
-            }
+            var missing = FindMissingParameter(request, operation);
+            if (missing is not null)
+                return Task.FromResult(missing);
 
             try
             {
                 var result =
-                    operation.Trim().ToLowerInvariant() switch
+                    operation!.Trim().ToLowerInvariant() switch
                     {
                         "add" => AddEvent(request),
                         "update" => UpdateEvent(request),
@@ -147,6 +143,116 @@ First retrieve the event ID if it is not already known, then use:
                 return Task.FromResult(
                     ToolResult.Failed(Name, ex.Message));
             }
+        }
+
+        private ToolResult? FindMissingParameter(ToolRequest request, string? operation)
+        {
+            var normalizedOperation = operation?.Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(normalizedOperation))
+                return Missing(request, "What would you like me to do with the scheduled event?");
+
+            if (normalizedOperation is not ("add" or "update" or "delete" or "enable" or "disable"))
+                return null;
+
+            if (normalizedOperation is "update" or "delete" or "enable" or "disable")
+            {
+                if (string.IsNullOrWhiteSpace(request.GetString("id")))
+                    return Missing(request, "Which scheduled event should I use?");
+            }
+
+            if (normalizedOperation is "add" or "update")
+            {
+                if (string.IsNullOrWhiteSpace(request.GetString("type")))
+                    return Missing(request, "Is this an alarm or a reminder?");
+
+                if (string.IsNullOrWhiteSpace(request.GetString("content")))
+                    return Missing(request, "What would you like me to remember or say?");
+
+                if (string.IsNullOrWhiteSpace(request.GetString("pattern")))
+                    return Missing(request, "How often should I schedule it?");
+                
+                var pattern = request.GetString("pattern")!.Trim();
+                if (pattern.Equals("Once", StringComparison.OrdinalIgnoreCase) &&
+                    !request.HasArgument("date"))
+                    return Missing(request, "What date should I schedule it for?");
+
+                if (pattern.Equals("Weekly", StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(request.GetString("daysOfWeek")))
+                    return Missing(request, "Which days of the week should I use?");
+
+                if (pattern.Equals("Monthly", StringComparison.OrdinalIgnoreCase) &&
+                    !request.HasArgument("dayOfMonth") &&
+                    !request.HasArgument("weekOfMonth"))
+                    return Missing(request, "Which day of the month should I use?");
+
+                if (pattern.Equals("Yearly", StringComparison.OrdinalIgnoreCase) &&
+                    !request.HasArgument("month"))
+                    return Missing(request, "Which month should I use?");
+
+                var type = request.GetString("type");
+                if (type?.Equals("Alarm", StringComparison.OrdinalIgnoreCase) == true &&
+                    !request.HasArgument("timeOfDay"))
+                    return Missing(request, "What time should the alarm go off?");
+            }
+
+            return null;
+        }
+
+        private ToolResult Missing(ToolRequest request, string prompt)
+        {
+            var pending = new ToolRequest
+            {
+                Name = Name,
+                Arguments = (JObject)request.Arguments.DeepClone()
+            };
+
+            var parameter = request.Arguments.Properties()
+                .FirstOrDefault(p => string.Equals(p.Value.Value<string>(), ToolRequest.RequiredValue, StringComparison.Ordinal));
+
+            if (parameter is null)
+            {
+                var next = FindParameterName(request);
+                pending.Arguments[next] = ToolRequest.RequiredValue;
+            }
+
+            return ToolResult.MissingParameter(Name, prompt, pending);
+        }
+
+        private static string FindParameterName(ToolRequest request)
+        {
+            var operation = request.GetString("operation")?.Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(operation))
+                return "operation";
+
+            if (operation is "update" or "delete" or "enable" or "disable")
+                return "id";
+
+            if (string.IsNullOrWhiteSpace(request.GetString("type")))
+                return "type";
+
+            if (string.IsNullOrWhiteSpace(request.GetString("content")))
+                return "content";
+
+            if (string.IsNullOrWhiteSpace(request.GetString("pattern")))
+                return "pattern";
+
+            var pattern = request.GetString("pattern")!.Trim();
+            if (pattern.Equals("Once", StringComparison.OrdinalIgnoreCase) && !request.HasArgument("date"))
+                return "date";
+            if (pattern.Equals("Weekly", StringComparison.OrdinalIgnoreCase) && !request.HasArgument("daysOfWeek"))
+                return "daysOfWeek";
+            if (pattern.Equals("Monthly", StringComparison.OrdinalIgnoreCase) && !request.HasArgument("dayOfMonth") && !request.HasArgument("weekOfMonth"))
+                return "dayOfMonth";
+            if (pattern.Equals("Yearly", StringComparison.OrdinalIgnoreCase) && !request.HasArgument("month"))
+                return "month";
+
+            if (request.GetString("type")?.Equals("Alarm", StringComparison.OrdinalIgnoreCase) == true &&
+                !request.HasArgument("timeOfDay"))
+                return "timeOfDay";
+
+            return "parameter";
         }
 
         private ToolResult AddEvent(ToolRequest request)
