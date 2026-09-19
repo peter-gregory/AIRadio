@@ -244,7 +244,7 @@ namespace AIRadio.Server.Services.AI
 
             var soundUsage = _soundEffectManager.GetPromptText(_activeToolNames);
             if (!string.IsNullOrWhiteSpace(soundUsage))
-                sections.Add("SOUNDS\n" + soundUsage);
+                sections.Add("AVAILABLE SOUND EFFECTS\n" + soundUsage);
 
             return string.Join("\n", sections);
         }
