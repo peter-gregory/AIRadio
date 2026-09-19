@@ -1,5 +1,6 @@
 using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Tools;
+using AIRadio.Server.Models.Weather;
 using AIRadio.Server.Services.Location;
 
 namespace AIRadio.Server.Services.Weather;
@@ -70,6 +71,17 @@ FORECAST RESPONSE
         catch (Exception ex)
         {
             return ToolResult.Failed(Name, ex.Message);
+        }
+    }
+    private sealed class WeatherForecastReport
+    {
+        public string Location { get; }
+        public IReadOnlyList<WeatherDay> Forecast { get; }
+
+        public WeatherForecastReport(WeatherResult result)
+        {
+            Location = result.Location;
+            Forecast = result.Forecast;
         }
     }
 }
