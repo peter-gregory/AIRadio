@@ -3,7 +3,7 @@ while IFS= read -r -d '' file; do
     tmp="${file}.tmp.wav"
 
     ffmpeg -y -i "$file" \
-        -ar 22050 \
+        -ar 16000 \
         -ac 1 \
         -sample_fmt s16 \
         "$tmp" >/dev/null 2>&1 &&
