@@ -140,7 +140,8 @@ namespace AIRadio.Server.Services.Radio
             return new ToolRequest
             {
                 Name = _pendingToolRequest.Name,
-                Arguments = arguments
+                Arguments = arguments,
+                State = _pendingToolRequest.State
             };
         }
 
@@ -248,7 +249,10 @@ namespace AIRadio.Server.Services.Radio
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.LogInformation("Processing tool " + request.Name);
+            _logger.LogInformation(
+                "Processing tool {ToolName} (state: {ToolState})",
+                request.Name,
+                request.State);
 
             if (string.IsNullOrWhiteSpace(request.Name))
                 return ToolResult.Failed("tool_dispatcher", "The tool request did not specify a tool name.");
