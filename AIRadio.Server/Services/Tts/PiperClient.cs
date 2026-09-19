@@ -18,6 +18,9 @@ public sealed class PiperClient : IPiperClient
     private readonly ILogger<PiperClient> _logger;
     private readonly string _endpoint;
     private readonly string _voice;
+    private readonly int _targetSampleRate;
+    private readonly short _targetChannels;
+    private readonly short _targetBitsPerSample;
 
     public PiperClient(
         IConfiguration configuration,
@@ -37,6 +40,10 @@ public sealed class PiperClient : IPiperClient
         _voice = configuration["Piper:Voice"]
             ?? throw new InvalidOperationException("Piper voice is not configured.");
 
+        _targetSampleRate = configuration.GetValue("AudioFormat:SampleRate", 16000);
+        _targetChannels = configuration.GetValue<short>("AudioFormat:Channels", 1);
+        _targetBitsPerSample = configuration.GetValue<short>("AudioFormat:BitsPerSample", 16);
+
         _logger.LogInformation("Construct finished PiperClient");
     }
 
@@ -49,7 +56,7 @@ public sealed class PiperClient : IPiperClient
         _logger.LogInformation("Generate text for " + text);
 
         text = text.Trim();
-        var cacheKey = $"{_voice}:{text}";
+        var cacheKey = $"{_voice}:{_targetSampleRate}:{_targetChannels}:{_targetBitsPerSample}:{text}";
         var cacheId = Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(
                 Encoding.UTF8.GetBytes(cacheKey)));
@@ -68,12 +75,21 @@ public sealed class PiperClient : IPiperClient
         try
         {
             var start = Stopwatch.GetTimestamp();
-            var wav = await GenerateFromPiperAsync(text, cancellationToken);
+            var sourceWav = await GenerateFromPiperAsync(text, cancellationToken);
+            var wav = PcmWavResampler.Resample(
+                sourceWav,
+                _targetSampleRate,
+                _targetChannels,
+                _targetBitsPerSample);
 
             _logger.LogInformation(
-                "Piper synthesis completed. CacheId={CacheId}, Bytes={Bytes}, DurationMs={DurationMs}",
+                "Piper synthesis completed. CacheId={CacheId}, SourceBytes={SourceBytes}, OutputBytes={OutputBytes}, Format={Rate}Hz {Channels}ch {Bits}bit, DurationMs={DurationMs}",
                 cacheId,
+                sourceWav.Length,
                 wav.Length,
+                _targetSampleRate,
+                _targetChannels,
+                _targetBitsPerSample,
                 Stopwatch.GetElapsedTime(start).TotalMilliseconds);
 
             await _cache.SetAsync(cacheKey, wav, cancellationToken);
