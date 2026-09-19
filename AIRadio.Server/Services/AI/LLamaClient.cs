@@ -228,10 +228,6 @@ namespace AIRadio.Server.Services.AI
             if (!string.IsNullOrWhiteSpace(toolInstructions))
                 sections.Add(toolInstructions);
 
-            var soundUsage = _soundEffectManager.GetPromptText(_activeToolNames);
-            if (!string.IsNullOrWhiteSpace(soundUsage))
-                sections.Add("SOUNDS\n" + soundUsage);
-
             return string.Join("\n", sections);
         }
 
