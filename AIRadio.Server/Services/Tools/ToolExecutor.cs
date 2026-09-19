@@ -6,6 +6,7 @@ namespace AIRadio.Server.Services.Tools
     {
         string GetLlmInstructions();
         string GetLlmInstructions(IEnumerable<string> toolNames);
+        string GetLlmResponseInstructions(IEnumerable<string> toolNames);
         string GetLlmCatalog();
         IReadOnlyList<string> GetToolNames();
 
@@ -23,8 +24,7 @@ namespace AIRadio.Server.Services.Tools
         private readonly ILogger<ToolExecutor> _logger;
         private readonly Dictionary<string, ITool> _tools;
 
-        public string Name =>
-            "tool_dispatcher";
+        public string Name => "tool_dispatcher";
 
         public ToolExecutor(
             ILogger<ToolExecutor> logger,
@@ -75,6 +75,23 @@ namespace AIRadio.Server.Services.Tools
                     .Where(tool => requested.Contains(tool.Name))
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
                     .Select(static tool => tool.GetLlmInstructions())
+                    .Where(static text => !string.IsNullOrWhiteSpace(text)));
+        }
+
+        public string GetLlmResponseInstructions(IEnumerable<string> toolNames)
+        {
+            ArgumentNullException.ThrowIfNull(toolNames);
+
+            var requested = new HashSet<string>(
+                toolNames.Where(static name => !string.IsNullOrWhiteSpace(name)),
+                StringComparer.OrdinalIgnoreCase);
+
+            return string.Join(
+                '\n',
+                _tools.Values
+                    .Where(tool => requested.Contains(tool.Name))
+                    .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+                    .Select(static tool => tool.GetLlmResponseInstructions())
                     .Where(static text => !string.IsNullOrWhiteSpace(text)));
         }
 
