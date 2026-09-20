@@ -20,6 +20,7 @@ public sealed class WeatherTool : ITool
     }
 
     public string Name => "weather-current";
+    public string Intent => "Get the current weather conditions.";
 
     public string GetLlmInstructions() => """
 WEATHER-CURRENT
