@@ -64,6 +64,20 @@ public static partial class RadioSearchParser
         if (playsMatch.Success)
         {
             var value = RemoveFillers(playsMatch.Groups["value"].Value);
+            var locationMatch = LocationRegex().Match(value);
+
+            if (locationMatch.Success)
+            {
+                var location = CleanValue(locationMatch.Groups["location"].Value);
+                if (location.Length > 0)
+                {
+                    Add(parameters, "city", location);
+                    value = CleanValue(
+                        value.Remove(locationMatch.Index, locationMatch.Length));
+                }
+            }
+
+            value = RemoveFillers(value);
             if (value.Length > 0)
                 Add(parameters, "tag", value);
 
