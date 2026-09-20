@@ -186,10 +186,8 @@ public sealed class RadioVolumeTool : RadioToolBase
     public RadioVolumeTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioVolume";
     public override string Intent => "Set the radio volume.";
-    public override bool HasParameters => true;
     public override string GetLlmRequestTemplate() => "{tool:radioVolume,volume=!required!}";
     public override bool HasParameters => true;
-    public override string GetLlmRequestTemplate() => "{tool:radioVolume,volume=!required!}";
     public override string GetLlmInstructions() => """
 RADIO VOLUME
 
@@ -348,8 +346,6 @@ public sealed class RadioSearchTool : ITool
     public RadioSearchTool(IRadioSearchClient search) => _search = search;
     public string Name => "radioSearch";
     public string Intent => "Search for radio stations.";
-    public bool HasParameters => true;
-    public string GetLlmRequestTemplate() => "{tool:radioSearch,query=!required!}";
     public bool HasParameters => true;
     public string GetLlmRequestTemplate() => "{tool:radioSearch,query=!required!}";
     public string GetLlmInstructions() => """
