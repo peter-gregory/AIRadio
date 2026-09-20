@@ -75,6 +75,7 @@ namespace AIRadio.Server.Models.Tools
     public enum ToolRequestState
     {
         Initial,
+        ArgumentParsing,
         PreambleComplete
     }
 }
