@@ -19,7 +19,7 @@
 
 namespace {
 constexpr size_t kInitialBlocks = 64;
-constexpr size_t kPipeWireBuffers = 2;
+constexpr size_t kPipeWireBuffers = 8;
 constexpr size_t kPodBufferBytes = 1024;
 
 struct PcmBlock { std::unique_ptr<uint8_t[]> data; };
