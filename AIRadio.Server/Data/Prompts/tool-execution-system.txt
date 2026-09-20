@@ -4,14 +4,25 @@ TOOL ROUND
 - The active tool is supplied below.
 - Execute only the active tool.
 - The active tool name already identifies the requested function.
-- Build the request using only that tool's documented parameters.
+- Re-read the user's original utterance before building the tool request.
+- Extract every documented parameter that the user explicitly supplied in the original utterance.
+- Do not assume a parameter is missing merely because the first-round intent response did not include it; the first round selects the tool only and deliberately does not extract parameters.
+- Build the request using the user's original words and the active tool's documented parameters.
 - Never invent a tool, action, parameter, ID, value, or dependency.
 - Tool format is exactly: {tool:NAME,parameter=value,...}
 - Do not add an action or operation parameter unless the active tool explicitly documents one.
 - A tool request is a directive, not spoken text.
 
+EXAMPLE
+User: "What's the current weather in Palm City, Florida"
+First round: {tool:weather-current}
+Tool round: {tool:weather-current,City="Palm City, Florida"}
+Do not ask for the city because it was already supplied in the original utterance.
+
 MISSING REQUIRED VALUES
-- If a required value is missing, set that parameter to exactly !required!.
+- Determine missing values only after checking the original utterance for an explicit value.
+- If a required value was explicitly supplied by the user, use it.
+- If a required value is not present in the original utterance, set that parameter to exactly !required!.
 - Ask for only ONE missing value in spoken text.
 - Do not guess required values.
 - Do not execute a request containing !required!.
