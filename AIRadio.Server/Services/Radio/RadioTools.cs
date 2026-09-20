@@ -10,7 +10,7 @@ public abstract class RadioToolBase : ITool
     protected readonly IMpvManager Mpv;
     protected readonly IMpvState State;
     protected RadioToolBase(IMpvManager mpv, IMpvState state) { Mpv = mpv; State = state; }
-    public abstract string Name { get; }
+    public abstract string Name { get; }\n    public abstract string Intent { get; }
     public abstract string GetLlmInstructions();
     public abstract Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default);
     protected static void Validate(ToolRequest request, CancellationToken cancellationToken)
@@ -34,7 +34,7 @@ public sealed class RadioPlayTool : RadioToolBase
 {
     public RadioPlayTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPlay";
-    public override string GetLlmInstructions() => """
+    public override string Intent => "Play a radio station.";\r\n    public override string Intent => "Play a radio station.";\n    public override string GetLlmInstructions() => """
 RADIO PLAY
 Play a station from the current playlist.
 Parameters:
@@ -75,7 +75,7 @@ public sealed class RadioStopTool : RadioToolBase
 {
     public RadioStopTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioStop";
-    public override string GetLlmInstructions() => "RADIO STOP\nStop radio playback. Parameters: none.";
+    public override string Intent => "Stop radio playback.";\r\n    public override string Intent => "Stop radio playback.";\n    public override string GetLlmInstructions() => "RADIO STOP\nStop radio playback. Parameters: none.";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.StopAsync(cancellationToken);
@@ -87,7 +87,7 @@ public sealed class RadioNextTool : RadioToolBase
 {
     public RadioNextTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioNext";
-    public override string GetLlmInstructions() => "RADIO NEXT\nPlay the next station in the current playlist. Parameters: none.";
+    public override string Intent => "Play the next radio station.";\r\n    public override string Intent => "Play the next radio station.";\n    public override string GetLlmInstructions() => "RADIO NEXT\nPlay the next station in the current playlist. Parameters: none.";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayNextRadioStationAsync(cancellationToken);
@@ -99,7 +99,7 @@ public sealed class RadioPreviousTool : RadioToolBase
 {
     public RadioPreviousTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPrevious";
-    public override string GetLlmInstructions() => "RADIO PREVIOUS\nPlay the previous station in the current playlist. Parameters: none.";
+    public override string Intent => "Play the previous radio station.";\r\n    public override string Intent => "Play the previous radio station.";\n    public override string GetLlmInstructions() => "RADIO PREVIOUS\nPlay the previous station in the current playlist. Parameters: none.";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayPreviousRadioStationAsync(cancellationToken);
@@ -111,7 +111,7 @@ public sealed class RadioVolumeTool : RadioToolBase
 {
     public RadioVolumeTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioVolume";
-    public override string GetLlmInstructions() => """
+    public override string Intent => "Set the radio volume.";\r\n    public override string Intent => "Set the radio volume.";\n    public override string GetLlmInstructions() => """
 RADIO VOLUME
 Set radio volume.
 Parameters:
@@ -147,7 +147,7 @@ public sealed class RadioCurrentTool : RadioToolBase
 {
     public RadioCurrentTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioCurrent";
-    public override string GetLlmInstructions() => "RADIO CURRENT\nReport the currently playing station and metadata. Parameters: none.";
+    public override string Intent => "Report the currently playing station and metadata.";\r\n    public override string Intent => "Report the currently playing station and metadata.";\n    public override string GetLlmInstructions() => "RADIO CURRENT\nReport the currently playing station and metadata. Parameters: none.";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -162,7 +162,7 @@ public sealed class RadioStatusTool : RadioToolBase
 {
     public RadioStatusTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioStatus";
-    public override string GetLlmInstructions() => "RADIO STATUS\nReport the current radio playback state. Parameters: none.";
+    public override string Intent => "Report the current radio playback state.";\r\n    public override string Intent => "Report the current radio playback state.";\n    public override string GetLlmInstructions() => "RADIO STATUS\nReport the current radio playback state. Parameters: none.";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -174,7 +174,7 @@ public sealed class RadioPlaylistTool : RadioToolBase
 {
     public RadioPlaylistTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPlaylist";
-    public override string GetLlmInstructions() => "RADIO PLAYLIST\nList stations in the current radio playlist. Parameters: none.";
+    public override string Intent => "List stations in the current radio playlist.";\r\n    public override string Intent => "List stations in the current radio playlist.";\n    public override string GetLlmInstructions() => "RADIO PLAYLIST\nList stations in the current radio playlist. Parameters: none.";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -188,7 +188,7 @@ public sealed class RadioSearchTool : ITool
     private readonly IRadioSearchClient _search;
     public RadioSearchTool(IRadioSearchClient search) => _search = search;
     public string Name => "radioSearch";
-    public string GetLlmInstructions() => """
+    public string Intent => "Search for radio stations.";\n    public string GetLlmInstructions() => """
 RADIO SEARCH
 Search for radio stations.
 Parameters:
