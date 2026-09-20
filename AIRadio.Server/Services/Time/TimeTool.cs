@@ -8,6 +8,7 @@ public sealed class TimeTool : TimeToolBase
     public TimeTool(ITimeService timeService) : base(timeService) { }
 
     public override string Name => "time";
+    public override string Intent => "Get the current time.";
 
     public override string GetLlmInstructions() => """
 TIME
