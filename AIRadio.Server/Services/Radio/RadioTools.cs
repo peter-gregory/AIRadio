@@ -39,7 +39,7 @@ public sealed class RadioPlayTool : RadioToolBase
     public override string Name => "radioPlay";
     public override string Intent => "Play a radio station.";
     public override bool HasParameters => true;
-    public override string GetLlmRequestTemplate() => "{tool:radioPlay,stationName=!required!}";
+    public override string GetLlmRequestTemplate() => "{tool:radioPlay,stationId=<optional>,stationName=<optional>}";
     public override string GetLlmInstructions() => """
 RADIO PLAY
 
@@ -48,7 +48,8 @@ Play a station from the current radio playlist.
 Parameters:
 - stationId: Optional station ID. Use the exact ID from the current playlist.
 - stationName: Optional station name. Use the exact station name from the current playlist.
-- At least one of stationId or stationName is required.
+- Provide stationId or stationName when the user supplies a station identifier or station name.
+- At least one of stationId or stationName is required; the execution state engine will ask for one if neither is supplied.
 - When both are supplied, stationId takes precedence.
 
 Important:
