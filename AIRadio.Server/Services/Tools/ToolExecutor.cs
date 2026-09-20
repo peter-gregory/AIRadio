@@ -51,7 +51,7 @@ namespace AIRadio.Server.Services.Tools
                 '\n',
                 _tools.Values
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
-                    .Select(static tool => $"{{tool:{tool.Name}}} - {tool.GetLlmSummary()}"));
+                    .Select(static tool => $"{{tool:{tool.Name}}} - {tool.Intent}"));
 
         public string GetLlmInstructions() =>
             string.Join(
