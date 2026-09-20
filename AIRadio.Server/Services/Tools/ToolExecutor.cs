@@ -58,7 +58,7 @@ namespace AIRadio.Server.Services.Tools
                 '\n',
                 _tools.Values
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
-                    .Select(static tool => tool.GetLlmInstructions())
+                    .Select(static tool => tool.GetLlmSummary())
                     .Where(static text => !string.IsNullOrWhiteSpace(text)));
 
         public string GetLlmInstructions(IEnumerable<string> toolNames)
