@@ -277,7 +277,7 @@ namespace AIRadio.Server.Services.AI
 
         private async Task WarmSystemPromptAsync(CancellationToken cancellationToken)
         {
-            if (_intentSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
+            if (_intentSystemPrompt is null) throw new InvalidOperationException("The intent system prompt has not been initialized.");
 
             _logger.LogInformation("Warming Llama intent prompt cache.");
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -315,7 +315,7 @@ namespace AIRadio.Server.Services.AI
 
         private void ResetHistoryInternal()
         {
-            if (_intentSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
+            if (_intentSystemPrompt is null) throw new InvalidOperationException("The intent system prompt has not been initialized.");
             _history.Clear();
             _activeToolNames.Clear();
             SetSystemPrompt(_intentSystemPrompt);
