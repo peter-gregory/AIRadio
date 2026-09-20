@@ -38,11 +38,28 @@ public sealed class RadioPlayTool : RadioToolBase
     public override string Intent => "Play a radio station.";
     public override string GetLlmInstructions() => """
 RADIO PLAY
-Play a station from the current playlist.
+
+Play a station from the current radio playlist.
+
 Parameters:
-- stationName: required exact station name from the current playlist.
-- stationId: required exact station ID when supplied instead of stationName.
-Use the station value from a previous radio search/playlist result. Never invent it.
+- stationId: Optional station ID. Use the exact ID from the current playlist.
+- stationName: Optional station name. Use the exact station name from the current playlist.
+- At least one of stationId or stationName is required.
+- When both are supplied, stationId takes precedence.
+
+Important:
+- The play action can only play a station that is already in the current playlist.
+- Do not invent station IDs or station names.
+- Use the exact station ID or station name returned by a previous radio playlist/search result.
+- If the requested station is not in the current playlist, do not substitute another station.
+- If the user asks for a station that is not currently available, report that it was not found.
+
+Examples:
+User: "Play Jazz FM"
+{tool:radioPlay,stationName="Jazz FM"}
+
+User: "Play station 12345"
+{tool:radioPlay,stationId=12345}
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
@@ -78,8 +95,23 @@ public sealed class RadioStopTool : RadioToolBase
     public RadioStopTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioStop";
     public override string Intent => "Stop radio playback.";
-    public override string GetLlmInstructions() => "RADIO STOP
-Stop radio playback. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO STOP
+
+Stop the current radio playback.
+
+Parameters:
+- None.
+
+Use this tool when the user explicitly asks to stop, turn off, or quit radio playback.
+
+Examples:
+User: "Stop the radio"
+{tool:radioStop}
+
+User: "Turn off the radio"
+{tool:radioStop}
+""";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.StopAsync(cancellationToken);
@@ -92,8 +124,23 @@ public sealed class RadioNextTool : RadioToolBase
     public RadioNextTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioNext";
     public override string Intent => "Play the next radio station.";
-    public override string GetLlmInstructions() => "RADIO NEXT
-Play the next station in the current playlist. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO NEXT
+
+Play the next station in the current radio playlist.
+
+Parameters:
+- None.
+
+Use this tool when the user asks to play the next station, move to the next station, or skip to the next radio station.
+
+Examples:
+User: "Play the next station"
+{tool:radioNext}
+
+User: "Go to the next station"
+{tool:radioNext}
+""";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayNextRadioStationAsync(cancellationToken);
@@ -106,8 +153,23 @@ public sealed class RadioPreviousTool : RadioToolBase
     public RadioPreviousTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPrevious";
     public override string Intent => "Play the previous radio station.";
-    public override string GetLlmInstructions() => "RADIO PREVIOUS
-Play the previous station in the current playlist. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO PREVIOUS
+
+Play the previous station in the current radio playlist.
+
+Parameters:
+- None.
+
+Use this tool when the user asks to go back, return to, or play the previous radio station.
+
+Examples:
+User: "Go back to the previous station"
+{tool:radioPrevious}
+
+User: "Play the previous station"
+{tool:radioPrevious}
+""";
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayPreviousRadioStationAsync(cancellationToken);
@@ -122,9 +184,24 @@ public sealed class RadioVolumeTool : RadioToolBase
     public override string Intent => "Set the radio volume.";
     public override string GetLlmInstructions() => """
 RADIO VOLUME
-Set radio volume.
+
+Set the radio playback volume.
+
 Parameters:
-- volume: required integer from 0 to 100.
+- volume: Required integer from 0 through 100.
+
+Important:
+- A numeric volume value is required.
+- Values below 0 or above 100 are clamped by the application.
+- Interpret natural phrases such as "turn it down to 10", "set the volume to 30", or "make it louder" as a volume request.
+- If the user requests a relative change such as "a little louder" without a numeric target, do not invent a value; ask for a specific volume.
+
+Examples:
+User: "Set the volume to 30"
+{tool:radioVolume,volume=30}
+
+User: "Turn it down to 10"
+{tool:radioVolume,volume=10}
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
@@ -157,8 +234,26 @@ public sealed class RadioCurrentTool : RadioToolBase
     public RadioCurrentTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioCurrent";
     public override string Intent => "Report the currently playing station and metadata.";
-    public override string GetLlmInstructions() => "RADIO CURRENT
-Report the currently playing station and metadata. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO CURRENT
+
+Get the currently playing radio station and its available playback metadata.
+
+Parameters:
+- None.
+
+Use this tool for questions such as what is playing, which station is playing, or requests for the current song/artist information.
+
+Examples:
+User: "What's playing?"
+{tool:radioCurrent}
+
+User: "What station is this?"
+{tool:radioCurrent}
+
+User: "Who is playing?"
+{tool:radioCurrent}
+""";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -174,8 +269,28 @@ public sealed class RadioStatusTool : RadioToolBase
     public RadioStatusTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioStatus";
     public override string Intent => "Report the current radio playback state.";
-    public override string GetLlmInstructions() => "RADIO STATUS
-Report the current radio playback state. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO STATUS
+
+Get the current radio playback state.
+
+Parameters:
+- None.
+
+The result can include whether playback is active, paused, idle, or muted, plus the current volume.
+
+Use this tool for questions about whether the radio is playing, paused, stopped, muted, or what the current radio volume is.
+
+Examples:
+User: "What's the radio status?"
+{tool:radioStatus}
+
+User: "Is the radio playing?"
+{tool:radioStatus}
+
+User: "Is it muted?"
+{tool:radioStatus}
+""";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -188,8 +303,29 @@ public sealed class RadioPlaylistTool : RadioToolBase
     public RadioPlaylistTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPlaylist";
     public override string Intent => "List stations in the current radio playlist.";
-    public override string GetLlmInstructions() => "RADIO PLAYLIST
-List stations in the current radio playlist. Parameters: none.";
+    public override string GetLlmInstructions() => """
+RADIO PLAYLIST
+
+Get the stations currently available in the radio playlist.
+
+Parameters:
+- None.
+
+Important:
+- Use this tool when the user asks which stations are available, what stations are in the playlist, or requests a list of playable stations.
+- The returned station IDs and names are authoritative for subsequent radioPlay requests.
+- Do not invent stations that are not present in the returned playlist.
+
+Examples:
+User: "What stations are available?"
+{tool:radioPlaylist}
+
+User: "Show me the radio stations"
+{tool:radioPlaylist}
+
+User: "Which stations can I play?"
+{tool:radioPlaylist}
+""";
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
@@ -206,10 +342,28 @@ public sealed class RadioSearchTool : ITool
     public string Intent => "Search for radio stations.";
     public string GetLlmInstructions() => """
 RADIO SEARCH
+
 Search for radio stations.
+
 Parameters:
-- query: required search text such as station name, genre, artist, or topic.
-Never invent search results.
+- query: Required search text such as a station name, genre, artist, or topic.
+
+Important:
+- Use the user's search terms as the query; do not invent or embellish a station name.
+- Search results are authoritative for stations returned by the search service.
+- A search result does not automatically mean the station is in the current playback playlist.
+- If the user wants to play a search result, use the exact station ID or station name returned by the search before calling radioPlay.
+- Never invent search results, station IDs, station names, or stream URLs.
+
+Examples:
+User: "Find Jazz FM"
+{tool:radioSearch,query="Jazz FM"}
+
+User: "Find some jazz stations"
+{tool:radioSearch,query="jazz"}
+
+User: "Search for stations that play Taylor Swift"
+{tool:radioSearch,query="Taylor Swift"}
 """;
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
