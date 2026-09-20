@@ -6,7 +6,7 @@ namespace AIRadio.Server.Services.News
 {
     public sealed class NewsTool : ITool
     {
-        private ILogger<NewsTool> _logger;
+        private readonly ILogger<NewsTool> _logger;
         private readonly INewsService _newsService;
         private readonly ILocationService _locationService;
 
@@ -58,9 +58,35 @@ User: "What's the news in Orlando about business?"
 {tool:news,location=Orlando,category=business}
 """;
 
+        public string GetLlmResponseInstructions() => """
+NEWS RESPONSE
+- The preamble has already been spoken before this response. Do not repeat or add an introduction.
+- Speak only the news headlines. Do not summarize the article descriptions.
+- Preserve the meaning of each headline, but rewrite it slightly when needed for natural speech.
+- Start every headline with {sound:news-breaking}.
+- Use one short sound effect between each story by placing {sound:news-breaking} immediately before every headline.
+- Do not combine multiple headlines into one sentence.
+- Do not read report labels such as REPORT, Articles, Source, Title, or Summary.
+- Do not mention the source, URLs, timestamps, IDs, or internal fields.
+- Do not invent or add facts.
+- Normally speak all returned headlines unless the user requested a smaller number.
+- Output only the spoken headlines and the required sound-effect tags.
+""";
+
         public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
+
+            if (request.State == ToolRequestState.Initial)
+            {
+                _logger.LogInformation("News request received; returning preamble before fetching headlines.");
+
+                return ToolResult.Preamble(
+                    Name,
+                    "Here are the latest news headlines. {sound:news-intro}",
+                    request.WithState(ToolRequestState.PreambleComplete));
+            }
+
             var locationName = request.GetString("location");
             RadioLocation? location = string.IsNullOrWhiteSpace(locationName)
                 ? _locationService.GetCurrentLocation()
