@@ -68,7 +68,17 @@ namespace AIRadio.Server.Services.Radio
                 }
                 else
                 {
+                    // Round 1 selects the tool only. Run a dedicated tool-execution
+                    // round before dispatching so the model can populate parameters
+                    // from the original user utterance using the selected tool's
+                    // full instructions.
                     var response = await _llama.StartConversationAsync(request.Text, cancellationToken);
+
+                    if (response.HasToolRequests)
+                    {
+                        response = await _llama.ContinueToolAsync(cancellationToken);
+                    }
+
                     conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
                 }
 
