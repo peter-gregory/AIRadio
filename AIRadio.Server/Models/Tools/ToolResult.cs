@@ -18,6 +18,13 @@ namespace AIRadio.Server.Models.Tools
 
         public bool Success { get; set; }
 
+        /// <summary>
+        /// Indicates that the tool has completed all processing and the
+        /// conversation service must not send the result back to the response LLM.
+        /// The tool implementation owns this decision.
+        /// </summary>
+        public bool Complete { get; set; }
+
         public string? Message { get; set; }
 
         public object? Data { get; set; }
@@ -56,7 +63,8 @@ namespace AIRadio.Server.Models.Tools
             string toolName,
             string? message = null,
             object? data = null,
-            string? exactPrompt = null)
+            string? exactPrompt = null,
+            bool complete = false)
         {
             return new ToolResult
             {
@@ -65,7 +73,8 @@ namespace AIRadio.Server.Models.Tools
                 Success = true,
                 Message = message,
                 Data = data,
-                ExactPrompt = exactPrompt
+                ExactPrompt = exactPrompt,
+                Complete = complete
             };
         }
 
@@ -94,7 +103,8 @@ namespace AIRadio.Server.Models.Tools
             string toolName,
             string error,
             string? exactPrompt = null,
-            ToolRequest? pendingRequest = null)
+            ToolRequest? pendingRequest = null,
+            bool complete = false)
         {
             return new ToolResult
             {
@@ -103,7 +113,8 @@ namespace AIRadio.Server.Models.Tools
                 Success = false,
                 Error = error,
                 ExactPrompt = exactPrompt,
-                PendingRequest = pendingRequest
+                PendingRequest = pendingRequest,
+                Complete = complete
             };
         }
 
