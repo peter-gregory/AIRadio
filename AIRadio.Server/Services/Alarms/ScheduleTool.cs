@@ -15,6 +15,7 @@ namespace AIRadio.Server.Services.Alarms
         }
 
         public bool HasParameters => true;
+        public string GetLlmRequestTemplate() => "{tool:schedule,operation=!required!,...}";
         public string Name =>
             "schedule";
     public string Intent => "Manage scheduled alarms and reminders.";
