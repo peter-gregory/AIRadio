@@ -8,6 +8,7 @@ public sealed class WifiStatusTool : ITool
     private readonly IWifiManager _manager;
     public WifiStatusTool(IWifiManager manager) => _manager = manager;
     public string Name => "wifiStatus";
+    public string Intent => "Check WiFi connection status.";
     public string GetLlmInstructions() => """
 WIFI STATUS
 Check WiFi connection status.
@@ -27,6 +28,7 @@ public sealed class WifiNetworksTool : ITool
     private readonly IWifiManager _manager;
     public WifiNetworksTool(IWifiManager manager) => _manager = manager;
     public string Name => "wifiNetworks";
+    public string Intent => "Scan for nearby WiFi networks.";
     public string GetLlmInstructions() => """
 WIFI NETWORKS
 Scan for nearby WiFi networks.
@@ -53,6 +55,7 @@ public sealed class WifiConnectTool : ITool
     private readonly IWifiManager _manager;
     public WifiConnectTool(IWifiManager manager) => _manager = manager;
     public string Name => "wifiConnect";
+    public string Intent => "Connect to a WiFi network.";
     public string GetLlmInstructions() => """
 WIFI CONNECT
 Connect to a WiFi network.
