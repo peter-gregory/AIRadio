@@ -275,7 +275,10 @@ namespace AIRadio.Server.Services.Radio
                     return await HandleToolResultAsync(continuation, cancellationToken);
 
                 case ToolResultStatus.Result:
-                    if (result.ExactPrompt is not null && result.Success)
+                    // An exact prompt is a complete tool-owned response. This is
+                    // true for both successful and failed tools; neither case
+                    // should be sent back through the response LLM.
+                    if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
                     {
                         await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
                         return (false, null);
