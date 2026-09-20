@@ -27,6 +27,7 @@ public sealed class LocationSetTool : ITool
 {
     private readonly ILocationService _service;
     public LocationSetTool(ILocationService service) => _service = service;
+    public bool HasParameters => true;
     public string Name => "locationSet";
     public string Intent => "Change the radio's persistent location.";
     public string GetLlmInstructions() => """
