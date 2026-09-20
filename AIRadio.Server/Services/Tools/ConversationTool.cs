@@ -5,6 +5,7 @@ namespace AIRadio.Server.Services.Tools;
 public sealed class ConversationTool : ITool
 {
     public string Name => "conversation";
+    public string Intent => "Respond to ordinary conversation without using an application tool.";
 
     public string GetLlmInstructions() => """
 CONVERSATION
