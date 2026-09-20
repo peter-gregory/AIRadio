@@ -1,4 +1,4 @@
-﻿using System.Xml;
+using System.Xml;
 using System.ServiceModel.Syndication;
 
 namespace AIRadio.Server.Services.News
@@ -6,12 +6,13 @@ namespace AIRadio.Server.Services.News
     public interface INewsProvider
     {
         Task<IReadOnlyList<NewsArticle>> GetArticlesAsync(
-            NewsQuery query,
             CancellationToken cancellationToken = default);
     }
 
     public sealed class RssNewsProvider : INewsProvider
     {
+        private const int HeadlineLimit = 5;
+
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
         private readonly ILogger<RssNewsProvider> _logger;
@@ -27,17 +28,14 @@ namespace AIRadio.Server.Services.News
         }
 
         public async Task<IReadOnlyList<NewsArticle>> GetArticlesAsync(
-            NewsQuery query,
             CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(query);
-
-            var feeds = GetFeeds(query);
+            var feeds = GetFeeds();
 
             if (feeds.Count == 0)
             {
                 _logger.LogWarning(
-                    "No news feeds are configured.");
+                    "No national news feed is configured.");
 
                 return [];
             }
@@ -51,7 +49,6 @@ namespace AIRadio.Server.Services.News
                     var feedArticles =
                         await ReadFeedAsync(
                             feed,
-                            query,
                             cancellationToken);
 
                     articles.AddRange(feedArticles);
@@ -72,24 +69,13 @@ namespace AIRadio.Server.Services.News
             }
 
             return articles
-                .Where(article =>
-                    !query.MaxAge.HasValue ||
-                    !article.PublishedAt.HasValue ||
-                    article.PublishedAt.Value >=
-                        DateTimeOffset.Now.Subtract(
-                            query.MaxAge.Value))
-                .OrderByDescending(
-                    article => article.PublishedAt)
-                .Take(Math.Clamp(
-                    query.Limit,
-                    1,
-                    20))
+                .OrderByDescending(article => article.PublishedAt)
+                .Take(HeadlineLimit)
                 .ToList();
         }
 
         private async Task<IReadOnlyList<NewsArticle>> ReadFeedAsync(
             NewsFeed feed,
-            NewsQuery query,
             CancellationToken cancellationToken)
         {
             using var stream =
@@ -140,10 +126,7 @@ namespace AIRadio.Server.Services.News
                             item.Links
                                 .FirstOrDefault()?
                                 .Uri?
-                                .ToString(),
-
-                        Category =
-                            query.Category
+                                .ToString()
                     });
             }
 
@@ -206,34 +189,12 @@ namespace AIRadio.Server.Services.News
                             string.Empty));
         }
 
-        private List<NewsFeed> GetFeeds(
-            NewsQuery query)
+        private List<NewsFeed> GetFeeds()
         {
-            var feeds =
-                _configuration
-                    .GetSection("News:Feeds")
-                    .Get<List<NewsFeed>>()
+            return _configuration
+                .GetSection("News:Feeds")
+                .Get<List<NewsFeed>>()
                 ?? [];
-
-            if (string.IsNullOrWhiteSpace(
-                    query.Category))
-            {
-                return feeds;
-            }
-
-            var category =
-                query.Category.Trim();
-
-            var categorized =
-                feeds
-                    .Where(feed =>
-                        feed.Categories.Count == 0 ||
-                        feed.Categories.Contains(
-                            category,
-                            StringComparer.OrdinalIgnoreCase))
-                    .ToList();
-
-            return categorized;
         }
     }
 
@@ -244,8 +205,5 @@ namespace AIRadio.Server.Services.News
 
         public string Url { get; set; } =
             string.Empty;
-
-        public List<string> Categories { get; set; } =
-            [];
     }
 }
