@@ -17,6 +17,7 @@ public sealed class ForecastTool : ITool
     }
 
     public string Name => "forecast";
+    public string Intent => "Get the weather forecast.";
 
     public string GetLlmInstructions() => """
 FORECAST
