@@ -20,6 +20,7 @@ public sealed class WeatherTool : ITool
     }
 
     public bool HasParameters => true;
+    public string GetLlmRequestTemplate() => "{tool:weather-current,City=!required!}";
     public string Name => "weather-current";
     public string Intent => "Get the current weather conditions.";
 
