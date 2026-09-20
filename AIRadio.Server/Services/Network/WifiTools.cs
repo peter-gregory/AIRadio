@@ -55,7 +55,7 @@ public sealed class WifiConnectTool : ITool
     private readonly IWifiManager _manager;
     public WifiConnectTool(IWifiManager manager) => _manager = manager;
     public bool HasParameters => true;
-    public string GetLlmRequestTemplate() => "{tool:wifiConnect,ssid=!required!}";
+    public string GetLlmRequestTemplate() => "{tool:wifiConnect,number=<optional>,ssid=<optional>,password=<optional>}";
     public string Name => "wifiConnect";
     public string Intent => "Connect to a WiFi network.";
     public string GetLlmInstructions() => """
@@ -66,7 +66,8 @@ Parameters:
 - ssid: optional network name.
 - password: optional network password.
 Provide either number or ssid. When a scanned number is available, prefer number.
-If password is needed but not supplied, ask for it.
+Password is optional unless the selected network requires it; the state engine will ask for it when needed.
+Do not emit both number and ssid unless the user explicitly provides both.
 Examples:
 "Connect to network 2" -> {tool:wifiConnect,number=2}
 "Connect to MyWiFi" -> {tool:wifiConnect,ssid="MyWiFi"}
