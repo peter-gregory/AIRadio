@@ -166,6 +166,11 @@ namespace AIRadio.Server.Services.AI
                 if (_activeToolNames.Count == 0)
                     throw new InvalidOperationException("A tool round was requested without an active tool.");
 
+                // The intent response is an intermediate classification result, not
+                // conversation history. Remove it before asking the model to parse
+                // arguments so the chat template sees the original user utterance
+                // as the latest turn rather than continuing the {tool:NAME} response.
+                RemoveLastAssistantResponse();
                 SetSystemPrompt(BuildToolExecutionPrompt());
                 var requestToken = BeginRequest(cancellationToken);
                 try
