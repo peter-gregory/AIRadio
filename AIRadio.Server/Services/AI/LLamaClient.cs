@@ -29,7 +29,7 @@ namespace AIRadio.Server.Services.AI
         private readonly List<LlamaMessage> _history = [];
         private readonly HashSet<string> _activeToolNames = new(StringComparer.OrdinalIgnoreCase);
         private readonly SemaphoreSlim _requestLock = new(1, 1);
-        private string? _conversationSystemPrompt;
+        private string? _intentSystemPrompt;
         private string? _toolExecutionSystemPrompt;
         private string? _toolResponseSystemPrompt;
         private string? _conversationResponseSystemPrompt;
@@ -192,7 +192,7 @@ namespace AIRadio.Server.Services.AI
 
         private async Task EnsureSystemPromptsAsync(CancellationToken cancellationToken)
         {
-            if (_conversationSystemPrompt is not null &&
+            if (_intentSystemPrompt is not null &&
                 _toolExecutionSystemPrompt is not null &&
                 _toolResponseSystemPrompt is not null &&
                 _conversationResponseSystemPrompt is not null)
@@ -202,12 +202,12 @@ namespace AIRadio.Server.Services.AI
                 ?? throw new InvalidOperationException("Application:PromptsDirectory is not configured.");
             var promptsPath = Path.IsPathRooted(configuredPath) ? configuredPath : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
 
-            var conversationFile = Path.Combine(promptsPath, "conversation-system.txt");
+            var intentFile = Path.Combine(promptsPath, "intent-system.txt");
             var executionFile = Path.Combine(promptsPath, "tool-execution-system.txt");
             var responseFile = Path.Combine(promptsPath, "tool-response-system.txt");
             var conversationResponseFile = Path.Combine(promptsPath, "conversation-response-system.txt");
 
-            if (!File.Exists(conversationFile)) throw new FileNotFoundException("Conversation Llama system prompt was not found.", conversationFile);
+            if (!File.Exists(intentFile)) throw new FileNotFoundException("Intent Llama system prompt was not found.", intentFile);
             if (!File.Exists(executionFile)) throw new FileNotFoundException("Tool execution Llama system prompt was not found.", executionFile);
             if (!File.Exists(responseFile)) throw new FileNotFoundException("Tool response Llama system prompt was not found.", responseFile);
             if (!File.Exists(conversationResponseFile)) throw new FileNotFoundException("Conversation response Llama system prompt was not found.", conversationResponseFile);
@@ -217,19 +217,19 @@ namespace AIRadio.Server.Services.AI
             soundsDirectory = Path.IsPathRooted(soundsDirectory) ? soundsDirectory : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, soundsDirectory));
             await _soundEffectManager.InitializeAsync(soundsDirectory, cancellationToken);
 
-            var conversationPrompt = (await File.ReadAllTextAsync(conversationFile, cancellationToken)).Trim();
+            var intentPrompt = (await File.ReadAllTextAsync(intentFile, cancellationToken)).Trim();
             var executionPrompt = (await File.ReadAllTextAsync(executionFile, cancellationToken)).Trim();
             var responsePrompt = (await File.ReadAllTextAsync(responseFile, cancellationToken)).Trim();
             var conversationResponsePrompt = (await File.ReadAllTextAsync(conversationResponseFile, cancellationToken)).Trim();
             var toolCatalog = _toolExecutor.GetLlmCatalog();
 
-            var conversationSections = new List<string>
+            var intentSections = new List<string>
             {
-                conversationPrompt,
+                intentPrompt,
                 toolCatalog
             };
 
-            _conversationSystemPrompt = string.Join("\n", conversationSections);
+            _intentSystemPrompt = string.Join("\n", intentSections);
             _toolExecutionSystemPrompt = executionPrompt;
             _toolResponseSystemPrompt = responsePrompt;
             _conversationResponseSystemPrompt = conversationResponsePrompt;
@@ -277,9 +277,9 @@ namespace AIRadio.Server.Services.AI
 
         private async Task WarmSystemPromptAsync(CancellationToken cancellationToken)
         {
-            if (_conversationSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
+            if (_intentSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
 
-            _logger.LogInformation("Warming Llama system prompt cache.");
+            _logger.LogInformation("Warming Llama intent prompt cache.");
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var request = new LlamaCompletionRequest
             {
@@ -288,7 +288,7 @@ namespace AIRadio.Server.Services.AI
                     new LlamaMessage
                     {
                         Role = LlamaMessageRoles.System,
-                        Content = _conversationSystemPrompt
+                        Content = _intentSystemPrompt
                     }
                 ],
                 MaxTokens = 1,
@@ -315,10 +315,10 @@ namespace AIRadio.Server.Services.AI
 
         private void ResetHistoryInternal()
         {
-            if (_conversationSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
+            if (_intentSystemPrompt is null) throw new InvalidOperationException("The conversation system prompt has not been initialized.");
             _history.Clear();
             _activeToolNames.Clear();
-            SetSystemPrompt(_conversationSystemPrompt);
+            SetSystemPrompt(_intentSystemPrompt);
             _isInitialized = true;
         }
 
