@@ -99,7 +99,13 @@ User: "Play station 12345"
         }
 
         var station = FindStation(request);
-        if (station is null) return ToolResult.Failed(Name, "The requested station was not found in the current playlist.");
+        if (station is null)
+        {
+            return ToolResult.Failed(
+                Name,
+                "The requested station was not found in the current playlist.",
+                "{sound:radio-static} I'm sorry, I can't find that station.");
+        }
         await Mpv.PlayAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
