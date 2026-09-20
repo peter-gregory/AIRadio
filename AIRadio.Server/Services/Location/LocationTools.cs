@@ -8,6 +8,7 @@ public sealed class LocationGetTool : ITool
     private readonly ILocationService _service;
     public LocationGetTool(ILocationService service) => _service = service;
     public string Name => "locationGet";
+    public string Intent => "Read the radio's persistent location.";
     public string GetLlmInstructions() => """
 LOCATION GET
 Read the radio's persistent location.
@@ -27,6 +28,7 @@ public sealed class LocationSetTool : ITool
     private readonly ILocationService _service;
     public LocationSetTool(ILocationService service) => _service = service;
     public string Name => "locationSet";
+    public string Intent => "Change the radio's persistent location.";
     public string GetLlmInstructions() => """
 LOCATION SET
 Change the radio's persistent location.
