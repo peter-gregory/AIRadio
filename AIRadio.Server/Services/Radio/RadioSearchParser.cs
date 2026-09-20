@@ -20,9 +20,15 @@ public static partial class RadioSearchParser
         "metal", "punk", "indie", "alternative", "reggae", "ska",
         "gospel", "christian", "latin", "salsa", "reggaeton", "oldies",
         "80s", "90s", "2000s", "70s", "60s", "news", "sports", "talk",
-        "rock", "ambient", "chillout", "lounge", "easy listening",
+        "ambient", "chillout", "lounge", "easy listening",
         "classic rock", "soft rock", "hard rock", "top 40", "hits",
-        "music", "radio", "comedy", "podcast"
+        "music", "comedy", "podcast"
+    };
+
+    private static readonly HashSet<string> SearchFillers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "light", "smooth", "mellow", "relaxing", "relaxed", "upbeat",
+        "something", "something like", "some", "best", "good", "popular"
     };
 
     private static readonly string[] CommandPrefixes =
@@ -50,15 +56,17 @@ public static partial class RadioSearchParser
 
         var parameters = new List<string>();
 
+        // An explicit "plays X" phrase is an artist/topic criterion.
+        // Keep the complete criterion together rather than treating X as a
+        // station name.
         var playsMatch = PlaysRegex().Match(request);
         if (playsMatch.Success)
         {
-            var value = CleanValue(playsMatch.Groups["value"].Value);
+            var value = RemoveFillers(playsMatch.Groups["value"].Value);
             if (value.Length > 0)
-            {
                 Add(parameters, "tag", value);
-                return string.Join("&", parameters);
-            }
+
+            return string.Join("&", parameters);
         }
 
         var locationMatch = LocationRegex().Match(request);
@@ -107,7 +115,7 @@ public static partial class RadioSearchParser
                 RegexOptions.IgnoreCase);
         }
 
-        request = CleanValue(request);
+        request = RemoveFillers(request);
 
         if (parameters.Count == 0)
         {
@@ -116,11 +124,22 @@ public static partial class RadioSearchParser
             else
                 Add(parameters, "tag", request);
         }
-        else if (request.Length > 0 && !HasSearchField(parameters, "city"))
+        else if (request.Length > 0)
         {
-            // Preserve an artist/topic/location qualifier that was not a known
-            // structured field. It is most useful as an additional tag.
-            Add(parameters, "tag", request);
+            // A remaining proper-name/location qualifier is useful as a
+            // city when it accompanies a known genre/tag.
+            if (!HasSearchField(parameters, "city") &&
+                parameters.Any(x => x.StartsWith("tag=", StringComparison.OrdinalIgnoreCase)) &&
+                LooksLikeLocation(request))
+            {
+                Add(parameters, "city", request);
+            }
+            else
+            {
+                // Preserve an artist/topic qualifier that was not recognized
+                // as a structured field.
+                Add(parameters, "tag", request);
+            }
         }
 
         return string.Join("&", parameters);
@@ -160,6 +179,22 @@ public static partial class RadioSearchParser
         return CleanValue(value);
     }
 
+    private static string RemoveFillers(string value)
+    {
+        value = CleanValue(value);
+
+        foreach (var filler in SearchFillers.OrderByDescending(x => x.Length))
+        {
+            value = Regex.Replace(
+                value,
+                $@"(?<![\w-]){Regex.Escape(filler)}(?![\w-])",
+                " ",
+                RegexOptions.IgnoreCase);
+        }
+
+        return CleanValue(value);
+    }
+
     private static string CleanValue(string value)
     {
         value = Regex.Replace(value, @"\s+", " ").Trim();
@@ -173,6 +208,13 @@ public static partial class RadioSearchParser
             value,
             @"(?:\bfm\b|\bam\b|\bradio\b|\bnetwork\b|\bbroadcast\b)",
             RegexOptions.IgnoreCase);
+    }
+
+    private static bool LooksLikeLocation(string value)
+    {
+        // Proper names are a useful fallback for requests such as
+        // "Nashville country". We deliberately keep this conservative.
+        return value.Any(char.IsUpper);
     }
 
     private static bool HasSearchField(
