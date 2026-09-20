@@ -123,7 +123,7 @@ public static partial class RadioSearchParser
         foreach (var tag in matchedTags)
         {
             tags.Add(tag);
-            request = Regex.Replace
+            request = Regex.Replace(
                 request,
                 $@"(?<![\w-]){Regex.Escape(tag)}(?![\w-])",
                 " ",
