@@ -376,7 +376,7 @@ namespace AIRadio.Server.Services.AI
             {
                 Role = LlamaMessageRoles.Tool,
                 Name = result.ToolName,
-                Content = result.ToJson()
+                Content = result.ToReport()
             });
 
         private void RemoveLastAssistantResponse()
