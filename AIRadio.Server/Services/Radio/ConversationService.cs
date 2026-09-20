@@ -90,14 +90,8 @@ namespace AIRadio.Server.Services.Radio
                                 .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
                                 .ToList();
 
-                            if (parsedRequests.Count > 0)
-                            {
-                                // Argument parsing is complete; the tool itself now
-                                // decides whether any required values are still missing.
-                                response.ToolRequests.Clear();
-                                response.ToolRequests.AddRange(
-                                    parsedRequests.Select(toolRequest => toolRequest.WithState(ToolRequestState.Initial)));
-                            }
+                            response.ToolRequests.Clear();
+                            response.ToolRequests.AddRange(parsedRequests);
                         }
                     }
 
@@ -204,6 +198,17 @@ namespace AIRadio.Server.Services.Radio
             var requests = toolRequests.ToList();
             _logger.LogInformation("Processing " + requests.Count + " tool requests");
             if (requests.Count == 0) return true;
+
+            // ArgumentParsing is a transient state used only while the model
+            // extracts arguments from the original utterance. Once parsing has
+            // produced the request, execution starts from the tool's normal
+            // initial state so tools can perform their own state transitions.
+            requests = requests
+                .Select(request =>
+                    request.State == ToolRequestState.ArgumentParsing
+                        ? request.WithState(ToolRequestState.Initial)
+                        : request)
+                .ToList();
 
             var resultTasks = requests.Select(request => ExecuteToolAsync(request, cancellationToken)).ToArray();
             var results = await Task.WhenAll(resultTasks);
