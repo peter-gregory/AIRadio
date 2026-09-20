@@ -102,12 +102,11 @@ namespace AIRadio.Server.Services.Radio
                         cancellationToken);
 
                 response.EnsureSuccessStatusCode();
+                var rawResult = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                var results =
-                    await response.Content
-                        .ReadFromJsonAsync<
-                            List<RadioBrowserStation>>(
-                                cancellationToken);
+                _logger.LogInformation($"Radio station query returned: {rawResult}");
+
+                var results = JsonConvert.DeserializeObject<List<RadioBrowserStation>>(rawResult);
 
                 if (results is null ||
                     results.Count == 0)
