@@ -374,7 +374,7 @@ public sealed class RadioSearchTool : ITool
         _mpv = mpv;
     }
     public string Name => "radioSearch";
-    public string Intent => "Find a radio station matching a genre, style, artist, topic, language, country, or station name, then play the selected station.";
+    public string Intent => "Find and play a radio station by station name, genre or style, artist, topic or format, language, or location.";
     public bool HasParameters => true;
     public string GetLlmRequestTemplate() => "{tool:radioSearch,query=!required!}";
     public string GetLlmInstructions() => """
@@ -383,26 +383,42 @@ RADIO SEARCH
 Search for radio stations.
 
 Parameters:
-- query: Required search text such as a station name, genre, artist, or topic.
+- query: Required search text describing the station the user wants.
+
+Expected search intents:
+- Station name: "Find Jazz FM"
+- Genre or style: "Play some light jazz"
+- Artist: "Find a station that plays Taylor Swift"
+- Topic or format: "Find sports talk radio"
+- Language: "Find a Spanish station"
+- Location: "Find a Nashville station"
 
 Important:
-- Use the user's search terms as the query; do not invent or embellish a station name.
-- Requests such as "play some light jazz", "find a rock station", or "something classical" are radioSearch requests.
-- The search request is a criterion, not a station name.
+- The query is one natural-language search criterion. Do not split it into fields or invent a category.
+- Preserve the user's meaningful search terms. Do not add words, station names, artists, locations, or other criteria the user did not provide.
+- Use radioSearch when the user wants a station matching one or more of the expected search intents above.
+- Do not use radioSearch for "next", "previous", "stop", volume, current station, or playlist requests; those have dedicated radio tools.
+- If the user names a known station and simply wants to play it, use radioPlay instead.
+- A descriptive request such as "light jazz" is a search criterion, not a station name.
 - Search results are authoritative for stations returned by the search service.
 - A search result does not automatically mean the station is in the current playback playlist.
-- If the user wants to play a search result, use the exact station ID or station name returned by the search before calling radioPlay.
 - Never invent search results, station IDs, station names, or stream URLs.
 
 Examples:
 User: "Find Jazz FM"
 {tool:radioSearch,query="Jazz FM"}
 
-User: "Find some jazz stations"
-{tool:radioSearch,query="jazz"}
+User: "Play some light jazz"
+{tool:radioSearch,query="light jazz"}
 
-User: "Search for stations that play Taylor Swift"
+User: "Find a station that plays Taylor Swift"
 {tool:radioSearch,query="Taylor Swift"}
+
+User: "Find Spanish news radio"
+{tool:radioSearch,query="Spanish news"}
+
+User: "Find a Nashville country station"
+{tool:radioSearch,query="Nashville country"}
 """;
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
@@ -441,7 +457,8 @@ User: "Search for stations that play Taylor Swift"
             return ToolResult.Failed(
                 Name,
                 "No matching radio stations were found.",
-                "{sound:radio-static} I'm sorry, I can't find that station.");
+                "{sound:radio-static} I'm sorry, I can't find that station.",
+                complete: true);
         }
 
         var station = results[0];
@@ -452,6 +469,7 @@ User: "Search for stations that play Taylor Swift"
             Name,
             $"Playing {station.Name}.",
             new { Station = station, Results = results },
-            $"Now playing {station.Name}.");
+            $"Now playing {station.Name}.",
+            true);
     }
 }
