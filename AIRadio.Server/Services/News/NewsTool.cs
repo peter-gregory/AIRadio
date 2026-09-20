@@ -15,6 +15,7 @@ public sealed class NewsTool : ITool
         _locationService = locationService;
     }
 
+    public bool HasParameters => true;
     public string Name => "news";
     public string Intent => "Get current news headlines.";
 
