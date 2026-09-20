@@ -24,15 +24,32 @@ public static class ToolReportFormatter
 
     public static string Format(string toolName, object? data, string? fallback = null)
     {
-        var body = data is null ? string.Empty : FormatToken(JToken.FromObject(data));
+        var body = toolName.Equals("news", StringComparison.OrdinalIgnoreCase)
+            ? FormatNews(data)
+            : data is null ? string.Empty : FormatToken(JToken.FromObject(data));
 
         if (string.IsNullOrWhiteSpace(body))
             body = fallback?.Trim() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(body))
+        return body.Trim();
+    }
+
+    private static string FormatNews(object? data)
+    {
+        if (data is null)
             return string.Empty;
 
-        return $"{FormatToolName(toolName)} REPORT\n\n{body.Trim()}";
+        var token = JToken.FromObject(data);
+        if (token.Type != JTokenType.Array)
+            return FormatToken(token);
+
+        var headlines = ((JArray)token)
+            .OfType<JObject>()
+            .Select(article => article["Title"]?.Value<string>()?.Trim())
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .ToList();
+
+        return string.Join("\n\n", headlines);
     }
 
     private static string FormatToken(JToken token)
