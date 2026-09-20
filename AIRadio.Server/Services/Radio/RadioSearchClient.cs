@@ -85,6 +85,8 @@ namespace AIRadio.Server.Services.Radio
                 $"{_searchPath.TrimStart('/')}?" +
                 query;
 
+            _logger.LogInformation($"Sending radio station request query: {requestUri}");
+
             try
             {
                 using var request =
