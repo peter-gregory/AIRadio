@@ -37,7 +37,7 @@ public sealed class RadioPlayTool : RadioToolBase
 {
     public RadioPlayTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
     public override string Name => "radioPlay";
-    public override string Intent => "Play a radio station.";
+    public override string Intent => "Play a known radio station by its exact station name or ID. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
     public override bool HasParameters => true;
     public override string GetLlmRequestTemplate() => "{tool:radioPlay,stationId=<optional>,stationName=<optional>}";
     public override string GetLlmInstructions() => """
@@ -53,6 +53,8 @@ Parameters:
 - When both are supplied, stationId takes precedence.
 
 Important:
+- A station name or ID must identify an actual station explicitly supplied by the user or returned by a previous search/playlist result.
+- Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName. For example, "light jazz" is a search criterion, not a station name.
 - The play action can only play a station that is already in the current playlist.
 - Do not invent station IDs or station names.
 - Use the exact station ID or station name returned by a previous radio playlist/search result.
@@ -71,6 +73,14 @@ User: "Play station 12345"
         Validate(request, cancellationToken);
         var stationId = request.GetString("stationId");
         var stationName = request.GetString("stationName");
+        if (request.State == ToolRequestState.Initial)
+        {
+            return ToolResult.Preamble(
+                Name,
+                "Looking for your radio station now {sound:radio-tuning}",
+                request.WithState(ToolRequestState.PreambleComplete));
+        }
+
         if (string.IsNullOrWhiteSpace(stationId) && string.IsNullOrWhiteSpace(stationName))
         {
             var pending = new ToolRequest
@@ -91,7 +101,11 @@ User: "Play station 12345"
         var station = FindStation(request);
         if (station is null) return ToolResult.Failed(Name, "The requested station was not found in the current playlist.");
         await Mpv.PlayAsync(station, cancellationToken);
-        return ToolResult.Successful(Name, $"Playing {station.Name}.", new { Station = station });
+        return ToolResult.Successful(
+            Name,
+            $"Playing {station.Name}.",
+            new { Station = station },
+            $"Now playing {station.Name}.");
     }
 }
 
@@ -344,9 +358,15 @@ User: "Which stations can I play?"
 public sealed class RadioSearchTool : ITool
 {
     private readonly IRadioSearchClient _search;
-    public RadioSearchTool(IRadioSearchClient search) => _search = search;
+    private readonly IMpvManager _mpv;
+
+    public RadioSearchTool(IRadioSearchClient search, IMpvManager mpv)
+    {
+        _search = search;
+        _mpv = mpv;
+    }
     public string Name => "radioSearch";
-    public string Intent => "Search for radio stations.";
+    public string Intent => "Find a radio station matching a genre, style, artist, topic, language, country, or station name, then play the selected station.";
     public bool HasParameters => true;
     public string GetLlmRequestTemplate() => "{tool:radioSearch,query=!required!}";
     public string GetLlmInstructions() => """
@@ -359,6 +379,8 @@ Parameters:
 
 Important:
 - Use the user's search terms as the query; do not invent or embellish a station name.
+- Requests such as "play some light jazz", "find a rock station", or "something classical" are radioSearch requests.
+- The search request is a criterion, not a station name.
 - Search results are authoritative for stations returned by the search service.
 - A search result does not automatically mean the station is in the current playback playlist.
 - If the user wants to play a search result, use the exact station ID or station name returned by the search before calling radioPlay.
@@ -377,6 +399,14 @@ User: "Search for stations that play Taylor Swift"
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.State == ToolRequestState.Initial)
+        {
+            return ToolResult.Preamble(
+                Name,
+                "Looking for your radio station now {sound:radio-tuning}",
+                request.WithState(ToolRequestState.PreambleComplete));
+        }
+
         var query = request.GetString("query");
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -394,7 +424,26 @@ User: "Search for stations that play Taylor Swift"
                 "What radio station, genre, artist, or topic should I search for?",
                 pending);
         }
-        var results = await _search.SearchAsync(new RadioSearchCriteria { Query = query.Trim() }, cancellationToken);
-        return ToolResult.Successful(Name, $"Found {results.Count} radio station(s).", results);
+        var results = await _search.SearchAsync(
+            new RadioSearchCriteria { Query = query.Trim() },
+            cancellationToken);
+
+        if (results.Count == 0)
+        {
+            return ToolResult.Failed(
+                Name,
+                "No matching radio stations were found.",
+                "{sound:radio-static} I'm sorry, I can't find that station.");
+        }
+
+        var station = results[0];
+        _mpv.SetRadioPlaylist(results, RadioPlaylistSource.Search);
+        await _mpv.PlayAsync(station, cancellationToken);
+
+        return ToolResult.Successful(
+            Name,
+            $"Playing {station.Name}.",
+            new { Station = station, Results = results },
+            $"Now playing {station.Name}.");
     }
 }
