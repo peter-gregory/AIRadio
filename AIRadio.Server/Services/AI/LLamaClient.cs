@@ -14,6 +14,7 @@ namespace AIRadio.Server.Services.AI
         Task<LlamaResponse> ContinueToolAsync(CancellationToken cancellationToken = default);
         Task<LlamaResponse> ContinueToolAsync(string userMessage, CancellationToken cancellationToken = default);
         Task<LlamaResponse> ContinueAsync(IEnumerable<ToolResult> toolResults, CancellationToken cancellationToken = default);
+        Task<LlamaResponse> ExecuteCommandAsync(LlmCommand command, CancellationToken cancellationToken = default);
         Task CancelAsync();
         Task ResetAsync(CancellationToken cancellationToken = default);
         IReadOnlyList<LlamaMessage> GetHistory();
@@ -124,6 +125,53 @@ namespace AIRadio.Server.Services.AI
                 finally { EndRequest(); }
             }
             finally { _requestLock.Release(); }
+        }
+
+        public async Task<LlamaResponse> ExecuteCommandAsync(
+            LlmCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(command);
+
+            await _requestLock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureInitializedAsync(cancellationToken);
+
+                var requestToken = BeginRequest(cancellationToken);
+                try
+                {
+                    var request = new LlamaCompletionRequest
+                    {
+                        Messages =
+                        [
+                            LlamaMessage.System(command.SystemPrompt),
+                            LlamaMessage.User(command.Input)
+                        ],
+                        MaxTokens = command.MaxTokens,
+                        Temperature = 0.2,
+                        Stream = false
+                    };
+
+                    var completion = await _llama.CompleteAsync(request, requestToken);
+                    if (string.IsNullOrWhiteSpace(completion.Content))
+                        throw new InvalidOperationException("Llama command completion contained no content.");
+
+                    return new LlamaResponse
+                    {
+                        SpokenText = completion.Content.Trim()
+                    };
+                }
+                finally
+                {
+                    EndRequest();
+                }
+            }
+            finally
+            {
+                _requestLock.Release();
+            }
         }
 
         public Task CancelAsync()
