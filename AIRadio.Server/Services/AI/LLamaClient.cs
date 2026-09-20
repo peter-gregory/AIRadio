@@ -94,13 +94,24 @@ namespace AIRadio.Server.Services.AI
                 else
                 {
                     SetSystemPrompt(BuildToolResponsePrompt());
+
+                    // The previous assistant message is the tool-selection response
+                    // (for example, {tool:news}). It is an intermediate control
+                    // message, not part of the response-round conversation. Keeping
+                    // it in history strongly encourages the small local model to
+                    // repeat the same tool tag instead of producing speech.
+                    RemoveLastAssistantResponse();
+
                     foreach (var result in results) AddToolResultToHistory(result);
                 }
 
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
-                    return await CompleteAsync(requestToken, isConversation ? 40 : 48);
+                    return await CompleteAsync(
+                        requestToken,
+                        isConversation ? 40 : 48,
+                        parseToolRequests: isConversation);
                 }
                 finally { EndRequest(); }
             }
@@ -305,7 +316,11 @@ namespace AIRadio.Server.Services.AI
             _logger.LogInformation("Llama system prompt cache warmed in {ElapsedSeconds:F1} seconds.", stopwatch.Elapsed.TotalSeconds);
         }
 
-        private async Task<LlamaResponse> CompleteAsync(CancellationToken cancellationToken, int maxTokens, bool fallbackToConversation = false)
+        private async Task<LlamaResponse> CompleteAsync(
+            CancellationToken cancellationToken,
+            int maxTokens,
+            bool fallbackToConversation = false,
+            bool parseToolRequests = true)
         {
             var message = new LlamaCompletionRequest
             {
@@ -315,6 +330,22 @@ namespace AIRadio.Server.Services.AI
             };
             var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
+
+            // Response rounds are speech-only. Never parse a response-round
+            // completion for tool tags because doing so can feed model output
+            // back into the tool executor and create an execution loop.
+            if (!parseToolRequests)
+            {
+                if (string.IsNullOrWhiteSpace(completion.Content))
+                    throw new InvalidOperationException("Llama completion contained no content.");
+
+                _activeToolNames.Clear();
+                return new LlamaResponse
+                {
+                    SpokenText = completion.Content.Trim()
+                };
+            }
+
             return ParseResponse(completion, fallbackToConversation);
         }
 
