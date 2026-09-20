@@ -210,12 +210,17 @@ namespace AIRadio.Server.Services.Radio
                     criteria.Query) &&
                 string.IsNullOrWhiteSpace(criteria.Tag))
             {
-                // Treat a free-form search phrase as a tag/genre search.
-                // This preserves phrases such as "light jazz" instead of
-                // silently issuing an unfiltered station query.
-                parameters.Add(
-                    $"tag={Uri.EscapeDataString(
-                        criteria.Query)}");
+                var parsed = RadioSearchParser.Parse(criteria.Query);
+
+                if (!string.IsNullOrWhiteSpace(parsed))
+                {
+                    parameters.Add(parsed);
+                }
+
+                _logger.LogInformation(
+                    "Parsed radio search request '{Request}' as '{QueryString}'.",
+                    criteria.Query,
+                    parsed);
             }
 
             var limit =
