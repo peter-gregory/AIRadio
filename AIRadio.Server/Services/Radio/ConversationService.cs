@@ -240,6 +240,12 @@ namespace AIRadio.Server.Services.Radio
             ToolResult result,
             CancellationToken cancellationToken)
         {
+            if (result.LlmCommands.Count > 0)
+            {
+                await ProcessLlmCommandsAsync(result.LlmCommands, cancellationToken);
+                return (false, null);
+            }
+
             switch (result.Status)
             {
                 case ToolResultStatus.MissingParameter:
@@ -279,6 +285,31 @@ namespace AIRadio.Server.Services.Radio
 
                 default:
                     throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        private async Task ProcessLlmCommandsAsync(
+            IEnumerable<LlmCommand> commands,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(commands);
+
+            var commandList = commands.ToList();
+            if (commandList.Count == 0)
+                return;
+
+            _logger.LogInformation(
+                "Processing {CommandCount} isolated LLM commands.",
+                commandList.Count);
+
+            foreach (var command in commandList)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var response = await _llama.ExecuteCommandAsync(command, cancellationToken);
+
+                if (response.HasSpeech)
+                    await _audioManager.PlaySpeechAsync(response.SpokenText, cancellationToken);
             }
         }
 
