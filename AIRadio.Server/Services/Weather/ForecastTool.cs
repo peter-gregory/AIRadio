@@ -17,6 +17,7 @@ public sealed class ForecastTool : ITool
     }
 
     public bool HasParameters => true;
+    public string GetLlmRequestTemplate() => "{tool:forecast,location=<optional>}";
     public string Name => "forecast";
     public string Intent => "Get the weather forecast.";
 
