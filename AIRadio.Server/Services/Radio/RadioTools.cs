@@ -77,7 +77,7 @@ User: "Play station 12345"
         {
             return ToolResult.Preamble(
                 Name,
-                "Looking for your radio station now {sound:radio-tuning}",
+                "Finding that station for you now {sound:radio-tuning}",
                 request.WithState(ToolRequestState.PreambleComplete));
         }
 
@@ -409,7 +409,7 @@ User: "Search for stations that play Taylor Swift"
         {
             return ToolResult.Preamble(
                 Name,
-                "Looking for your radio station now {sound:radio-tuning}",
+                "Finding that station for you now {sound:radio-tuning}",
                 request.WithState(ToolRequestState.PreambleComplete));
         }
 
