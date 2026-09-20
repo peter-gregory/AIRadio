@@ -15,7 +15,7 @@ namespace AIRadio.Server.Services.Alarms
         }
 
         public bool HasParameters => true;
-        public string GetLlmRequestTemplate() => "{tool:schedule,operation=!required!,...}";
+        public string GetLlmRequestTemplate() => "{tool:schedule,operation=!required!,type=<optional>,id=<optional>,content=<optional>,pattern=<optional>,date=<optional>,timeOfDay=<optional>,daysOfWeek=<optional>,month=<optional>,dayOfMonth=<optional>,weekOfMonth=<optional>,weekdayOfMonth=<optional>,startOffset=<optional>,endOffset=<optional>,enabled=<optional>}";
         public string Name =>
             "schedule";
     public string Intent => "Manage scheduled alarms and reminders.";
@@ -30,6 +30,13 @@ Use this tool when the user wants AIRadio to remember something for a future dat
 
 The schedule tool uses the following syntax:
 {tool:schedule,operation=<operation>,parameter=value}
+
+Argument parsing rules:
+- Extract only values explicitly supplied by the user.
+- Include only parameters that are relevant to the selected operation and schedule pattern.
+- Do not emit unused optional parameters.
+- operation is always required. The remaining required parameters are conditional on the operation, event type, and pattern as described below.
+- If a conditional required value is not supplied, emit it as !required! so the state engine can ask for it one at a time.
 
 Operations:
 - add: Create a new alarm or reminder. Requires type, content, and pattern, plus the schedule fields required by that pattern.
