@@ -108,9 +108,17 @@ namespace AIRadio.Server.Services.AI
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
+                    // News speaks each returned headline separately and prefixes
+                    // each one with a sound cue, so allow enough output for the
+                    // complete five-headline briefing without raising the limit
+                    // for shorter tool responses.
+                    var responseMaxTokens = isConversation
+                        ? 40
+                        : _activeToolNames.Contains("news") ? 96 : 48;
+
                     return await CompleteAsync(
                         requestToken,
-                        isConversation ? 40 : 48,
+                        responseMaxTokens,
                         parseToolRequests: isConversation);
                 }
                 finally { EndRequest(); }
