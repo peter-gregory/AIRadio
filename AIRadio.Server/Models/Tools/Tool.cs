@@ -16,6 +16,11 @@ namespace AIRadio.Server.Models.Tools
         /// </summary>
         bool HasParameters => false;
 
+        /// <summary>
+        /// Model-facing request syntax used during the argument parsing round.
+        /// </summary>
+        string GetLlmRequestTemplate() => $"{{tool:{Name}}}";
+
         string GetLlmInstructions();
 
         /// <summary>
