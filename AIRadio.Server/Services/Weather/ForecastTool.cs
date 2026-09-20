@@ -16,6 +16,7 @@ public sealed class ForecastTool : ITool
         _locationService = locationService;
     }
 
+    public bool HasParameters => true;
     public string Name => "forecast";
     public string Intent => "Get the weather forecast.";
 
