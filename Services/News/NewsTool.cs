@@ -1,6 +1,8 @@
 using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Location;
+using AIRadio.Server.Models.LLama;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.News
 {
@@ -103,7 +105,34 @@ NEWS RESPONSE
             };
 
             var articles = await _newsService.GetHeadlinesAsync(query, cancellationToken);
-            return ToolResult.Successful(Name, "News retrieved successfully.", articles);
+
+            var commands = JToken.FromObject(articles)
+                .OfType<JObject>()
+                .Select(article => article["Title"]?.Value<string>()?.Trim())
+                .Where(title => !string.IsNullOrWhiteSpace(title))
+                .Select(title => new LlmCommand(
+                    """
+                    Convert the supplied news headline into one natural spoken headline.
+
+                    - Speak only the headline.
+                    - Preserve the important facts.
+                    - Do not mention the source.
+                    - Do not summarize or add information.
+                    - Do not say "Title" or "Summary".
+                    - Start with {sound:news-breaking}.
+                    - Output only the speech and sound tag.
+                    """,
+                    title!,
+                    32))
+                .ToList();
+
+            if (commands.Count == 0)
+                return ToolResult.Failed(Name, "No news headlines are available.");
+
+            return ToolResult.SuccessfulWithLlmCommands(
+                Name,
+                commands,
+                "News headlines retrieved.");
         }
 
         private static string GetLocationName(RadioLocation location)
