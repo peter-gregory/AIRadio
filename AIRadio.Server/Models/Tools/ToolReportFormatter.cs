@@ -17,7 +17,9 @@ public static class ToolReportFormatter
     private static readonly HashSet<string> HiddenProperties = new(StringComparer.OrdinalIgnoreCase)
     {
         "Id", "Url", "PublishedAt", "RetrievedAt", "CreatedAt", "UpdatedAt",
-        "Latitude", "Longitude", "Raw", "Action", "IsSecured"
+        "Latitude", "Longitude", "Raw", "Action", "IsSecured",
+        "StreamUrl", "Homepage", "Favicon", "SourceId", "CountryCode", "IsHttps",
+        "Votes", "LastPlayed", "PlayCount", "Codec"
     };
 
     public static string Format(string toolName, object? data, string? fallback = null)
