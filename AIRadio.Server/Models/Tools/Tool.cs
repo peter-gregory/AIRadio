@@ -10,6 +10,12 @@ namespace AIRadio.Server.Models.Tools
         /// </summary>
         string Intent { get; }
 
+        /// <summary>
+        /// True when the original user utterance should be parsed for tool
+        /// arguments before the tool is executed.
+        /// </summary>
+        bool HasParameters => false;
+
         string GetLlmInstructions();
 
         /// <summary>
