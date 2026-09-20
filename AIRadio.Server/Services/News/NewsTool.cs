@@ -67,13 +67,20 @@ Present the returned headlines as a short, conversational radio news briefing.
                 """
                 Convert the supplied news headline into one natural spoken headline.
 
-                - Speak only the headline.
-                - Preserve the important facts.
+                The supplied input is authoritative and contains the complete headline.
+                Do not summarize, shorten, interpret, correct, or add information.
+
+                Rules:
+                - Speak the complete supplied headline.
+                - Preserve all facts and important wording.
+                - You may make only minor changes needed for natural speech.
                 - Do not mention the source.
-                - Do not summarize or add information.
                 - Do not say "Title" or "Summary".
-                - Start with {sound:news-breaking}.
-                - Output only the speech and sound tag.
+                - Start with exactly one {sound:news-breaking} tag.
+                - {sound:news-breaking} is the only sound tag permitted.
+                - Do not output any other sound tag.
+                - Never output a sound tag without the headline text.
+                - Output only the sound tag and spoken headline.
                 """,
                 article.Title,
                 32))
