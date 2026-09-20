@@ -27,14 +27,29 @@ namespace AIRadio.Server.Models.Tools
             return token.ToObject<T>();
         }
 
-        public string? GetString(string name) => GetArgument<string>(name);
+        public string? GetString(string name)
+        {
+            var value = GetArgument<string>(name);
+            return string.Equals(value, RequiredValue, StringComparison.Ordinal)
+                ? null
+                : value;
+        }
 
-        public int? GetInt32(string name) => GetArgument<int?>(name);
+        public int? GetInt32(string name)
+        {
+            var value = GetArgument<int?>(name);
+            return value;
+        }
 
-        public bool? GetBoolean(string name) => GetArgument<bool?>(name);
+        public bool? GetBoolean(string name)
+        {
+            var value = GetArgument<bool?>(name);
+            return value;
+        }
 
         public bool HasArgument(string name) =>
-            Arguments.TryGetValue(name, StringComparison.OrdinalIgnoreCase, out _);
+            Arguments.TryGetValue(name, StringComparison.OrdinalIgnoreCase, out var value) &&
+            !string.Equals(value?.Value<string>(), RequiredValue, StringComparison.Ordinal);
 
         public bool HasMissingRequiredArguments =>
             Arguments.Properties().Any(property =>
