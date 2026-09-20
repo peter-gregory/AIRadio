@@ -8,6 +8,7 @@ namespace AIRadio.Server.Services.Tools
         string GetLlmInstructions(IEnumerable<string> toolNames);
         string GetLlmResponseInstructions(IEnumerable<string> toolNames);
         string GetLlmCatalog();
+        bool HasParameters(string toolName);
         IReadOnlyList<string> GetToolNames();
 
         Task<ToolResult> ExecuteAsync(
@@ -45,6 +46,9 @@ namespace AIRadio.Server.Services.Tools
             _tools.Keys
                 .OrderBy(static name => name, StringComparer.Ordinal)
                 .ToArray();
+
+        public bool HasParameters(string toolName) =>
+            _tools.TryGetValue(toolName, out var tool) && tool.HasParameters;
 
         public string GetLlmCatalog() =>
             string.Join(
