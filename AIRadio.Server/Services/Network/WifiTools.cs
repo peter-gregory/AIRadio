@@ -54,6 +54,7 @@ public sealed class WifiConnectTool : ITool
 {
     private readonly IWifiManager _manager;
     public WifiConnectTool(IWifiManager manager) => _manager = manager;
+    public bool HasParameters => true;
     public string Name => "wifiConnect";
     public string Intent => "Connect to a WiFi network.";
     public string GetLlmInstructions() => """
