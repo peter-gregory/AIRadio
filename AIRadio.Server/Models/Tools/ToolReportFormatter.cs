@@ -41,6 +41,7 @@ public static class ToolReportFormatter
             JTokenType.Array => FormatArray((JArray)token),
             JTokenType.Null => string.Empty,
             JTokenType.Boolean => token.Value<bool>() ? "Yes" : "No",
+            JTokenType.String => token.Value<string>() ?? string.Empty,
             _ => token.ToString(Newtonsoft.Json.Formatting.None)
         };
     }
