@@ -1,3 +1,4 @@
+using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 
 namespace AIRadio.Server.Services.News;
@@ -59,9 +60,31 @@ Present the returned headlines as a short, conversational radio news briefing.
         }
 
         var result = await _newsService.GetHeadlinesAsync(cancellationToken);
-        return ToolResult.Successful(
+
+        var commands = result.Articles
+            .Where(article => !string.IsNullOrWhiteSpace(article.Title))
+            .Select(article => new LlmCommand(
+                """
+                Convert the supplied news headline into one natural spoken headline.
+
+                - Speak only the headline.
+                - Preserve the important facts.
+                - Do not mention the source.
+                - Do not summarize or add information.
+                - Do not say "Title" or "Summary".
+                - Start with {sound:news-breaking}.
+                - Output only the speech and sound tag.
+                """,
+                article.Title,
+                32))
+            .ToList();
+
+        if (commands.Count == 0)
+            return ToolResult.Failed(Name, "No news headlines are available.");
+
+        return ToolResult.SuccessfulWithLlmCommands(
             Name,
-            "News retrieved successfully.",
-            result);
+            commands,
+            "News headlines retrieved.");
     }
 }
