@@ -78,7 +78,7 @@ namespace AIRadio.Server.Services.Radio
                     {
                         var selected = response.ToolRequests[0];
 
-                        if (_toolExecutor.HasParameters(selected.Name))
+                        if (_tools.TryGetValue(selected.Name, out var selectedTool) && selectedTool.HasParameters)
                         {
                             _logger.LogInformation(
                                 "Tool {ToolName} requires argument parsing from the original utterance.",
