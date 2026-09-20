@@ -78,7 +78,8 @@ namespace AIRadio.Server.Services.Tools
                 _tools.Values
                     .Where(tool => requested.Contains(tool.Name))
                     .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
-                    .Select(static tool => tool.GetLlmInstructions())
+                    .Select(static tool =>
+                        $"{tool.GetLlmInstructions()}\nREQUEST FORMAT\n{tool.GetLlmRequestTemplate()}")
                     .Where(static text => !string.IsNullOrWhiteSpace(text)));
         }
 
