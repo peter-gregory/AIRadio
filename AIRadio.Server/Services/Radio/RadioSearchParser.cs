@@ -55,6 +55,7 @@ public static partial class RadioSearchParser
             return string.Empty;
 
         var parameters = new List<string>();
+        var tags = new List<string>();
 
         // An explicit "plays X" phrase is an artist/topic criterion.
         // Keep the complete criterion together rather than treating X as a
@@ -107,8 +108,8 @@ public static partial class RadioSearchParser
 
         foreach (var tag in matchedTags)
         {
-            Add(parameters, "tag", tag);
-            request = Regex.Replace(
+            tags.Add(tag);
+            request = Regex.Replace
                 request,
                 $@"(?<![\w-]){Regex.Escape(tag)}(?![\w-])",
                 " ",
@@ -117,29 +118,39 @@ public static partial class RadioSearchParser
 
         request = RemoveFillers(request);
 
+        if (request.Length > 0 &&
+            !parameters.Any(x => x.StartsWith("city=", StringComparison.OrdinalIgnoreCase)) &&
+            tags.Count > 0 &&
+            LooksLikeLocation(request))
+        {
+            Add(parameters, "city", request);
+            request = string.Empty;
+        }
+
+        if (request.Length > 0 && parameters.Count > 0)
+        {
+            tags.Add(request);
+            request = string.Empty;
+        }
+
+        if (tags.Count > 0)
+        {
+            tags = tags
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (tags.Count == 1)
+                Add(parameters, "tag", tags[0]);
+            else
+                Add(parameters, "tagList", string.Join(",", tags));
+        }
+
         if (parameters.Count == 0)
         {
             if (LooksLikeStationName(request))
                 Add(parameters, "name", request);
             else
                 Add(parameters, "tag", request);
-        }
-        else if (request.Length > 0)
-        {
-            // A remaining proper-name/location qualifier is useful as a
-            // city when it accompanies a known genre/tag.
-            if (!HasSearchField(parameters, "city") &&
-                parameters.Any(x => x.StartsWith("tag=", StringComparison.OrdinalIgnoreCase)) &&
-                LooksLikeLocation(request))
-            {
-                Add(parameters, "city", request);
-            }
-            else
-            {
-                // Preserve an artist/topic qualifier that was not recognized
-                // as a structured field.
-                Add(parameters, "tag", request);
-            }
         }
 
         return string.Join("&", parameters);
@@ -215,14 +226,6 @@ public static partial class RadioSearchParser
         // Proper names are a useful fallback for requests such as
         // "Nashville country". We deliberately keep this conservative.
         return value.Any(char.IsUpper);
-    }
-
-    private static bool HasSearchField(
-        IEnumerable<string> parameters,
-        string field)
-    {
-        return parameters.Any(x =>
-            x.StartsWith(field + "=", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void Add(
