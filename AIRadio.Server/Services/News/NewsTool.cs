@@ -16,6 +16,7 @@ public sealed class NewsTool : ITool
     }
 
     public string Name => "news";
+    public string Intent => "Get current news headlines.";
 
     public string GetLlmInstructions() => """
 NEWS
