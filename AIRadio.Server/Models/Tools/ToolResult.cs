@@ -34,6 +34,14 @@ namespace AIRadio.Server.Models.Tools
 
         public string? Error { get; set; }
 
+        /// <summary>
+        /// Formats the successful tool data as a compact, human-readable report
+        /// intended for the response LLM. The structured Data remains available
+        /// to application code and logging.
+        /// </summary>
+        public string ToReport() =>
+            ToolReportFormatter.Format(ToolName, Data, Message);
+
         public string ToJson() =>
             JsonConvert.SerializeObject(this, Formatting.None);
 
