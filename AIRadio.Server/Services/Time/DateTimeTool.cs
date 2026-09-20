@@ -7,6 +7,7 @@ public sealed class DateTimeTool : TimeToolBase
     public DateTimeTool(ITimeService timeService) : base(timeService) { }
 
     public override string Name => "datetime";
+    public override string Intent => "Get the current date and time.";
 
     public override string GetLlmInstructions() => """
 DATETIME
