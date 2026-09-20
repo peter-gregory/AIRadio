@@ -8,7 +8,7 @@ public abstract class TimeToolBase : ITool
 
     protected TimeToolBase(ITimeService timeService) => TimeService = timeService;
 
-    public abstract string Name { get; }
+    public abstract string Name { get; }\n    public abstract string Intent { get; }
     public abstract string GetLlmInstructions();
     public abstract Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default);
 
