@@ -16,6 +16,7 @@ public sealed class NewsTool : ITool
     }
 
     public bool HasParameters => true;
+    public string GetLlmRequestTemplate() => "{tool:news,location=<optional>,category=<optional>,limit=<optional>}";
     public string Name => "news";
     public string Intent => "Get current news headlines.";
 
