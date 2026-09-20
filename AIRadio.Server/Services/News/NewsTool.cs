@@ -34,15 +34,14 @@ Examples:
 NEWS RESPONSE
 Present the returned headlines as a short, conversational radio news briefing.
 
-- Start with a brief natural introduction.
-- Summarize the returned headlines in spoken language.
-- Mention the most important headlines; normally cover all returned headlines when they are concise enough.
-- Use the article summaries only to add useful context to a headline.
+- The preamble has already been spoken before this response. Do not repeat or add an introduction.
+- Speak only the returned news headlines.
+- Preserve the meaning of each headline, but rewrite slightly when needed for natural speech.
+- Start every headline with {sound:news-breaking}.
+- Do not combine multiple headlines into one sentence.
 - Do not read URLs, timestamps, IDs, source names, or JSON fields aloud.
 - Do not invent facts or add information not present in the result.
 - Do not output a tool request, JSON, Markdown, or an internal explanation.
-- You may use {sound:news-intro} at the beginning of the briefing.
-- Use {sound:news-breaking} only when a returned headline describes genuinely urgent or breaking news.
 """;
 
     public async Task<ToolResult> ExecuteAsync(
@@ -50,6 +49,14 @@ Present the returned headlines as a short, conversational radio news briefing.
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (request.State == ToolRequestState.Initial)
+        {
+            return ToolResult.Preamble(
+                Name,
+                "Here are the latest news headlines {sound:news-intro}",
+                request.WithState(ToolRequestState.PreambleComplete));
+        }
 
         var result = await _newsService.GetHeadlinesAsync(cancellationToken);
         return ToolResult.Successful(
