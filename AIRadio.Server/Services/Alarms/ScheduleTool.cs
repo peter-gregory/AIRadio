@@ -14,6 +14,7 @@ namespace AIRadio.Server.Services.Alarms
             _alarmService = alarmService;
         }
 
+        public bool HasParameters => true;
         public string Name =>
             "schedule";
     public string Intent => "Manage scheduled alarms and reminders.";
