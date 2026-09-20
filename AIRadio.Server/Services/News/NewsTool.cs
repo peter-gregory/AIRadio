@@ -82,6 +82,16 @@ Present the returned headlines as a short, conversational radio news briefing.
         if (commands.Count == 0)
             return ToolResult.Failed(Name, "No news headlines are available.");
 
+        commands.Add(new LlmCommand(
+            """
+            Say the supplied closing sentence naturally for a radio news briefing.
+            - Speak only the supplied sentence.
+            - Do not add or change any words.
+            - Do not output a sound tag.
+            """,
+            "And that's all the news for now.",
+            16));
+
         return ToolResult.SuccessfulWithLlmCommands(
             Name,
             commands,
