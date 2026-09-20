@@ -19,6 +19,7 @@ public sealed class WeatherTool : ITool
         _logger = logger;
     }
 
+    public bool HasParameters => true;
     public string Name => "weather-current";
     public string Intent => "Get the current weather conditions.";
 
