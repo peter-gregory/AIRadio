@@ -68,15 +68,37 @@ namespace AIRadio.Server.Services.Radio
                 }
                 else
                 {
-                    // Round 1 selects the tool only. Run a dedicated tool-execution
-                    // round before dispatching so the model can populate parameters
-                    // from the original user utterance using the selected tool's
-                    // full instructions.
+                    // Round 1 only selects the tool. Execute parameterless tools
+                    // immediately. Parameterized tools enter the argument-parsing
+                    // state so the selected tool's full instructions can extract
+                    // arguments from the original utterance before execution.
                     var response = await _llama.StartConversationAsync(request.Text, cancellationToken);
 
-                    if (response.HasToolRequests)
+                    if (response.ToolRequests.Count == 1)
                     {
-                        response = await _llama.ContinueToolAsync(cancellationToken);
+                        var selected = response.ToolRequests[0];
+
+                        if (_toolExecutor.HasParameters(selected.Name))
+                        {
+                            _logger.LogInformation(
+                                "Tool {ToolName} requires argument parsing from the original utterance.",
+                                selected.Name);
+
+                            response = await _llama.ContinueToolAsync(cancellationToken);
+
+                            var parsedRequests = response.ToolRequests
+                                .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
+                                .ToList();
+
+                            if (parsedRequests.Count > 0)
+                            {
+                                // Argument parsing is complete; the tool itself now
+                                // decides whether any required values are still missing.
+                                response.ToolRequests.Clear();
+                                response.ToolRequests.AddRange(
+                                    parsedRequests.Select(toolRequest => toolRequest.WithState(ToolRequestState.Initial)));
+                            }
+                        }
                     }
 
                     conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
