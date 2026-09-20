@@ -205,6 +205,18 @@ namespace AIRadio.Server.Services.Radio
                         criteria.Tag)}");
             }
 
+            if (!string.IsNullOrWhiteSpace(
+                    criteria.Query) &&
+                string.IsNullOrWhiteSpace(criteria.Tag))
+            {
+                // Treat a free-form search phrase as a tag/genre search.
+                // This preserves phrases such as "light jazz" instead of
+                // silently issuing an unfiltered station query.
+                parameters.Add(
+                    $"tag={Uri.EscapeDataString(
+                        criteria.Query)}");
+            }
+
             var limit =
                 criteria.Limit > 0
                     ? criteria.Limit
