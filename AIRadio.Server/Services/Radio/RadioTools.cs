@@ -104,14 +104,16 @@ User: "Play station 12345"
             return ToolResult.Failed(
                 Name,
                 "The requested station was not found in the current playlist.",
-                "{sound:radio-static} I'm sorry, I can't find that station.");
+                "{sound:radio-static} I'm sorry, I can't find that station.",
+                complete: true);
         }
         await Mpv.PlayAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
             $"Playing {station.Name}.",
             new { Station = station },
-            $"Now playing {station.Name}.");
+            $"Now playing {station.Name}.",
+            true);
     }
 }
 
