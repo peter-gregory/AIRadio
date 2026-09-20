@@ -10,6 +10,7 @@ public sealed class EventTool : ITool
     public EventTool(IAlarmService alarmService) => _alarmService = alarmService;
 
     public string Name => "events";
+    public string Intent => "Retrieve scheduled alarms and reminders.";
 
     public string GetLlmInstructions() => """
 EVENTS
