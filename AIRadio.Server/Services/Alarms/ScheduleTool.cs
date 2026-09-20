@@ -84,10 +84,10 @@ Important rules:
 
 Examples:
 User: "Set an alarm for 7 AM tomorrow."
-{tool:schedule,operation=add,type=Alarm,content="Wake me up",pattern=Once,date=2026-09-16,timeOfDay=07:00}
+{tool:schedule,operation=add,type=Alarm,content="Wake me up",pattern=Once,date=<date>,timeOfDay=07:00}
 
 User: "Remind me to take out the trash tomorrow."
-{tool:schedule,operation=add,type=Reminder,content="Take out the trash",pattern=Once,date=2026-09-16}
+{tool:schedule,operation=add,type=Reminder,content="Take out the trash",pattern=Once,date=<date>}
 
 User: "Set a daily alarm for 6:30 AM."
 {tool:schedule,operation=add,type=Alarm,content="Wake me up",pattern=Daily,timeOfDay=06:30}
