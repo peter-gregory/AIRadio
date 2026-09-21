@@ -48,8 +48,8 @@ RADIO PLAY
 Play a station from the current radio playlist.
 
 Parameters:
-- stationId: Optional station ID. Use the exact ID from the current playlist.
-- stationName: Optional station name. Use the exact station name from the current playlist.
+- stationId: Optional station ID. Use the exact ID from the current playlist. Station IDs are identifiers such as numeric IDs; do not put a station call sign, brand name, or descriptive name in stationId.
+- stationName: Optional station name or call sign supplied by the user. Use stationName for names such as "Jazz FM", "Lightning 100", or "WRLT".
 - Provide stationId or stationName when the user supplies a station identifier or station name.
 - At least one of stationId or stationName is required; the execution state engine will ask for one if neither is supplied.
 - When both are supplied, stationId takes precedence.
@@ -69,6 +69,9 @@ User: "Play Jazz FM"
 
 User: "Play station 12345"
 {tool:radioPlay,stationId=12345}
+
+User: "Play WRLT"
+{tool:radioPlay,stationName="WRLT"}
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
