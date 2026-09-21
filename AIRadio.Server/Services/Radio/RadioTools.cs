@@ -154,7 +154,12 @@ User: "Turn off the radio"
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.StopAsync(cancellationToken);
-        return ToolResult.Successful(Name, "Radio playback stopped.", new { Action = "stop" });
+        return ToolResult.Successful(
+            Name,
+            "Radio playback stopped.",
+            new { Action = "stop" },
+            "The radio is stopped.",
+            true);
     }
 }
 
@@ -183,7 +188,12 @@ User: "Go to the next station"
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayNextRadioStationAsync(cancellationToken);
-        return ToolResult.Successful(Name, $"Playing {State.RadioStation?.Name ?? "next station"}.", new { Station = State.RadioStation });
+        return ToolResult.Successful(
+            Name,
+            $"Playing {State.RadioStation?.Name ?? "next station"}.",
+            new { Station = State.RadioStation },
+            $"Now playing {State.RadioStation?.Name ?? "the next station"}.",
+            true);
     }
 }
 
@@ -212,7 +222,12 @@ User: "Play the previous station"
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken); await Mpv.PlayPreviousRadioStationAsync(cancellationToken);
-        return ToolResult.Successful(Name, $"Playing {State.RadioStation?.Name ?? "previous station"}.", new { Station = State.RadioStation });
+        return ToolResult.Successful(
+            Name,
+            $"Playing {State.RadioStation?.Name ?? "previous station"}.",
+            new { Station = State.RadioStation },
+            $"Now playing {State.RadioStation?.Name ?? "the previous station"}.",
+            true);
     }
 }
 
@@ -266,7 +281,12 @@ User: "Turn it down to 10"
         }
         value = Math.Clamp(value.Value, 0, 100);
         await Mpv.SetVolumeAsync(value.Value, cancellationToken);
-        return ToolResult.Successful(Name, $"Radio volume set to {value}.", new { Volume = value });
+        return ToolResult.Successful(
+            Name,
+            $"Radio volume set to {value}.",
+            new { Volume = value },
+            $"Radio volume set to {value}.",
+            true);
     }
 }
 
