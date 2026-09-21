@@ -131,7 +131,7 @@ namespace AIRadio.Server.Services.Mpv
             MpvCommand command,
             CancellationToken cancellationToken)
         {
-            var commandJson = JsonSerializer.Serialize(
+            var commandJson = System.Text.Json.JsonSerializer.Serialize(
                 new { command = command.ToCommandArray() });
 
             _logger.LogDebug(
