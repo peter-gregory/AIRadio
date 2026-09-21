@@ -26,7 +26,7 @@ namespace AIRadio.Server.Services.Audio
     public sealed class AudioManager : IAudioManager, IAsyncDisposable
     {
         private static readonly Regex SoundTagRegex = new(
-            @"\{sound:(?<tag>[A-Za-z0-9_.-]+)\}",
+            @"{sound:(?<tag>[A-Za-z0-9_.-]+)}",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private readonly ILogger<AudioManager> _logger;
@@ -70,7 +70,6 @@ namespace AIRadio.Server.Services.Audio
             }
 
             EnqueueSpeech(text[position..], cancellationToken);
-
 
             return Task.CompletedTask;
         }
@@ -200,7 +199,13 @@ namespace AIRadio.Server.Services.Audio
                 return;
             }
 
-            await DuckMpvAsync(cancellationToken);
+            var duckedForSpeech = false;
+            if (!_stationChangeMute)
+            {
+                await DuckMpvAsync(cancellationToken);
+                duckedForSpeech = IsDucked;
+            }
+
             try
             {
                 await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
@@ -208,7 +213,8 @@ namespace AIRadio.Server.Services.Audio
             }
             finally
             {
-                await UnduckMpvAsync(CancellationToken.None);
+                if (duckedForSpeech && !_stationChangeMute)
+                    await UnduckMpvAsync(CancellationToken.None);
             }
         }
 
