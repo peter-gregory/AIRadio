@@ -105,7 +105,9 @@ namespace AIRadio.Server.Services.Mpv
                     ownsSocket: false);
 
                 _reader = new StreamReader(networkStream, Encoding.UTF8);
-                _writer = new StreamWriter(networkStream, Encoding.UTF8)
+                _writer = new StreamWriter(
+                    networkStream,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
                 {
                     AutoFlush = true
                 };
@@ -214,15 +216,11 @@ _logger.LogDebug(
                     _sendLock.Release();
                 }
 
-                using var timeoutCancellation =
-                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-                timeoutCancellation.CancelAfter(_commandTimeout);
-
-                using var registration = timeoutCancellation.Token.Register(
-                    () => completionSource.TrySetCanceled(timeoutCancellation.Token));
-
-                return await completionSource.Task;
+                // Keep caller cancellation distinct from the command timeout.
+                // A timeout is a transport failure, not a cancelled conversation.
+                return await completionSource.Task.WaitAsync(
+                    _commandTimeout,
+                    cancellationToken);
             }
             catch (OperationCanceledException)
             {
