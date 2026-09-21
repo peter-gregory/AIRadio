@@ -14,7 +14,7 @@ public static class RadioSearchParser
 
     private static readonly string[] Tags =
     [
-        "classic rock", "soft rock", "hard rock", "easy listening",
+        "smooth jazz", "classic rock", "soft rock", "hard rock", "easy listening",
         "hip hop", "hip-hop", "r&b", "top 40",
         "pop", "rock", "jazz", "blues", "classical", "country", "folk",
         "rap", "soul", "funk", "disco", "dance", "electronic", "edm",
