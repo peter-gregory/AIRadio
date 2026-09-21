@@ -138,7 +138,7 @@ namespace AIRadio.Server.Services.Mpv
                 "Sending MPV IPC JSON: {Json}",
                 commandJson);
 
-            var result = await SendCommandAsync(
+            var result = await _transport.SendCommandAsync(
                 command,
                 cancellationToken);
 
