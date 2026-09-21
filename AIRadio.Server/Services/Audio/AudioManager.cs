@@ -118,20 +118,32 @@ namespace AIRadio.Server.Services.Audio
         public async Task EndUtteranceAsync(bool cancel = false, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _queue.WaitForIdleAsync(cancellationToken);
-            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
 
+            await _queue.WaitForIdleAsync(cancellationToken);
+
+            _logger.LogDebug(
+                "End utterance: queue idle; cancel={Cancel}, stationChangeMute={StationChangeMute}, isDucked={IsDucked}, restoreVolume={RestoreVolume}.",
+                cancel,
+                _stationChangeMute,
+                IsDucked,
+                _normalVolume);
+
+            // Speech requests that are part of the utterance wait for their
+            // PipeWire playback to complete. Restore station-change volume
+            // immediately after the queue becomes idle, before ending the
+            // PipeWire utterance, so a PipeWire cleanup problem cannot prevent
+            // MPV from being unmuted.
             if (!cancel && _stationChangeMute)
             {
-                // The station-change volume belongs to this complete utterance.
-                // Keep MPV muted through the station response speech and only
-                // restore full volume after that speech has finished.
                 await _mpvManager.SetVolumeAsync(100, cancellationToken);
                 _normalVolume = 100;
                 _stationChangeMute = false;
                 Volatile.Write(ref _isDucked, false);
-                _logger.LogDebug("Station change utterance complete; restored MPV radio volume to full volume.");
+                _logger.LogDebug(
+                    "Station change utterance complete; restored MPV radio volume to full volume.");
             }
+
+            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
