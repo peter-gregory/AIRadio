@@ -556,9 +556,9 @@ User: "Remember this station"
         var station = State.RadioStation;
         if (station is null)
         {
-            const string speech = "There isn't a radio station playing right now.";
+            const string noStationSpeech = "There isn't a radio station playing right now.";
             return Task.FromResult(
-                ToolResult.Successful(Name, speech, new { Saved = false }, speech, true));
+                ToolResult.Successful(Name, noStationSpeech, new { Saved = false }, noStationSpeech, true));
         }
 
         var alreadySaved = _stationStore.IsSaved(station.Id);
@@ -625,9 +625,9 @@ User: "Remove this station from my saved stations"
         var station = State.RadioStation;
         if (station is null)
         {
-            const string speech = "There isn't a radio station playing right now.";
+            const string noStationSpeech = "There isn't a radio station playing right now.";
             return Task.FromResult(
-                ToolResult.Successful(Name, speech, new { Removed = false }, speech, true));
+                ToolResult.Successful(Name, noStationSpeech, new { Removed = false }, noStationSpeech, true));
         }
 
         var removed = _stationStore.Forget(station.Id);
@@ -691,9 +691,9 @@ User: "Make this a favorite"
         var station = State.RadioStation;
         if (station is null)
         {
-            const string speech = "There isn't a radio station playing right now.";
+            const string noStationSpeech = "There isn't a radio station playing right now.";
             return Task.FromResult(
-                ToolResult.Successful(Name, speech, new { Favorite = false }, speech, true));
+                ToolResult.Successful(Name, noStationSpeech, new { Favorite = false }, noStationSpeech, true));
         }
 
         var alreadyFavorite = _stationStore.IsFavorite(station.Id);
