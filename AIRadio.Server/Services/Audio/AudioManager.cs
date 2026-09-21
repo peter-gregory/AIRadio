@@ -265,7 +265,9 @@ namespace AIRadio.Server.Services.Audio
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
-                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+                    // Station tuning must overlap the preamble. Do not wait for
+                    // PipeWire speech/sound playback here; EndUtteranceAsync
+                    // waits for the complete utterance before restoring MPV volume.
                     try
                     {
                         await _mpvManager.PlayAsync(request.Station, cancellationToken);
