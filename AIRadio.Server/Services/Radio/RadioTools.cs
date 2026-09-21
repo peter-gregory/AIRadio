@@ -51,7 +51,14 @@ internal static class RadioSpeechFormatter
 
 public sealed class RadioPlayTool : RadioToolBase
 {
-    public RadioPlayTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
+    private readonly IRadioSearchClient _search;
+    private readonly ILogger<RadioPlayTool> _logger;
+
+    public RadioPlayTool(IMpvManager mpv, IMpvState state, IAudioManager audio, IRadioSearchClient search, ILogger<RadioPlayTool> logger) : base(mpv, state, audio)
+    {
+        _search = search;
+        _logger = logger;
+    }
     public override string Name => "radioPlay";
     public override string Intent => "Play a known radio station by its exact station name or ID. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
     public override bool HasParameters => true;
@@ -132,11 +139,37 @@ User: "Play WRLT"
         }
 
         var station = FindStation(request);
+        if (station is null && !string.IsNullOrWhiteSpace(stationName))
+        {
+            var searchQuery = stationName.Trim();
+            _logger.LogInformation(
+                "Radio play name lookup: sending query '{Query}' to search service.",
+                searchQuery);
+
+            var results = await _search.SearchAsync(
+                new RadioSearchCriteria { Query = searchQuery },
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Radio play name lookup: received {ResultCount} result(s) for query '{Query}'.",
+                results.Count,
+                searchQuery);
+
+            if (results.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Radio play name lookup results: {Results}",
+                    JsonSerializer.Serialize(results));
+            }
+
+            station = results.FirstOrDefault();
+        }
+
         if (station is null)
         {
             return ToolResult.Failed(
                 Name,
-                "The requested station was not found in the current playlist.",
+                "The requested station was not found.",
                 "{sound:radio-static} I'm sorry, I can't find that station.",
                 complete: true);
         }
