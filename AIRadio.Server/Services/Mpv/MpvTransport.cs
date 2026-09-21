@@ -164,10 +164,12 @@ namespace AIRadio.Server.Services.Mpv
             ArgumentNullException.ThrowIfNull(command);
             ObjectDisposedException.ThrowIf(_disposed, this);
 
+            // Commands are allowed to be issued before the MPV IPC socket has
+            // been opened. Connect lazily so callers do not need to manage
+            // transport connection state themselves.
             if (!IsConnected)
             {
-                throw new InvalidOperationException(
-                    "MPV transport is not connected.");
+                await ConnectAsync(cancellationToken);
             }
 
             var requestId = Interlocked.Increment(ref _requestId);
