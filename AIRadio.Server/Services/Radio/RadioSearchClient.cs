@@ -74,18 +74,35 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentNullException.ThrowIfNull(criteria);
 
-            if (!criteria.HasCriteria)
-                return [];
+            _logger.LogDebug(
+                "Radio search criteria: Query='{Query}', StationName='{StationName}', Genre='{Genre}', Tag='{Tag}', Language='{Language}', Country='{Country}', State='{State}', City='{City}', Limit={Limit}, Offset={Offset}.",
+                criteria.Query,
+                criteria.StationName,
+                criteria.Genre,
+                criteria.Tag,
+                criteria.Language,
+                criteria.Country,
+                criteria.State,
+                criteria.City,
+                criteria.Limit,
+                criteria.Offset);
 
-            var query =
-                BuildQuery(criteria);
+            if (!criteria.HasCriteria)
+            {
+                _logger.LogDebug("Radio search skipped because no criteria were supplied.");
+                return [];
+            }
+
+            var query = BuildQuery(criteria);
 
             var requestUri =
                 $"{_baseUrl.TrimEnd('/')}/" +
                 $"{_searchPath.TrimStart('/')}?" +
                 query;
 
-            _logger.LogDebug("Sending radio station request query: {RequestUri}", requestUri);
+            _logger.LogDebug(
+                "Radio Browser request URI: {RequestUri}",
+                requestUri);
 
             try
             {
@@ -106,20 +123,54 @@ namespace AIRadio.Server.Services.Radio
                 response.EnsureSuccessStatusCode();
                 var rawResult = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                _logger.LogDebug("Radio station query returned: {RawResult}", rawResult);
+                _logger.LogDebug(
+                    "Radio Browser response: HTTP {StatusCode}, {Length} bytes.",
+                    (int)response.StatusCode,
+                    rawResult.Length);
 
-                var results = JsonConvert.DeserializeObject<List<RadioBrowserStation>>(rawResult);
+                _logger.LogDebug(
+                    "Radio Browser raw response: {RawResult}",
+                    rawResult);
+
+                var results =
+                    JsonConvert.DeserializeObject<List<RadioBrowserStation>>(
+                        rawResult);
 
                 if (results is null ||
                     results.Count == 0)
                 {
+                    _logger.LogDebug("Radio Browser returned no stations.");
                     return [];
                 }
 
-                return results
-                    .Where(IsUsableStation)
-                    .Select(MapStation)
-                    .ToList();
+                var usable =
+                    results
+                        .Where(IsUsableStation)
+                        .Select(MapStation)
+                        .ToList();
+
+                _logger.LogDebug(
+                    "Radio Browser returned {RawCount} stations; {UsableCount} usable stations.",
+                    results.Count,
+                    usable.Count);
+
+                for (var i = 0; i < Math.Min(usable.Count, 10); i++)
+                {
+                    var station = usable[i];
+                    _logger.LogDebug(
+                        "Radio search result {Index}: Name='{Name}', Tags='{Tags}', Country='{Country}', State='{State}', Language='{Language}', Votes={Votes}, Bitrate={Bitrate}, StreamUrl='{StreamUrl}'.",
+                        i,
+                        station.Name,
+                        string.Join(", ", station.Tags),
+                        station.Country,
+                        station.State,
+                        string.Join(", ", station.Languages),
+                        station.Votes,
+                        station.Bitrate,
+                        station.StreamUrl);
+                }
+
+                return usable;
             }
             catch (OperationCanceledException)
             {
@@ -246,9 +297,13 @@ namespace AIRadio.Server.Services.Radio
             parameters.Add(
                 "reverse=true");
 
-            return string.Join(
-                "&",
-                parameters);
+            var query = string.Join("&", parameters);
+
+            _logger.LogDebug(
+                "Final Radio Browser query string: {QueryString}",
+                query);
+
+            return query;
         }
 
         private static bool IsUsableStation(
