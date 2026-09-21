@@ -529,15 +529,14 @@ User: "Find a Nashville country station"
         }
         var searchQuery = query.Trim();
         _logger.LogInformation(
-            "Radio search by name/criteria: sending query \\"{Query}\\" to search service.",
-            searchQuery);
+            $"Radio search by name/criteria: sending query '{searchQuery}' to search service.");
 
         var results = await _search.SearchAsync(
             new RadioSearchCriteria { Query = searchQuery },
             cancellationToken);
 
         _logger.LogInformation(
-            "Radio search by name/criteria: received {ResultCount} result(s) for query \\"{Query}\\".",
+            "Radio search by name/criteria: received {ResultCount} result(s) for query '{Query}'.",
             results.Count,
             searchQuery);
 
@@ -595,11 +594,12 @@ User: "Find a Nashville country station"
                 complete: true);
         }
 
+        var spokenStation = FormatStationNameForSpeech(station.Name);
         return ToolResult.Successful(
             Name,
             $"Playing {station.Name}.",
             new { Station = station, Results = results },
-            $"Now playing {FormatStationNameForSpeech(station.Name)}.",
+            $"Now playing {spokenStation}.",
             true);
     }
 }
