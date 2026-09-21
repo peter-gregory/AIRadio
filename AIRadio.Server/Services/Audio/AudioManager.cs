@@ -59,6 +59,11 @@ namespace AIRadio.Server.Services.Audio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
+            var shouldDuck = _mpvClient.IsPlaying && !IsDucked;
+
+            if (shouldDuck)
+                EnqueueAsync(new(AudioRequestType.MpvDuck, null, null), cancellationToken);
+
             var position = 0;
             foreach (Match match in SoundTagRegex.Matches(text))
             {
@@ -68,6 +73,10 @@ namespace AIRadio.Server.Services.Audio
             }
 
             EnqueueSpeech(text[position..], cancellationToken);
+
+            if (shouldDuck)
+                EnqueueAsync(new(AudioRequestType.MpvUnduck, null, null), cancellationToken);
+
             return Task.CompletedTask;
         }
 
@@ -220,11 +229,13 @@ namespace AIRadio.Server.Services.Audio
                     _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
                     await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
                     Volatile.Write(ref _isDucked, true);
+                    _logger.LogDebug("Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.", _normalVolume, _duckVolume);
                     break;
                 case AudioRequestType.MpvUnduck:
                     if (!IsDucked) return;
                     await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
                     Volatile.Write(ref _isDucked, false);
+                    _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
