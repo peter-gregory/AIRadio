@@ -265,12 +265,12 @@ namespace AIRadio.Server.Services.Audio
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
-                    // Station tuning must overlap the preamble. Do not wait for
-                    // PipeWire speech/sound playback here; EndUtteranceAsync
-                    // waits for the complete utterance before restoring MPV volume.
                     try
                     {
                         await _mpvManager.PlayAsync(request.Station, cancellationToken);
+                        await _mpvManager.SetVolumeAsync(100, cancellationToken);
+                        _normalVolume = 100;
+                        _logger.LogDebug("Station change complete; set MPV radio volume to full volume.");
                     }
                     catch
                     {
@@ -286,20 +286,13 @@ namespace AIRadio.Server.Services.Audio
             if (_mpvClient.IsPlaying)
                 await _mpvManager.StopAsync(cancellationToken);
 
-            if (IsDucked || _stationChangeMute)
-                return;
-
-            _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
-            if (_normalVolume == 0)
-            {
-                _logger.LogDebug("MPV radio is already muted; preserving mute during station change.");
-                return;
-            }
-
+            // Station changes take ownership of MPV volume. Always restore to
+            // full volume after tuning, regardless of any existing duck/mute state.
+            _normalVolume = 100;
             await _mpvManager.SetVolumeAsync(0, cancellationToken);
             _stationChangeMute = true;
             Volatile.Write(ref _isDucked, true);
-            _logger.LogDebug("Muted MPV radio for station change from {NormalVolume}.", _normalVolume);
+            _logger.LogDebug("Muted MPV radio for station change; restore volume is full volume.");
         }
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
