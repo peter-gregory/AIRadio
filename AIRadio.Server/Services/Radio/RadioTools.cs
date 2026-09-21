@@ -480,8 +480,30 @@ User: "Find a Nashville country station"
         {
             await _mpv.PlayAsync(station, cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Timed out waiting for MPV to accept station {StationName}.",
+                station.Name);
+
+            return ToolResult.Failed(
+                Name,
+                $"Unable to tune {station.Name}: MPV did not respond within the configured timeout.",
+                "{sound:radio-static} I'm sorry, I wasn't able to tune that station.",
+                complete: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to tune station {StationName}.",
+                station.Name);
+
             return ToolResult.Failed(
                 Name,
                 $"Unable to tune {station.Name}: {ex.Message}",
