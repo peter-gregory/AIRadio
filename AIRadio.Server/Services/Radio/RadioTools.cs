@@ -107,7 +107,19 @@ User: "Play station 12345"
                 "{sound:radio-static} I'm sorry, I can't find that station.",
                 complete: true);
         }
-        await Mpv.PlayAsync(station, cancellationToken);
+        try
+        {
+            await Mpv.PlayAsync(station, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ToolResult.Failed(
+                Name,
+                $"Unable to tune {station.Name}: {ex.Message}",
+                "{sound:radio-static} I'm sorry, I wasn't able to tune that station.",
+                complete: true);
+        }
+
         return ToolResult.Successful(
             Name,
             $"Playing {station.Name}.",
@@ -463,7 +475,19 @@ User: "Find a Nashville country station"
 
         var station = results[0];
         _mpv.SetRadioPlaylist(results, RadioPlaylistSource.Search);
-        await _mpv.PlayAsync(station, cancellationToken);
+
+        try
+        {
+            await _mpv.PlayAsync(station, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ToolResult.Failed(
+                Name,
+                $"Unable to tune {station.Name}: {ex.Message}",
+                "{sound:radio-static} I'm sorry, I wasn't able to tune that station.",
+                complete: true);
+        }
 
         return ToolResult.Successful(
             Name,
