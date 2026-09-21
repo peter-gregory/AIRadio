@@ -127,6 +127,28 @@ namespace AIRadio.Server.Services.Mpv
             IsPlaying = false;
         }
 
+        private async Task<JsonElement?> SendCommandAsync(
+            MpvCommand command,
+            CancellationToken cancellationToken)
+        {
+            var commandJson = JsonSerializer.Serialize(
+                new { command = command.ToCommandArray() });
+
+            _logger.LogDebug(
+                "Sending MPV IPC JSON: {Json}",
+                commandJson);
+
+            var result = await SendCommandAsync(
+                command,
+                cancellationToken);
+
+            _logger.LogDebug(
+                "Received MPV IPC JSON reply: {Json}",
+                result?.GetRawText() ?? "<null>");
+
+            return result;
+        }
+
         public async Task PlayStreamAsync(
             string url,
             CancellationToken cancellationToken = default)
@@ -142,7 +164,7 @@ namespace AIRadio.Server.Services.Mpv
                     url,
                     "replace");
 
-            await _transport.SendCommandAsync(
+            await SendCommandAsync(
                 command,
                 cancellationToken);
 
@@ -154,7 +176,7 @@ namespace AIRadio.Server.Services.Mpv
         {
             ThrowIfDisposed();
 
-            await _transport.SendCommandAsync(
+            await SendCommandAsync(
                 MpvCommand.Command(
                     "stop"),
                 cancellationToken);
@@ -167,7 +189,7 @@ namespace AIRadio.Server.Services.Mpv
         {
             ThrowIfDisposed();
 
-            await _transport.SendCommandAsync(
+            await SendCommandAsync(
                 MpvCommand.SetProperty(
                     "pause",
                     true),
@@ -181,7 +203,7 @@ namespace AIRadio.Server.Services.Mpv
         {
             ThrowIfDisposed();
 
-            await _transport.SendCommandAsync(
+            await SendCommandAsync(
                 MpvCommand.SetProperty(
                     "pause",
                     false),
@@ -202,7 +224,7 @@ namespace AIRadio.Server.Services.Mpv
                     0,
                     100);
 
-            await _transport.SendCommandAsync(
+            await SendCommandAsync(
                 MpvCommand.SetProperty(
                     "volume",
                     volume),
@@ -218,7 +240,7 @@ namespace AIRadio.Server.Services.Mpv
             ThrowIfDisposed();
 
             var result =
-                await _transport.SendCommandAsync(
+                await SendCommandAsync(
                     MpvCommand.GetProperty(
                         "volume"),
                     cancellationToken);
