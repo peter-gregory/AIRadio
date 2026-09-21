@@ -59,11 +59,6 @@ namespace AIRadio.Server.Services.Audio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
-            var shouldDuck = _mpvClient.IsPlaying && !IsDucked;
-
-            if (shouldDuck)
-                EnqueueAsync(new(AudioRequestType.MpvDuck, null, null), cancellationToken);
-
             var position = 0;
             foreach (Match match in SoundTagRegex.Matches(text))
             {
@@ -74,8 +69,6 @@ namespace AIRadio.Server.Services.Audio
 
             EnqueueSpeech(text[position..], cancellationToken);
 
-            if (shouldDuck)
-                EnqueueAsync(new(AudioRequestType.MpvUnduck, null, null), cancellationToken);
 
             return Task.CompletedTask;
         }
@@ -118,11 +111,9 @@ namespace AIRadio.Server.Services.Audio
 
             if (IsDucked)
             {
-                try { await _mpvManager.SetVolumeAsync(_normalVolume, CancellationToken.None); }
+                try { await UnduckMpvAsync(CancellationToken.None); }
                 catch (Exception ex) { _logger.LogDebug(ex, "Unable to restore MPV volume after audio cancellation."); }
             }
-
-            Volatile.Write(ref _isDucked, false);
             _queue.Resume();
         }
 
@@ -202,7 +193,17 @@ namespace AIRadio.Server.Services.Audio
                 _logger.LogWarning("Piper returned no audio data for speech text.");
                 return;
             }
-            await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
+
+            await DuckMpvAsync(cancellationToken);
+            try
+            {
+                await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
+                await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+            }
+            finally
+            {
+                await UnduckMpvAsync(CancellationToken.None);
+            }
         }
 
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
@@ -221,27 +222,40 @@ namespace AIRadio.Server.Services.Audio
 
         private async Task ProcessMpvAsync(AudioRequest request, CancellationToken cancellationToken)
         {
-            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
             switch (request.Type)
             {
                 case AudioRequestType.MpvDuck:
-                    if (IsDucked) return;
-                    _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
-                    await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
-                    Volatile.Write(ref _isDucked, true);
-                    _logger.LogDebug("Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.", _normalVolume, _duckVolume);
+                    await DuckMpvAsync(cancellationToken);
                     break;
                 case AudioRequestType.MpvUnduck:
-                    if (!IsDucked) return;
-                    await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
-                    Volatile.Write(ref _isDucked, false);
-                    _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
+                    await UnduckMpvAsync(cancellationToken);
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
                     await _mpvManager.PlayAsync(request.Station, cancellationToken);
                     break;
             }
+        }
+
+        private async Task DuckMpvAsync(CancellationToken cancellationToken)
+        {
+            if (IsDucked || !_mpvClient.IsPlaying)
+                return;
+
+            _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
+            await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
+            Volatile.Write(ref _isDucked, true);
+            _logger.LogDebug("Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.", _normalVolume, _duckVolume);
+        }
+
+        private async Task UnduckMpvAsync(CancellationToken cancellationToken)
+        {
+            if (!IsDucked)
+                return;
+
+            await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
+            Volatile.Write(ref _isDucked, false);
+            _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
         }
 
         public async ValueTask DisposeAsync()
