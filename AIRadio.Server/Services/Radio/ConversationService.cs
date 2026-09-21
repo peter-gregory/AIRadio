@@ -80,18 +80,39 @@ namespace AIRadio.Server.Services.Radio
 
                         if (_tools.TryGetValue(selected.Name, out var selectedTool) && selectedTool.HasParameters)
                         {
-                            _logger.LogInformation(
-                                "Tool {ToolName} requires argument parsing from the original utterance.",
-                                selected.Name);
+                            // radioPlay has only optional arguments. For the saved-list
+                            // phrases, there is nothing to extract, so avoid a second
+                            // LLM round that can incorrectly turn command wording into
+                            // a station name.
+                            if (string.Equals(selected.Name, "radioPlay", StringComparison.OrdinalIgnoreCase) &&
+                                IsSavedRadioPlaybackRequest(request.Text))
+                            {
+                                _logger.LogInformation(
+                                    "Tool {ToolName} selected saved-station playback; skipping argument parsing.",
+                                    selected.Name);
 
-                            response = await _llama.ContinueToolAsync(cancellationToken);
+                                response.ToolRequests.Clear();
+                                response.ToolRequests.Add(new ToolRequest
+                                {
+                                    Name = selected.Name,
+                                    Arguments = new JObject()
+                                });
+                            }
+                            else
+                            {
+                                _logger.LogInformation(
+                                    "Tool {ToolName} requires argument parsing from the original utterance.",
+                                    selected.Name);
 
-                            var parsedRequests = response.ToolRequests
-                                .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
-                                .ToList();
+                                response = await _llama.ContinueToolAsync(cancellationToken);
 
-                            response.ToolRequests.Clear();
-                            response.ToolRequests.AddRange(parsedRequests);
+                                var parsedRequests = response.ToolRequests
+                                    .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
+                                    .ToList();
+
+                                response.ToolRequests.Clear();
+                                response.ToolRequests.AddRange(parsedRequests);
+                            }
                         }
                     }
 
@@ -128,6 +149,18 @@ namespace AIRadio.Server.Services.Radio
                     }
                 }
             }
+        }
+
+        private static bool IsSavedRadioPlaybackRequest(string text)
+        {
+            var normalized = text.Trim().TrimEnd('.', '!', '?').ToLowerInvariant();
+
+            return normalized is
+                "play the radio" or
+                "play some music" or
+                "play my favorites" or
+                "play my saved stations" or
+                "play my saved radio stations";
         }
 
         private async Task<bool> ExecutePendingToolAsync(ToolRequest request, CancellationToken cancellationToken)
