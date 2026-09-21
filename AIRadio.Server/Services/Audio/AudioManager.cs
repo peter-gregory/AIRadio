@@ -128,11 +128,12 @@ namespace AIRadio.Server.Services.Audio
                 IsDucked,
                 _normalVolume);
 
-            // Speech requests that are part of the utterance wait for their
-            // PipeWire playback to complete. Restore station-change volume
-            // immediately after the queue becomes idle, before ending the
-            // PipeWire utterance, so a PipeWire cleanup problem cannot prevent
-            // MPV from being unmuted.
+            // EndUtteranceAsync signals PipeWire that no more audio belongs to
+            // this utterance and waits for the queued speech to finish. Do not
+            // wait for playback from inside the audio queue worker: that would
+            // prevent this method from ever reaching EndUtteranceAsync.
+            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
+
             if (!cancel && _stationChangeMute)
             {
                 await _mpvManager.SetVolumeAsync(100, cancellationToken);
@@ -142,8 +143,6 @@ namespace AIRadio.Server.Services.Audio
                 _logger.LogDebug(
                     "Station change utterance complete; restored MPV radio volume to full volume.");
             }
-
-            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -248,8 +247,9 @@ namespace AIRadio.Server.Services.Audio
             try
             {
                 await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
-                if (request.WaitForPlayback)
-                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+                // Utterance completion is coordinated by EndUtteranceAsync.
+                // Waiting here would deadlock because EndUtteranceAsync is
+                // called only after the audio queue becomes idle.
             }
             finally
             {
