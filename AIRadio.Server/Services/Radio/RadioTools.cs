@@ -83,8 +83,12 @@ User: "Play station 12345"
             // speech are played. EndUtteranceAsync restores the prior volume.
             await Audio.PrepareStationChangeAsync(cancellationToken);
             await Audio.WaitForCompletionAsync(cancellationToken);
+            var stationDescription = !string.IsNullOrWhiteSpace(stationName)
+                ? stationName
+                : $"station {stationId}";
+
             await Audio.QueueSpeechAsync(
-                "Finding that station for you now {sound:radio-tuning}",
+                $"Looking for station {stationDescription} now {sound:radio-tuning}",
                 cancellationToken);
 
             return ToolResult.Preamble(
@@ -477,8 +481,13 @@ User: "Find a Nashville country station"
         {
             await _audio.PrepareStationChangeAsync(cancellationToken);
             await _audio.WaitForCompletionAsync(cancellationToken);
+            var query = request.GetString("query");
+            var searchDescription = string.IsNullOrWhiteSpace(query)
+                ? "radio stations"
+                : $"radio stations with {query.Trim()}";
+
             await _audio.QueueSpeechAsync(
-                "Finding that station for you now {sound:radio-tuning}",
+                $"Looking for {searchDescription} now {sound:radio-tuning}",
                 cancellationToken);
 
             return ToolResult.Preamble(
