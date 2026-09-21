@@ -66,13 +66,13 @@ public sealed class RadioPlayTool : RadioToolBase
     public override string GetLlmInstructions() => """
 RADIO PLAY
 
-Play a station from the current radio playlist.
+Play a station, or start playback from the saved station list when no station is specified.
 
 Parameters:
 - stationId: Optional station ID. Use the exact ID from the current playlist. Station IDs are identifiers such as numeric IDs; do not put a station call sign, brand name, or descriptive name in stationId.
 - stationName: Optional station name or call sign supplied by the user. Use stationName for names such as "Jazz FM", "Lightning 100", or "WRLT".
 - Provide stationId or stationName when the user supplies a station identifier or station name.
-- At least one of stationId or stationName is required; the execution state engine will ask for one if neither is supplied.
+- stationId and stationName are both optional. If neither is supplied, play the saved station list starting with its first station.
 - When both are supplied, stationId takes precedence.
 
 Important:
@@ -82,7 +82,9 @@ Important:
 - If a stationName is not already in the playlist, use the station-name search service to resolve it.
 - Do not invent station IDs or station names.
 - Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName.
-- If the user asks for a station that is not currently available, report that it was not found.
+- If the user says "play the radio", "play some music", or "play my favorites" without naming a station, load the saved station list and start with its first station.
+- The saved list is ordered with the most recently favorited station first, followed by other saved stations.
+- If the saved station list is empty, report that there are no saved stations.
 
 Examples:
 User: "Play Jazz FM"
@@ -123,19 +125,40 @@ User: "Play WRLT"
 
         if (string.IsNullOrWhiteSpace(stationId) && string.IsNullOrWhiteSpace(stationName))
         {
-            var pending = new ToolRequest
-            {
-                Name = Name,
-                Arguments = new JObject
-                {
-                    ["stationName"] = ToolRequest.RequiredValue
-                }
-            };
+            var savedStations = _stationStore.GetSavedStations();
 
-            return ToolResult.MissingParameter(
+            if (savedStations.Count == 0)
+            {
+                const string speech = "I don't have any saved radio stations yet.";
+                return ToolResult.Successful(Name, speech, new { SavedStations = 0 }, speech, true);
+            }
+
+            _logger.LogInformation("Starting saved radio playlist with {Count} station(s).", savedStations.Count);
+            Mpv.SetRadioPlaylist(savedStations, RadioPlaylistSource.Search);
+            var savedStation = savedStations[0];
+
+            try
+            {
+                await Audio.PlayStationAsync(savedStation, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return ToolResult.Failed(
+                    Name,
+                    $"Unable to tune {savedStation.Name}: {ex.Message}",
+                    "{sound:radio-static} I'm sorry, I wasn't able to tune that station.",
+                    complete: true);
+            }
+
+            var savedSpokenName = RadioSpeechFormatter.FormatStationNameForSpeech(savedStation.Name);
+            var savedSpeech = $"Now playing {savedSpokenName}.";
+
+            return ToolResult.Successful(
                 Name,
-                "Which radio station would you like me to play?",
-                pending);
+                $"Playing {savedStation.Name}.",
+                new { Station = savedStation, SavedStationCount = savedStations.Count },
+                savedSpeech,
+                true);
         }
 
         var station = FindStation(request);
@@ -664,8 +687,7 @@ User: "Make this a favorite"
         }
 
         var alreadyFavorite = _stationStore.IsFavorite(station.Id);
-        if (!alreadyFavorite)
-            _stationStore.SetFavorite(station);
+        _stationStore.SetFavorite(station);
 
         var spokenName =
             RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
