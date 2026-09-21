@@ -11,6 +11,7 @@ namespace AIRadio.Server.Services.Audio
     {
         bool IsDucked { get; }
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
+        Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
         Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default);
         Task PrepareStationChangeAsync(CancellationToken cancellationToken = default);
@@ -74,6 +75,22 @@ namespace AIRadio.Server.Services.Audio
             return Task.CompletedTask;
         }
 
+        public Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(text);
+
+            var position = 0;
+            foreach (Match match in SoundTagRegex.Matches(text))
+            {
+                EnqueueSpeech(text[position..match.Index], cancellationToken, waitForPlayback: false);
+                EnqueueSound(match.Groups["tag"].Value, cancellationToken);
+                position = match.Index + match.Length;
+            }
+
+            EnqueueSpeech(text[position..], cancellationToken, waitForPlayback: false);
+            return Task.CompletedTask;
+        }
+
         public Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(sound);
@@ -132,14 +149,14 @@ namespace AIRadio.Server.Services.Audio
             }
         }
 
-        private void EnqueueSpeech(string text, CancellationToken cancellationToken)
+        private void EnqueueSpeech(string text, CancellationToken cancellationToken, bool waitForPlayback = true)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
             foreach (var sentence in SentenceParser.Split(text))
             {
                 _logger.LogInformation("Queue speech: " + sentence);
                 cancellationToken.ThrowIfCancellationRequested();
-                EnqueueAsync(new(AudioRequestType.Speech, sentence, null), cancellationToken);
+                EnqueueAsync(new(AudioRequestType.Speech, sentence, null, waitForPlayback), cancellationToken);
             }
         }
 
@@ -164,7 +181,7 @@ namespace AIRadio.Server.Services.Audio
                 switch (request.Type)
                 {
                     case AudioRequestType.Speech:
-                        await ProcessSpeechAsync(request.Value!, cancellationToken);
+                        await ProcessSpeechAsync(request, cancellationToken);
                         break;
                     case AudioRequestType.Sound:
                         await ProcessSoundAsync(request.Value!, cancellationToken);
@@ -189,9 +206,9 @@ namespace AIRadio.Server.Services.Audio
             }
         }
 
-        private async Task ProcessSpeechAsync(string text, CancellationToken cancellationToken)
+        private async Task ProcessSpeechAsync(AudioRequest request, CancellationToken cancellationToken)
         {
-            var wavData = await _piperClient.GenerateWavAsync(text, cancellationToken);
+            var wavData = await _piperClient.GenerateWavAsync(request.Value!, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (wavData.Length == 0)
             {
@@ -209,7 +226,8 @@ namespace AIRadio.Server.Services.Audio
             try
             {
                 await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
-                await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+                if (request.WaitForPlayback)
+                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
             }
             finally
             {
@@ -313,7 +331,7 @@ namespace AIRadio.Server.Services.Audio
             await _queue.DisposeAsync();
         }
 
-        private sealed record AudioRequest(AudioRequestType Type, string? Value, RadioStation? Station);
+        private sealed record AudioRequest(AudioRequestType Type, string? Value, RadioStation? Station, bool WaitForPlayback = true);
 
         private enum AudioRequestType
         {
