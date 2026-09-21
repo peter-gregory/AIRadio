@@ -3,6 +3,8 @@ using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Mpv;
 using AIRadio.Server.Services.Audio;
 using Newtonsoft.Json.Linq;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace AIRadio.Server.Services.Radio;
 
@@ -32,6 +34,14 @@ public abstract class RadioToolBase : ITool
         if (!string.IsNullOrWhiteSpace(name))
             return State.RadioPlaylist.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
         return null;
+    }
+
+    protected static string FormatStationNameForSpeech(string name)
+    {
+        if (Regex.IsMatch(name.Trim(), @"^[A-Z]{3,5}$"))
+            return string.Join(' ', name.Trim().ToCharArray());
+
+        return name;
     }
 }
 
@@ -143,7 +153,7 @@ User: "Play WRLT"
             Name,
             $"Playing {station.Name}.",
             new { Station = station },
-            $"Now playing {station.Name}.",
+            $"Now playing {FormatStationNameForSpeech(station.Name)}.",
             true);
     }
 }
@@ -517,9 +527,26 @@ User: "Find a Nashville country station"
                 "What radio station, genre, artist, or topic should I search for?",
                 pending);
         }
+        var searchQuery = query.Trim();
+        _logger.LogInformation(
+            "Radio search by name/criteria: sending query \\"{Query}\\" to search service.",
+            searchQuery);
+
         var results = await _search.SearchAsync(
-            new RadioSearchCriteria { Query = query.Trim() },
+            new RadioSearchCriteria { Query = searchQuery },
             cancellationToken);
+
+        _logger.LogInformation(
+            "Radio search by name/criteria: received {ResultCount} result(s) for query \\"{Query}\\".",
+            results.Count,
+            searchQuery);
+
+        if (results.Count > 0)
+        {
+            _logger.LogInformation(
+                "Radio search by name/criteria results: {Results}",
+                JsonSerializer.Serialize(results));
+        }
 
         if (results.Count == 0)
         {
@@ -572,7 +599,7 @@ User: "Find a Nashville country station"
             Name,
             $"Playing {station.Name}.",
             new { Station = station, Results = results },
-            $"Now playing {station.Name}.",
+            $"Now playing {FormatStationNameForSpeech(station.Name)}.",
             true);
     }
 }
