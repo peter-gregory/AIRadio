@@ -182,7 +182,19 @@ namespace AIRadio.Server.Services.Mpv
 
             try
             {
-                var json = JsonSerializer.Serialize(command, _serializerOptions);
+                var payload = new
+{
+    command = command.ToCommandArray(),
+    request_id = requestId
+};
+
+var json = JsonSerializer.Serialize(
+    payload,
+    _serializerOptions);
+
+_logger.LogDebug(
+    "Sending MPV IPC JSON: {Json}",
+    json);
 
                 await _sendLock.WaitAsync(cancellationToken);
 
@@ -243,6 +255,10 @@ namespace AIRadio.Server.Services.Mpv
                     {
                         break;
                     }
+
+                    _logger.LogDebug(
+                        "Received raw MPV IPC JSON: {Json}",
+                        line);
 
                     if (string.IsNullOrWhiteSpace(line))
                     {
