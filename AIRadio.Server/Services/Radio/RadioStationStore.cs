@@ -23,12 +23,6 @@ public sealed class RadioStationStore : IRadioStationStore
         public List<RadioStation> SavedStations { get; set; } = [];
     }
 
-    private sealed class LegacyStoreData
-    {
-        public List<RadioStation> SavedStations { get; set; } = [];
-        public List<RadioStation> FavoriteStations { get; set; } = [];
-    }
-
     private readonly ILogger<RadioStationStore> _logger;
     private readonly string _dataFile;
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -132,37 +126,9 @@ public sealed class RadioStationStore : IRadioStationStore
         if (!File.Exists(_dataFile)) return;
         try
         {
-            var legacy = JsonSerializer.Deserialize<LegacyStoreData>(
+            _data = JsonSerializer.Deserialize<StoreData>(
                 File.ReadAllText(_dataFile),
-                _jsonOptions) ?? new LegacyStoreData();
-
-            var saved = legacy.SavedStations;
-
-            // Older versions persisted favorites in a separate list. Merge those
-            // entries into the single saved list and preserve their favorite flag.
-            foreach (var favorite in legacy.FavoriteStations)
-            {
-                var existing = Find(saved, favorite.Id);
-                if (existing is null)
-                {
-                    existing = favorite.Clone();
-                    saved.Add(existing);
-                }
-
-                existing.IsFavorite = true;
-            }
-
-            _data = new StoreData
-            {
-                SavedStations = saved
-                    .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group.First())
-                    .OrderByDescending(x => x.IsFavorite)
-                    .ToList()
-            };
-
-            // Rewrite the file in the new single-list format.
-            SaveToDisk();
+                _jsonOptions) ?? new StoreData();
         }
         catch (JsonException ex)
         {
