@@ -36,7 +36,12 @@ public abstract class RadioToolBase : ITool
         return null;
     }
 
-    protected static string FormatStationNameForSpeech(string name)
+    }
+}
+
+internal static class RadioSpeechFormatter
+{
+    public static string FormatStationNameForSpeech(string name)
     {
         if (Regex.IsMatch(name.Trim(), @"^[A-Z]{3,5}$"))
             return string.Join(' ', name.Trim().ToCharArray());
@@ -153,7 +158,7 @@ User: "Play WRLT"
             Name,
             $"Playing {station.Name}.",
             new { Station = station },
-            $"Now playing {FormatStationNameForSpeech(station.Name)}.",
+            $"Now playing {RadioSpeechFormatter.FormatStationNameForSpeech(station.Name)}.",
             true);
     }
 }
@@ -594,7 +599,7 @@ User: "Find a Nashville country station"
                 complete: true);
         }
 
-        var spokenStation = FormatStationNameForSpeech(station.Name);
+        var spokenStation = RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
         return ToolResult.Successful(
             Name,
             $"Playing {station.Name}.",
