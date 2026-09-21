@@ -30,7 +30,7 @@ namespace AIRadio.Server.Services.Radio
             _httpClient = httpClient;
             _logger = logger;
 
-            _logger.LogInformation("Construct RadioSearchClient");
+            _logger.LogDebug("Construct RadioSearchClient");
 
             _baseUrl =
                 configuration["RadioBrowser:BaseUrl"]
@@ -65,7 +65,7 @@ namespace AIRadio.Server.Services.Radio
                     1,
                     _maxLimit);
 
-            _logger.LogInformation("Construct finished RadioSearchClient");
+            _logger.LogDebug("Construct finished RadioSearchClient");
         }
 
         public async Task<IReadOnlyList<RadioStation>> SearchAsync(
@@ -85,7 +85,7 @@ namespace AIRadio.Server.Services.Radio
                 $"{_searchPath.TrimStart('/')}?" +
                 query;
 
-            _logger.LogInformation($"Sending radio station request query: {requestUri}");
+            _logger.LogDebug("Sending radio station request query: {RequestUri}", requestUri);
 
             try
             {
@@ -106,7 +106,7 @@ namespace AIRadio.Server.Services.Radio
                 response.EnsureSuccessStatusCode();
                 var rawResult = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                _logger.LogInformation($"Radio station query returned: {rawResult}");
+                _logger.LogDebug("Radio station query returned: {RawResult}", rawResult);
 
                 var results = JsonConvert.DeserializeObject<List<RadioBrowserStation>>(rawResult);
 
@@ -217,7 +217,7 @@ namespace AIRadio.Server.Services.Radio
                     parameters.Add(parsed);
                 }
 
-                _logger.LogInformation(
+                _logger.LogDebug(
                     "Parsed radio search request '{Request}' as '{QueryString}'.",
                     criteria.Query,
                     parsed);
