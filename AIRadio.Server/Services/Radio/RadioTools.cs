@@ -36,7 +36,6 @@ public abstract class RadioToolBase : ITool
         return null;
     }
 
-    }
 }
 
 internal static class RadioSpeechFormatter
