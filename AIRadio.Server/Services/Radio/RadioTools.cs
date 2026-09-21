@@ -379,11 +379,13 @@ public sealed class RadioSearchTool : ITool
 {
     private readonly IRadioSearchClient _search;
     private readonly IMpvManager _mpv;
+    private ILogger<RadioSearchTool> _logger;
 
-    public RadioSearchTool(IRadioSearchClient search, IMpvManager mpv)
+    public RadioSearchTool(IRadioSearchClient search, IMpvManager mpv, ILogger<RadioSearchTool> logger)
     {
         _search = search;
         _mpv = mpv;
+        _logger = logger;
     }
     public string Name => "radioSearch";
     public string Intent => "Find and play a radio station by station name, genre or style, artist, topic or format, language, or location.";
