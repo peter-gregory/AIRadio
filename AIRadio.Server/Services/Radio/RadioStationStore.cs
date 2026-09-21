@@ -149,9 +149,11 @@ public sealed class RadioStationStore : IRadioStationStore
             data.SavedStations = data.SavedStations
                 .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
+                .OrderByDescending(x => x.IsFavorite)
                 .ToList();
 
             _data = data;
+            SaveToDisk();
         }
         catch (JsonException ex)
         {
