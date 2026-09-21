@@ -78,10 +78,10 @@ Parameters:
 Important:
 - A station name or ID must identify an actual station explicitly supplied by the user or returned by a previous search/playlist result.
 - Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName. For example, "light jazz" is a search criterion, not a station name.
-- The play action can only play a station that is already in the current playlist.
+- First check the current radio playlist for the requested station.
+- If a stationName is not already in the playlist, use the station-name search service to resolve it.
 - Do not invent station IDs or station names.
-- Use the exact station ID or station name returned by a previous radio playlist/search result.
-- If the requested station is not in the current playlist, do not substitute another station.
+- Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName.
 - If the user asks for a station that is not currently available, report that it was not found.
 
 Examples:
@@ -358,38 +358,329 @@ User: "Turn it down to 10"
     }
 }
 
-public sealed class RadioCurrentTool : RadioToolBase
+public sealed class RadioSongTool : RadioToolBase
 {
-    public RadioCurrentTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
-    public override string Name => "radioCurrent";
-    public override string Intent => "Report the currently playing station and metadata.";
-    public override string GetLlmInstructions() => """
-RADIO CURRENT
+    public RadioSongTool(IMpvManager mpv, IMpvState state, IAudioManager audio)
+        : base(mpv, state, audio) { }
 
-Get the currently playing radio station and its available playback metadata.
+    public override string Name => "radio-song";
+    public override string Intent => "Get the song currently playing on the radio.";
+    public override string GetLlmInstructions() => """
+RADIO SONG
+
+Get the song currently playing on the radio.
 
 Parameters:
 - None.
 
-Use this tool for questions such as what is playing, which station is playing, or requests for the current song/artist information.
+Use this tool when the user asks what song is playing, what track is playing, or who the current song is by.
 
 Examples:
-User: "What's playing?"
-{tool:radioCurrent}
+User: "What song is playing?"
+{tool:radio-song}
 
-User: "What station is this?"
-{tool:radioCurrent}
-
-User: "Who is playing?"
-{tool:radioCurrent}
+User: "What's playing right now?"
+{tool:radio-song}
 """;
-    public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
+
+        if (!State.IsPlaying)
+        {
+            return Task.FromResult(
+                ToolResult.Successful(
+                    Name,
+                    "No radio station is currently playing.",
+                    complete: true,
+                    exactPrompt: "The radio isn't playing right now."));
+        }
+
+        var title = State.Title?.Trim();
+        var artist = State.Artist?.Trim();
+
+        var speech =
+            !string.IsNullOrWhiteSpace(title) &&
+            !string.IsNullOrWhiteSpace(artist)
+                ? $"You're listening to {title} by {artist}."
+                : !string.IsNullOrWhiteSpace(title)
+                    ? $"The current song is {title}."
+                    : !string.IsNullOrWhiteSpace(artist)
+                        ? $"The current artist is {artist}."
+                        : "I don't have the current song information.";
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                speech,
+                new { Title = title, Artist = artist },
+                speech,
+                true));
+    }
+}
+
+public sealed class RadioCurrentTool : RadioToolBase
+{
+    public RadioCurrentTool(IMpvManager mpv, IMpvState state, IAudioManager audio)
+        : base(mpv, state, audio) { }
+
+    public override string Name => "radio-current";
+    public override string Intent => "Get the name of the currently playing radio station.";
+    public override string GetLlmInstructions() => """
+RADIO CURRENT
+
+Get the name of the currently playing radio station.
+
+Parameters:
+- None.
+
+Use this tool only for questions about which radio station is currently playing.
+
+Examples:
+User: "What station is this?"
+{tool:radio-current}
+
+User: "What radio station am I listening to?"
+{tool:radio-current}
+""";
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
         var station = State.RadioStation;
-        return Task.FromResult(station is null
-            ? ToolResult.Successful(Name, "No radio station is currently playing.", new { IsPlaying = false })
-            : ToolResult.Successful(Name, $"Currently playing {station.Name}.", new { IsPlaying = State.IsPlaying, Station = station, Title = State.Title, Artist = State.Artist, Album = State.Album }));
+        if (station is null || !State.IsPlaying)
+        {
+            return Task.FromResult(
+                ToolResult.Successful(
+                    Name,
+                    "No radio station is currently playing.",
+                    new { IsPlaying = false },
+                    "The radio isn't playing right now.",
+                    true));
+        }
+
+        var spokenName =
+            RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
+        var speech = $"You're listening to {spokenName}.";
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                speech,
+                new { Station = station },
+                speech,
+                true));
+    }
+}
+
+public sealed class RadioSaveTool : RadioToolBase
+{
+    private readonly IRadioStationStore _stationStore;
+
+    public RadioSaveTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio,
+        IRadioStationStore stationStore)
+        : base(mpv, state, audio)
+    {
+        _stationStore = stationStore;
+    }
+
+    public override string Name => "radio-save";
+    public override string Intent => "Save the currently playing radio station.";
+    public override string GetLlmInstructions() => """
+RADIO SAVE
+
+Save the currently playing radio station.
+
+Parameters:
+- None.
+
+Use this tool when the user asks to save, remember, or keep the current station.
+
+Examples:
+User: "Save this station"
+{tool:radio-save}
+
+User: "Remember this station"
+{tool:radio-save}
+""";
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
+        var station = State.RadioStation;
+        if (station is null)
+        {
+            const string speech = "There isn't a radio station playing right now.";
+            return Task.FromResult(
+                ToolResult.Successful(Name, speech, new { Saved = false }, speech, true));
+        }
+
+        var alreadySaved = _stationStore.IsSaved(station.Id);
+        if (!alreadySaved)
+            _stationStore.Save(station);
+
+        var spokenName =
+            RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
+        var speech = alreadySaved
+            ? $"{spokenName} is already saved."
+            : $"I've saved {spokenName}.";
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                speech,
+                new { Station = station, Saved = true, AlreadySaved = alreadySaved },
+                speech,
+                true));
+    }
+}
+
+public sealed class RadioForgetTool : RadioToolBase
+{
+    private readonly IRadioStationStore _stationStore;
+
+    public RadioForgetTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio,
+        IRadioStationStore stationStore)
+        : base(mpv, state, audio)
+    {
+        _stationStore = stationStore;
+    }
+
+    public override string Name => "radio-forget";
+    public override string Intent => "Remove the currently playing radio station from the saved station list.";
+    public override string GetLlmInstructions() => """
+RADIO FORGET
+
+Remove the currently playing radio station from the saved station list.
+
+Parameters:
+- None.
+
+Use this tool when the user asks to forget, remove, or unsave the current station.
+
+Examples:
+User: "Forget this station"
+{tool:radio-forget}
+
+User: "Remove this station from my saved stations"
+{tool:radio-forget}
+""";
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
+        var station = State.RadioStation;
+        if (station is null)
+        {
+            const string speech = "There isn't a radio station playing right now.";
+            return Task.FromResult(
+                ToolResult.Successful(Name, speech, new { Removed = false }, speech, true));
+        }
+
+        var removed = _stationStore.Forget(station.Id);
+        var spokenName =
+            RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
+        var speech = removed
+            ? $"I've removed {spokenName} from your saved stations."
+            : $"{spokenName} isn't in your saved stations.";
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                speech,
+                new { Station = station, Removed = removed },
+                speech,
+                true));
+    }
+}
+
+public sealed class RadioFavoriteTool : RadioToolBase
+{
+    private readonly IRadioStationStore _stationStore;
+
+    public RadioFavoriteTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio,
+        IRadioStationStore stationStore)
+        : base(mpv, state, audio)
+    {
+        _stationStore = stationStore;
+    }
+
+    public override string Name => "radio-favorite";
+    public override string Intent => "Mark the currently playing radio station as a favorite station.";
+    public override string GetLlmInstructions() => """
+RADIO FAVORITE
+
+Mark the currently playing radio station as a favorite station.
+
+Parameters:
+- None.
+
+Use this tool when the user asks to favorite, mark as a favorite, or add the current station to favorites.
+
+Examples:
+User: "Favorite this station"
+{tool:radio-favorite}
+
+User: "Make this a favorite"
+{tool:radio-favorite}
+""";
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
+        var station = State.RadioStation;
+        if (station is null)
+        {
+            const string speech = "There isn't a radio station playing right now.";
+            return Task.FromResult(
+                ToolResult.Successful(Name, speech, new { Favorite = false }, speech, true));
+        }
+
+        var alreadyFavorite = _stationStore.IsFavorite(station.Id);
+        if (!alreadyFavorite)
+            _stationStore.SetFavorite(station);
+
+        var spokenName =
+            RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
+        var speech = alreadyFavorite
+            ? $"{spokenName} is already a favorite."
+            : $"I've marked {spokenName} as a favorite.";
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                speech,
+                new { Station = station, Favorite = true, AlreadyFavorite = alreadyFavorite },
+                speech,
+                true));
     }
 }
 
