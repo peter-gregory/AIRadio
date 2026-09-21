@@ -147,7 +147,7 @@ User: "Play WRLT"
                 searchQuery);
 
             var results = await _search.SearchAsync(
-                new RadioSearchCriteria { Query = searchQuery },
+                new RadioSearchCriteria { StationName = searchQuery },
                 cancellationToken);
 
             _logger.LogInformation(
