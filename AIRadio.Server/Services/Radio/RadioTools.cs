@@ -1,6 +1,7 @@
 using AIRadio.Server.Models.Radio;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.Mpv;
+using AIRadio.Server.Services.Audio;
 using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Radio;
@@ -9,7 +10,8 @@ public abstract class RadioToolBase : ITool
 {
     protected readonly IMpvManager Mpv;
     protected readonly IMpvState State;
-    protected RadioToolBase(IMpvManager mpv, IMpvState state) { Mpv = mpv; State = state; }
+    protected readonly IAudioManager Audio;
+    protected RadioToolBase(IMpvManager mpv, IMpvState state, IAudioManager audio) { Mpv = mpv; State = state; Audio = audio; }
     public abstract string Name { get; }
     public abstract string Intent { get; }
     public virtual bool HasParameters => false;
@@ -35,7 +37,7 @@ public abstract class RadioToolBase : ITool
 
 public sealed class RadioPlayTool : RadioToolBase
 {
-    public RadioPlayTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioPlayTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioPlay";
     public override string Intent => "Play a known radio station by its exact station name or ID. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
     public override bool HasParameters => true;
@@ -109,7 +111,7 @@ User: "Play station 12345"
         }
         try
         {
-            await Mpv.PlayAsync(station, cancellationToken);
+            await Audio.PlayStationAsync(station, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -131,7 +133,7 @@ User: "Play station 12345"
 
 public sealed class RadioStopTool : RadioToolBase
 {
-    public RadioStopTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioStopTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioStop";
     public override string Intent => "Stop radio playback.";
     public override string GetLlmInstructions() => """
@@ -165,7 +167,7 @@ User: "Turn off the radio"
 
 public sealed class RadioNextTool : RadioToolBase
 {
-    public RadioNextTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioNextTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioNext";
     public override string Intent => "Play the next radio station.";
     public override string GetLlmInstructions() => """
@@ -187,7 +189,8 @@ User: "Go to the next station"
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
-        Validate(request, cancellationToken); await Mpv.PlayNextRadioStationAsync(cancellationToken);
+        Validate(request, cancellationToken); var station = State.RadioPlaylist[(State.RadioPlaylistIndex + 1) % State.RadioPlaylist.Count];
+        await Audio.PlayStationAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
             $"Playing {State.RadioStation?.Name ?? "next station"}.",
@@ -199,7 +202,7 @@ User: "Go to the next station"
 
 public sealed class RadioPreviousTool : RadioToolBase
 {
-    public RadioPreviousTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioPreviousTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioPrevious";
     public override string Intent => "Play the previous radio station.";
     public override string GetLlmInstructions() => """
@@ -221,7 +224,8 @@ User: "Play the previous station"
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
-        Validate(request, cancellationToken); await Mpv.PlayPreviousRadioStationAsync(cancellationToken);
+        Validate(request, cancellationToken); var station = State.RadioPlaylist[(State.RadioPlaylistIndex - 1 + State.RadioPlaylist.Count) % State.RadioPlaylist.Count];
+        await Audio.PlayStationAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
             $"Playing {State.RadioStation?.Name ?? "previous station"}.",
@@ -233,7 +237,7 @@ User: "Play the previous station"
 
 public sealed class RadioVolumeTool : RadioToolBase
 {
-    public RadioVolumeTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioVolumeTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioVolume";
     public override string Intent => "Set the radio volume.";
     public override string GetLlmRequestTemplate() => "{tool:radioVolume,volume=!required!}";
@@ -292,7 +296,7 @@ User: "Turn it down to 10"
 
 public sealed class RadioCurrentTool : RadioToolBase
 {
-    public RadioCurrentTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioCurrentTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioCurrent";
     public override string Intent => "Report the currently playing station and metadata.";
     public override string GetLlmInstructions() => """
@@ -327,7 +331,7 @@ User: "Who is playing?"
 
 public sealed class RadioStatusTool : RadioToolBase
 {
-    public RadioStatusTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioStatusTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioStatus";
     public override string Intent => "Report the current radio playback state.";
     public override string GetLlmInstructions() => """
@@ -361,7 +365,7 @@ User: "Is it muted?"
 
 public sealed class RadioPlaylistTool : RadioToolBase
 {
-    public RadioPlaylistTool(IMpvManager mpv, IMpvState state) : base(mpv, state) { }
+    public RadioPlaylistTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
     public override string Name => "radioPlaylist";
     public override string Intent => "List stations in the current radio playlist.";
     public override string GetLlmInstructions() => """
@@ -399,12 +403,14 @@ public sealed class RadioSearchTool : ITool
 {
     private readonly IRadioSearchClient _search;
     private readonly IMpvManager _mpv;
+    private readonly IAudioManager _audio;
     private ILogger<RadioSearchTool> _logger;
 
-    public RadioSearchTool(IRadioSearchClient search, IMpvManager mpv, ILogger<RadioSearchTool> logger)
+    public RadioSearchTool(IRadioSearchClient search, IMpvManager mpv, IAudioManager audio, ILogger<RadioSearchTool> logger)
     {
         _search = search;
         _mpv = mpv;
+        _audio = audio;
         _logger = logger;
     }
     public string Name => "radioSearch";
@@ -500,7 +506,7 @@ User: "Find a Nashville country station"
 
         try
         {
-            await _mpv.PlayAsync(station, cancellationToken);
+            await _audio.PlayStationAsync(station, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
