@@ -241,18 +241,15 @@ namespace AIRadio.Server.Services.Audio
                 return;
             }
 
-            var duckedForSpeech = false;
             if (!_stationChangeMute)
             {
                 await DuckMpvAsync(cancellationToken);
-                duckedForSpeech = IsDucked;
             }
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
             // Do not restore MPV volume here. QueueWavAsync only queues the
             // samples; PipeWire may still be playing them. EndUtteranceAsync
             // waits for actual playback completion before restoring MPV volume.
-            _ = duckedForSpeech;
         }
 
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
