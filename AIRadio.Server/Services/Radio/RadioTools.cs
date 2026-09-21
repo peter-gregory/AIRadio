@@ -77,6 +77,12 @@ User: "Play station 12345"
         var stationName = request.GetString("stationName");
         if (request.State == ToolRequestState.Initial)
         {
+            // Station tuning owns the complete audio transition. Prepare the
+            // MPV state before the preamble is queued, so the old station stops
+            // immediately and remains muted while the new station and response
+            // speech are played. EndUtteranceAsync restores the prior volume.
+            await Audio.PrepareStationChangeAsync(cancellationToken);
+
             return ToolResult.Preamble(
                 Name,
                 "Finding that station for you now {sound:radio-tuning}",
@@ -465,6 +471,8 @@ User: "Find a Nashville country station"
         ArgumentNullException.ThrowIfNull(request);
         if (request.State == ToolRequestState.Initial)
         {
+            await _audio.PrepareStationChangeAsync(cancellationToken);
+
             return ToolResult.Preamble(
                 Name,
                 "Finding that station for you now {sound:radio-tuning}",
