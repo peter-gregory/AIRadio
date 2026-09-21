@@ -155,6 +155,19 @@ namespace AIRadio.Server.Services.Radio
         {
             var normalized = text.Trim().TrimEnd('.', '!', '?').ToLowerInvariant();
 
+            // The conversation request still contains the wake phrase even though
+            // wake-up detection has already matched it. Remove the common wake
+            // phrases before matching the actual radio command.
+            foreach (var wakePhrase in new[] { "hello radio", "hey radio" })
+            {
+                if (normalized.StartsWith(wakePhrase, StringComparison.Ordinal))
+                {
+                    normalized = normalized[wakePhrase.Length..]
+                        .TrimStart(' ', ',', '.', ':', ';', '-');
+                    break;
+                }
+            }
+
             return normalized is
                 "play the radio" or
                 "play some music" or
