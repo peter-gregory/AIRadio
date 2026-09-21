@@ -4,7 +4,9 @@ Analyze the user's latest spoken request and select exactly one tool from the TO
 
 Rules:
 - Output exactly one tool tag: {tool:NAME}
-- Use the exact tool tag shown in the TOOL CATALOG.
+- Copy the selected tool tag exactly from the TOOL CATALOG, character for character.
+- Tool names are opaque identifiers, not descriptions. Never shorten, rename, simplify, or paraphrase a tool name.
+- For example, `{tool:radioStop}` is valid; `{tool:stop}` is invalid even though the request says "stop playing".
 - Do not provide actions or parameters.
 - Do not answer the user.
 - Do not add speech or explanation.
