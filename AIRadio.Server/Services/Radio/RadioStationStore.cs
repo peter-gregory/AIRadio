@@ -21,6 +21,9 @@ public sealed class RadioStationStore : IRadioStationStore
     private sealed class StoreData
     {
         public List<RadioStation> SavedStations { get; set; } = [];
+
+        // Kept only for one-time migration from the earlier two-list format.
+        public List<RadioStation> FavoriteStations { get; set; } = [];
     }
 
     private readonly ILogger<RadioStationStore> _logger;
@@ -126,8 +129,29 @@ public sealed class RadioStationStore : IRadioStationStore
         if (!File.Exists(_dataFile)) return;
         try
         {
-            var data = JsonSerializer.Deserialize<StoreData>(File.ReadAllText(_dataFile), _jsonOptions);
-            _data = data ?? new StoreData();
+            var data = JsonSerializer.Deserialize<StoreData>(File.ReadAllText(_dataFile), _jsonOptions) ?? new StoreData();
+
+            // Older versions persisted favorites in a separate list. Merge those
+            // entries into the single saved list and preserve their favorite flag.
+            foreach (var favorite in data.FavoriteStations)
+            {
+                var existing = Find(data.SavedStations, favorite.Id);
+                if (existing is null)
+                {
+                    existing = favorite.Clone();
+                    data.SavedStations.Add(existing);
+                }
+
+                existing.IsFavorite = true;
+            }
+
+            data.FavoriteStations.Clear();
+            data.SavedStations = data.SavedStations
+                .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            _data = data;
         }
         catch (JsonException ex)
         {
