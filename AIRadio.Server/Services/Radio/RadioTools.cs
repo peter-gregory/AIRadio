@@ -88,7 +88,7 @@ User: "Play station 12345"
                 : $"station {stationId}";
 
             await Audio.QueueSpeechAsync(
-                $"Looking for station {stationDescription} now {sound:radio-tuning}",
+                $"Looking for station {stationDescription} now {{sound:radio-tuning}}",
                 cancellationToken);
 
             return ToolResult.Preamble(
@@ -477,17 +477,18 @@ User: "Find a Nashville country station"
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var query = "";
         if (request.State == ToolRequestState.Initial)
         {
             await _audio.PrepareStationChangeAsync(cancellationToken);
             await _audio.WaitForCompletionAsync(cancellationToken);
-            var query = request.GetString("query");
+            query = request.GetString("query");
             var searchDescription = string.IsNullOrWhiteSpace(query)
                 ? "radio stations"
                 : $"radio stations with {query.Trim()}";
 
             await _audio.QueueSpeechAsync(
-                $"Looking for {searchDescription} now {sound:radio-tuning}",
+                $"Looking for {searchDescription} now {{sound:radio-tuning}}",
                 cancellationToken);
 
             return ToolResult.Preamble(
@@ -496,7 +497,7 @@ User: "Find a Nashville country station"
                 request.WithState(ToolRequestState.PreambleComplete));
         }
 
-        var query = request.GetString("query");
+        query = request.GetString("query");
         if (string.IsNullOrWhiteSpace(query))
         {
             var pending = new ToolRequest
