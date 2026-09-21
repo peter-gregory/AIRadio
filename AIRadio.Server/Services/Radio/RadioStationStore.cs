@@ -21,7 +21,6 @@ public sealed class RadioStationStore : IRadioStationStore
     private sealed class StoreData
     {
         public List<RadioStation> SavedStations { get; set; } = [];
-        public List<RadioStation> FavoriteStations { get; set; } = [];
     }
 
     private readonly ILogger<RadioStationStore> _logger;
@@ -34,169 +33,123 @@ public sealed class RadioStationStore : IRadioStationStore
     private readonly object _sync = new();
     private StoreData _data = new();
 
-    public RadioStationStore(
-        IConfiguration configuration,
-        ILogger<RadioStationStore> logger)
+    public RadioStationStore(IConfiguration configuration, ILogger<RadioStationStore> logger)
     {
         _logger = logger;
         _dataFile = ResolveDataFile(configuration);
-
         var directory = Path.GetDirectoryName(_dataFile);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         Load();
-
         _logger.LogInformation(
-            "Radio station store initialized with {SavedCount} saved and {FavoriteCount} favorite stations.",
-            _data.SavedStations.Count,
-            _data.FavoriteStations.Count);
+            "Radio station store initialized with {SavedCount} saved stations ({FavoriteCount} favorites).",
+            _data.SavedStations.Count, _data.SavedStations.Count(x => x.IsFavorite));
     }
 
     public bool IsSaved(string stationId)
     {
-        lock (_sync)
-            return Contains(_data.SavedStations, stationId);
+        lock (_sync) return Find(_data.SavedStations, stationId) is not null;
     }
 
     public void Save(RadioStation station)
     {
         ArgumentNullException.ThrowIfNull(station);
-
         lock (_sync)
         {
-            if (Contains(_data.SavedStations, station.Id))
-                return;
-
-            _data.SavedStations.Add(station.Clone());
+            if (Find(_data.SavedStations, station.Id) is not null) return;
+            var saved = station.Clone();
+            saved.IsFavorite = false;
+            _data.SavedStations.Add(saved);
         }
-
         SaveToDisk();
     }
 
     public bool Forget(string stationId)
     {
         bool removed;
-
         lock (_sync)
         {
-            removed =
-                _data.SavedStations.RemoveAll(
-                    station => string.Equals(
-                        station.Id,
-                        stationId,
-                        StringComparison.OrdinalIgnoreCase)) > 0;
+            removed = _data.SavedStations.RemoveAll(
+                station => string.Equals(station.Id, stationId, StringComparison.OrdinalIgnoreCase)) > 0;
         }
-
-        if (removed)
-            SaveToDisk();
-
+        if (removed) SaveToDisk();
         return removed;
     }
 
     public bool IsFavorite(string stationId)
     {
-        lock (_sync)
-            return Contains(_data.FavoriteStations, stationId);
+        lock (_sync) return Find(_data.SavedStations, stationId)?.IsFavorite == true;
     }
 
     public void SetFavorite(RadioStation station)
     {
         ArgumentNullException.ThrowIfNull(station);
-
         lock (_sync)
         {
-            if (Contains(_data.FavoriteStations, station.Id))
-                return;
-
-            _data.FavoriteStations.Add(station.Clone());
+            var existing = Find(_data.SavedStations, station.Id);
+            if (existing is null)
+            {
+                existing = station.Clone();
+                _data.SavedStations.Add(existing);
+            }
+            existing.IsFavorite = true;
+            _data.SavedStations.Remove(existing);
+            _data.SavedStations.Insert(0, existing);
         }
-
         SaveToDisk();
     }
 
     public IReadOnlyList<RadioStation> GetSavedStations()
     {
-        lock (_sync)
-            return _data.SavedStations.Select(x => x.Clone()).ToList();
+        lock (_sync) return _data.SavedStations.Select(x => x.Clone()).ToList();
     }
 
     public IReadOnlyList<RadioStation> GetFavoriteStations()
     {
-        lock (_sync)
-            return _data.FavoriteStations.Select(x => x.Clone()).ToList();
+        lock (_sync) return _data.SavedStations.Where(x => x.IsFavorite).Select(x => x.Clone()).ToList();
     }
 
-    private static bool Contains(
-        IEnumerable<RadioStation> stations,
-        string stationId) =>
-        !string.IsNullOrWhiteSpace(stationId) &&
-        stations.Any(
-            station => string.Equals(
-                station.Id,
-                stationId,
-                StringComparison.OrdinalIgnoreCase));
+    private static RadioStation? Find(IEnumerable<RadioStation> stations, string stationId) =>
+        string.IsNullOrWhiteSpace(stationId)
+            ? null
+            : stations.FirstOrDefault(station => string.Equals(station.Id, stationId, StringComparison.OrdinalIgnoreCase));
 
     private static string ResolveDataFile(IConfiguration configuration)
     {
         var dataDirectory = configuration["Application:DataDirectory"];
         if (string.IsNullOrWhiteSpace(dataDirectory))
-            throw new InvalidOperationException(
-                "Application:DataDirectory is not configured.");
-
-        return Path.GetFullPath(
-            Path.Combine(dataDirectory, DataFileName));
+            throw new InvalidOperationException("Application:DataDirectory is not configured.");
+        return Path.GetFullPath(Path.Combine(dataDirectory, DataFileName));
     }
 
     private void Load()
     {
-        if (!File.Exists(_dataFile))
-            return;
-
-        var json = File.ReadAllText(_dataFile);
-        var data =
-            JsonSerializer.Deserialize<StoreData>(
-                json,
-                _jsonOptions);
-
-        _data = data ?? new StoreData();
+        if (!File.Exists(_dataFile)) return;
+        try
+        {
+            var data = JsonSerializer.Deserialize<StoreData>(File.ReadAllText(_dataFile), _jsonOptions);
+            _data = data ?? new StoreData();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Unable to load radio station store from {DataFile}.", _dataFile);
+            _data = new StoreData();
+        }
     }
 
     private void SaveToDisk()
     {
         StoreData snapshot;
-
         lock (_sync)
         {
             snapshot = new StoreData
             {
-                SavedStations =
-                    _data.SavedStations
-                        .Select(x => x.Clone())
-                        .ToList(),
-
-                FavoriteStations =
-                    _data.FavoriteStations
-                        .Select(x => x.Clone())
-                        .ToList()
+                SavedStations = _data.SavedStations.Select(x => x.Clone()).ToList()
             };
         }
-
         var directory = Path.GetDirectoryName(_dataFile);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         var temporaryFile = _dataFile + ".tmp";
-
-        File.WriteAllText(
-            temporaryFile,
-            JsonSerializer.Serialize(
-                snapshot,
-                _jsonOptions));
-
-        File.Move(
-            temporaryFile,
-            _dataFile,
-            true);
+        File.WriteAllText(temporaryFile, JsonSerializer.Serialize(snapshot, _jsonOptions));
+        File.Move(temporaryFile, _dataFile, true);
     }
 }
