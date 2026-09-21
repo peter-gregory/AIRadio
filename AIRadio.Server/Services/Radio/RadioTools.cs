@@ -53,11 +53,19 @@ public sealed class RadioPlayTool : RadioToolBase
 {
     private readonly IRadioSearchClient _search;
     private readonly ILogger<RadioPlayTool> _logger;
+    private readonly IRadioStationStore _stationStore;
 
-    public RadioPlayTool(IMpvManager mpv, IMpvState state, IAudioManager audio, IRadioSearchClient search, ILogger<RadioPlayTool> logger) : base(mpv, state, audio)
+    public RadioPlayTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio,
+        IRadioSearchClient search,
+        ILogger<RadioPlayTool> logger,
+        IRadioStationStore stationStore) : base(mpv, state, audio)
     {
         _search = search;
         _logger = logger;
+        _stationStore = stationStore;
     }
     public override string Name => "radioPlay";
     public override string Intent => "Play a known radio station by its exact station name or ID. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
@@ -110,11 +118,13 @@ User: "Play WRLT"
             await Audio.PrepareStationChangeAsync(cancellationToken);
             await Audio.WaitForCompletionAsync(cancellationToken);
             var stationDescription = !string.IsNullOrWhiteSpace(stationName)
-                ? stationName
-                : $"station {stationId}";
+                ? $"station {stationName}"
+                : !string.IsNullOrWhiteSpace(stationId)
+                    ? $"station {stationId}"
+                    : "your saved stations";
 
             await Audio.QueueSpeechAsync(
-                $"Looking for station {stationDescription} now {{sound:radio-tuning}}",
+                $"Looking for {stationDescription} now {{sound:radio-tuning}}",
                 cancellationToken);
 
             return ToolResult.Preamble(
