@@ -77,7 +77,7 @@ namespace AIRadio.Server.Services.Mpv
                     nameof(station));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken);
 
             await _mpv.PlayStreamAsync(
                 station.StreamUrl,
@@ -291,7 +291,7 @@ namespace AIRadio.Server.Services.Mpv
                     0,
                     100);
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken);
 
             await _mpv.SetVolumeAsync(
                 volume,
@@ -312,12 +312,31 @@ namespace AIRadio.Server.Services.Mpv
         // VALIDATION
         // ============================================================
 
-        private void EnsureConnected()
+        private async Task EnsureConnectedAsync(
+            CancellationToken cancellationToken)
         {
-            if (!_mpv.IsConnected)
+            if (_mpv.IsConnected)
             {
+                return;
+            }
+
+            try
+            {
+                _logger.LogInformation(
+                    "MPV is not connected. Attempting to connect.");
+
+                await _mpv.ConnectAsync(
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Unable to connect to MPV.");
+
                 throw new InvalidOperationException(
-                    "MPV is not connected.");
+                    "Unable to connect to MPV.",
+                    ex);
             }
         }
 
