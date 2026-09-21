@@ -13,6 +13,7 @@ namespace AIRadio.Server.Services.Audio
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
         Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default);
+        Task PrepareStationChangeAsync(CancellationToken cancellationToken = default);
         Task DuckAsync(CancellationToken cancellationToken = default);
         Task UnduckAsync(CancellationToken cancellationToken = default);
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
@@ -37,6 +38,7 @@ namespace AIRadio.Server.Services.Audio
         private readonly int _duckVolume;
         private readonly AsyncWorkQueue<AudioRequest> _queue;
         private bool _isDucked;
+        private bool _stationChangeMute;
         private int _normalVolume;
         private bool _disposed;
 
@@ -85,6 +87,7 @@ namespace AIRadio.Server.Services.Audio
             return EnqueueAsync(new(AudioRequestType.MpvPlayStation, null, station), cancellationToken);
         }
 
+        public Task PrepareStationChangeAsync(CancellationToken cancellationToken = default) => EnqueueAsync(new(AudioRequestType.MpvPrepareStationChange, null, null), cancellationToken);
         public Task DuckAsync(CancellationToken cancellationToken = default) => EnqueueAsync(new(AudioRequestType.MpvDuck, null, null), cancellationToken);
         public Task UnduckAsync(CancellationToken cancellationToken = default) => EnqueueAsync(new(AudioRequestType.MpvUnduck, null, null), cancellationToken);
         public Task StopSpeechAsync(CancellationToken cancellationToken = default) => CancelAsync(cancellationToken);
@@ -101,6 +104,8 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.WaitForIdleAsync(cancellationToken);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
+            if (!cancel && _stationChangeMute)
+                await UnduckMpvAsync(cancellationToken);
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -165,6 +170,7 @@ namespace AIRadio.Server.Services.Audio
                     case AudioRequestType.Sound:
                         await ProcessSoundAsync(request.Value!, cancellationToken);
                         break;
+                    case AudioRequestType.MpvPrepareStationChange:
                     case AudioRequestType.MpvDuck:
                     case AudioRequestType.MpvUnduck:
                     case AudioRequestType.MpvPlayStation:
@@ -224,6 +230,9 @@ namespace AIRadio.Server.Services.Audio
         {
             switch (request.Type)
             {
+                case AudioRequestType.MpvPrepareStationChange:
+                    await PrepareStationChangeInternalAsync(cancellationToken);
+                    break;
                 case AudioRequestType.MpvDuck:
                     await DuckMpvAsync(cancellationToken);
                     break;
@@ -233,7 +242,6 @@ namespace AIRadio.Server.Services.Audio
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
                     await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
-                    await MuteForStationChangeAsync(cancellationToken);
                     try
                     {
                         await _mpvManager.PlayAsync(request.Station, cancellationToken);
@@ -247,15 +255,25 @@ namespace AIRadio.Server.Services.Audio
             }
         }
 
-        private async Task MuteForStationChangeAsync(CancellationToken cancellationToken)
+        private async Task PrepareStationChangeInternalAsync(CancellationToken cancellationToken)
         {
-            if (IsDucked || !_mpvClient.IsPlaying)
+            if (_mpvClient.IsPlaying)
+                await _mpvManager.StopAsync(cancellationToken);
+
+            if (IsDucked || _stationChangeMute)
                 return;
 
             _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
+            if (_normalVolume == 0)
+            {
+                _logger.LogDebug("MPV radio is already muted; preserving mute during station change.");
+                return;
+            }
+
             await _mpvManager.SetVolumeAsync(0, cancellationToken);
+            _stationChangeMute = true;
             Volatile.Write(ref _isDucked, true);
-            _logger.LogDebug("Muted MPV radio volume for station change from {NormalVolume}.", _normalVolume);
+            _logger.LogDebug("Muted MPV radio for station change from {NormalVolume}.", _normalVolume);
         }
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
@@ -275,6 +293,7 @@ namespace AIRadio.Server.Services.Audio
                 return;
 
             await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
+            _stationChangeMute = false;
             Volatile.Write(ref _isDucked, false);
             _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
         }
@@ -294,6 +313,7 @@ namespace AIRadio.Server.Services.Audio
         {
             Speech,
             Sound,
+            MpvPrepareStationChange,
             MpvDuck,
             MpvUnduck,
             MpvPlayStation
