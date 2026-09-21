@@ -16,6 +16,8 @@ namespace AIRadio.Server.Models.Radio
 
         public int? FavoriteNumber { get; set; }
 
+        public bool IsFavorite { get; set; }
+
         public string? Description { get; set; }
 
         public string? Homepage { get; set; }
@@ -62,6 +64,7 @@ namespace AIRadio.Server.Models.Radio
                 Name = Name,
                 StreamUrl = StreamUrl,
                 FavoriteNumber = FavoriteNumber,
+                IsFavorite = IsFavorite,
                 Description = Description,
                 Homepage = Homepage,
                 Favicon = Favicon,
