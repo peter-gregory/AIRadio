@@ -21,8 +21,11 @@ public sealed class RadioStationStore : IRadioStationStore
     private sealed class StoreData
     {
         public List<RadioStation> SavedStations { get; set; } = [];
+    }
 
-        // Kept only for one-time migration from the earlier two-list format.
+    private sealed class LegacyStoreData
+    {
+        public List<RadioStation> SavedStations { get; set; } = [];
         public List<RadioStation> FavoriteStations { get; set; } = [];
     }
 
@@ -129,30 +132,36 @@ public sealed class RadioStationStore : IRadioStationStore
         if (!File.Exists(_dataFile)) return;
         try
         {
-            var data = JsonSerializer.Deserialize<StoreData>(File.ReadAllText(_dataFile), _jsonOptions) ?? new StoreData();
+            var legacy = JsonSerializer.Deserialize<LegacyStoreData>(
+                File.ReadAllText(_dataFile),
+                _jsonOptions) ?? new LegacyStoreData();
+
+            var saved = legacy.SavedStations;
 
             // Older versions persisted favorites in a separate list. Merge those
             // entries into the single saved list and preserve their favorite flag.
-            foreach (var favorite in data.FavoriteStations)
+            foreach (var favorite in legacy.FavoriteStations)
             {
-                var existing = Find(data.SavedStations, favorite.Id);
+                var existing = Find(saved, favorite.Id);
                 if (existing is null)
                 {
                     existing = favorite.Clone();
-                    data.SavedStations.Add(existing);
+                    saved.Add(existing);
                 }
 
                 existing.IsFavorite = true;
             }
 
-            data.FavoriteStations.Clear();
-            data.SavedStations = data.SavedStations
-                .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.First())
-                .OrderByDescending(x => x.IsFavorite)
-                .ToList();
+            _data = new StoreData
+            {
+                SavedStations = saved
+                    .GroupBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .OrderByDescending(x => x.IsFavorite)
+                    .ToList()
+            };
 
-            _data = data;
+            // Rewrite the file in the new single-list format.
             SaveToDisk();
         }
         catch (JsonException ex)
