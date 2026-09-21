@@ -232,9 +232,30 @@ namespace AIRadio.Server.Services.Audio
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
-                    await _mpvManager.PlayAsync(request.Station, cancellationToken);
+                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
+                    await MuteForStationChangeAsync(cancellationToken);
+                    try
+                    {
+                        await _mpvManager.PlayAsync(request.Station, cancellationToken);
+                    }
+                    catch
+                    {
+                        await UnduckMpvAsync(CancellationToken.None);
+                        throw;
+                    }
                     break;
             }
+        }
+
+        private async Task MuteForStationChangeAsync(CancellationToken cancellationToken)
+        {
+            if (IsDucked || !_mpvClient.IsPlaying)
+                return;
+
+            _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
+            await _mpvManager.SetVolumeAsync(0, cancellationToken);
+            Volatile.Write(ref _isDucked, true);
+            _logger.LogDebug("Muted MPV radio volume for station change from {NormalVolume}.", _normalVolume);
         }
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
