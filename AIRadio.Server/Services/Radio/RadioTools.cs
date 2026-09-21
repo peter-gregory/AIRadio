@@ -82,6 +82,11 @@ User: "Play station 12345"
             // immediately and remains muted while the new station and response
             // speech are played. EndUtteranceAsync restores the prior volume.
             await Audio.PrepareStationChangeAsync(cancellationToken);
+            await Audio.WaitForCompletionAsync(cancellationToken);
+            await Audio.PlaySpeechAsync(
+                "Finding that station for you now {sound:radio-tuning}",
+                cancellationToken);
+            await Audio.WaitForCompletionAsync(cancellationToken);
 
             return ToolResult.Preamble(
                 Name,
@@ -472,6 +477,11 @@ User: "Find a Nashville country station"
         if (request.State == ToolRequestState.Initial)
         {
             await _audio.PrepareStationChangeAsync(cancellationToken);
+            await _audio.WaitForCompletionAsync(cancellationToken);
+            await _audio.PlaySpeechAsync(
+                "Finding that station for you now {sound:radio-tuning}",
+                cancellationToken);
+            await _audio.WaitForCompletionAsync(cancellationToken);
 
             return ToolResult.Preamble(
                 Name,
