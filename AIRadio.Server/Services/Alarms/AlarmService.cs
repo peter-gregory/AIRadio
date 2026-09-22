@@ -119,7 +119,10 @@ public sealed class AlarmService : IAlarmService
             return false;
 
         if (item.When.DueAt.HasValue)
-            return timestamp >= item.When.DueAt.Value && timestamp < item.When.DueAt.Value.AddSeconds(1);
+        {
+            var dueAt = item.When.DueAt.Value;
+            return timestamp >= dueAt && timestamp < dueAt.AddMinutes(1);
+        }
 
         if (!MatchesDate(item.When, date))
             return false;
