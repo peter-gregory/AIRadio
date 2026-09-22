@@ -47,7 +47,8 @@ Use for scheduled events and requests such as "what's happening today" when the 
     {
         Id = scheduledEvent.Id,
         Type = scheduledEvent.Type.ToString(),
-        Content = scheduledEvent.Content
+        Content = scheduledEvent.Content,
+        Time = scheduledEvent.When.TimeOfDay
     };
 }
 
