@@ -13,6 +13,7 @@ namespace AIRadio.Server.Services.Radio
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
+        Task<Guid> StartAlarmAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
@@ -28,8 +29,6 @@ namespace AIRadio.Server.Services.Radio
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
         private Guid _conversationId;
-        private TaskCompletionSource<bool>? _waitingAlarmCompletion;
-        private Guid _waitingAlarmConversationId;
 
         public ConversationState State => _state;
         public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
@@ -50,26 +49,56 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, null, false)))
+            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, false)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
             return Task.CompletedTask;
         }
 
-        public async Task ProcessAndWaitAsync(
+        public Task<Guid> StartAlarmAsync(
             string text,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var completion = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var conversationId = Guid.NewGuid();
 
-            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, completion, true)))
+            if (!_queue.TryEnqueue(new ConversationRequest(conversationId, text, true)))
                 throw new InvalidOperationException(
                     "Conversation request was rejected because the conversation queue is not accepting work.");
 
-            await completion.Task.WaitAsync(cancellationToken);
+            return Task.FromResult(conversationId);
+        }
+
+        public async Task ProcessAndWaitAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            var completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            EventHandler<ConversationStateChangedEventArgs>? handler = null;
+            handler = (_, args) =>
+            {
+                if (args.Current == ConversationState.Complete)
+                    completion.TrySetResult(true);
+            };
+
+            StateChanged += handler;
+            try
+            {
+                var conversationId = await StartAlarmAsync(text, cancellationToken);
+
+                if (State == ConversationState.Complete &&
+                    _conversationId == conversationId)
+                    completion.TrySetResult(true);
+
+                await completion.Task.WaitAsync(cancellationToken);
+            }
+            finally
+            {
+                StateChanged -= handler;
+            }
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -78,9 +107,6 @@ namespace AIRadio.Server.Services.Radio
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
-            _waitingAlarmCompletion?.TrySetCanceled();
-            _waitingAlarmCompletion = null;
-            _waitingAlarmConversationId = Guid.Empty;
             SetState(ConversationState.Idle, _conversationId);
             _queue.Resume();
         }
@@ -99,8 +125,6 @@ namespace AIRadio.Server.Services.Radio
                     // with a clean conversation state so an outstanding
                     // interactive question cannot consume the alarm action.
                     _pendingToolRequest = null;
-                    _waitingAlarmCompletion = request.Completion;
-                    _waitingAlarmConversationId = conversationId;
                     await _llama.ResetAsync(cancellationToken);
                 }
 
@@ -191,7 +215,6 @@ namespace AIRadio.Server.Services.Radio
                 if (conversationComplete)
                 {
                     SetState(ConversationState.Complete, conversationId);
-                    CompleteAlarmConversation(conversationId);
                     SetState(ConversationState.Idle, conversationId);
                 }
                 else
@@ -228,8 +251,6 @@ namespace AIRadio.Server.Services.Radio
                     }
                 }
 
-                if (conversationComplete)
-                    request.Completion?.TrySetResult(true);
             }
         }
 
@@ -497,22 +518,9 @@ namespace AIRadio.Server.Services.Radio
                 new ConversationStateChangedEventArgs(previous, state, conversationId));
         }
 
-        private void CompleteAlarmConversation(Guid conversationId)
-        {
-            if (_waitingAlarmCompletion is null ||
-                _waitingAlarmConversationId != conversationId)
-                return;
-
-            var completion = _waitingAlarmCompletion;
-            _waitingAlarmCompletion = null;
-            _waitingAlarmConversationId = Guid.Empty;
-            completion.TrySetResult(true);
-        }
-
         private sealed record ConversationRequest(
             Guid ConversationId,
             string Text,
-            TaskCompletionSource<bool>? Completion,
             bool IsAlarm);
     }
 }
