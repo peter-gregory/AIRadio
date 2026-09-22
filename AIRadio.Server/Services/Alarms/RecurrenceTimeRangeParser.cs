@@ -43,6 +43,7 @@ public static partial class RecurrenceTimeRangeParser
                 EndDate = dateRange.Value.End,
                 TimeOfDay = time
             };
+
         var weekday = ParseWeekday(text);
         var month = ParseMonth(text);
         var day = ParseNumericDate(text, reference, month);
@@ -51,21 +52,23 @@ public static partial class RecurrenceTimeRangeParser
             return new() { Type = SchedulePatternType.Daily, TimeOfDay = time };
 
         if (IsWeekdays(text))
-            return new() {
+            return new()
+            {
                 Type = SchedulePatternType.Weekly,
                 DaysOfWeek = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
                 TimeOfDay = time
             };
 
         if (IsWeekends(text))
-            return new() {
+            return new()
+            {
                 Type = SchedulePatternType.Weekly,
                 DaysOfWeek = [DayOfWeek.Saturday, DayOfWeek.Sunday],
                 TimeOfDay = time
             };
 
         if (ordinal is not null && weekday is not null &&
-            Regex.IsMatch(text, @"(every|each)s+(month|year)|ofs+everys+month", RegexOptions.IgnoreCase))
+            Regex.IsMatch(text, @"\b(every|each)\s+(month|year)\b|\bof\s+every\s+month\b", RegexOptions.IgnoreCase))
         {
             return new()
             {
@@ -138,29 +141,29 @@ public static partial class RecurrenceTimeRangeParser
     }
 
     private static string Normalize(string value) =>
-        Regex.Replace(value.Trim().ToLowerInvariant(), @"s+", " ");
+        Regex.Replace(value.Trim().ToLowerInvariant(), @"\s+", " ");
 
     private static bool IsDaily(string text) =>
-        Regex.IsMatch(text, @"(every|each)s+day|daily", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(every|each)\s+day\b|\bdaily\b", RegexOptions.IgnoreCase);
 
     private static bool IsWeekdays(string text) =>
-        Regex.IsMatch(text, @"(weekdays|everys+weekday)", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(weekdays|every\s+weekday)\b", RegexOptions.IgnoreCase);
 
     private static bool IsWeekends(string text) =>
-        Regex.IsMatch(text, @"(weekends|everys+weekend)", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(weekends|every\s+weekend)\b", RegexOptions.IgnoreCase);
 
     private static bool IsRecurring(string text) =>
-        Regex.IsMatch(text, @"(every|each|weekly|weekdays|weekends)", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(every|each|weekly|weekdays|weekends)\b", RegexOptions.IgnoreCase);
 
     private static bool IsYearly(string text) =>
-        Regex.IsMatch(text, @"(every|each)s+(year|yearly)|annually", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(every|each)\s+(year|yearly)|\bannually\b", RegexOptions.IgnoreCase);
 
     private static bool IsMonthlyOrdinal(string text) =>
-        Regex.IsMatch(text, @"(first|second|third|fourth|fifth|last)", RegexOptions.IgnoreCase) &&
-        Regex.IsMatch(text, @"(month|monthly)", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(first|second|third|fourth|fifth|last)\b", RegexOptions.IgnoreCase) &&
+        Regex.IsMatch(text, @"\b(month|monthly)\b", RegexOptions.IgnoreCase);
 
     private static bool IsMonthlyDay(string text) =>
-        Regex.IsMatch(text, @"(every|each)s+month|monthly", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(every|each)\s+month\b|\bmonthly\b", RegexOptions.IgnoreCase);
 
     private static DateTime? ParseTimer(string text, DateTime reference)
     {
@@ -168,11 +171,18 @@ public static partial class RecurrenceTimeRangeParser
         if (!match.Success)
             return null;
 
-        var amount = match.Groups["amount"].Success
-            ? double.Parse(match.Groups["amount"].Value, CultureInfo.InvariantCulture)
-            : 1;
+        var amountText = match.Groups["amount"].Success
+            ? match.Groups["amount"].Value
+            : match.Groups["amountFromNow"].Value;
 
-        var unit = match.Groups["unit"].Value;
+        var amount = string.IsNullOrEmpty(amountText)
+            ? 1
+            : double.Parse(amountText, CultureInfo.InvariantCulture);
+
+        var unit = match.Groups["unit"].Success
+            ? match.Groups["unit"].Value
+            : match.Groups["unitFromNow"].Value;
+
         var delay = unit switch
         {
             "second" or "seconds" or "sec" or "secs" => TimeSpan.FromSeconds(amount),
@@ -194,7 +204,7 @@ public static partial class RecurrenceTimeRangeParser
             dueAt.Hour, dueAt.Minute, 0, dueAt.Kind);
     }
 
-    [GeneratedRegex(@"ins+(?:(?<amount>d+(?:.d+)?)s+)?(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?)")]
+    [GeneratedRegex(@"\bin\s+(?:(?<amount>\d+(?:\.\d+)?)\s+)?(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?)\b|(?<amountFromNow>\d+(?:\.\d+)?)\s+(?<unitFromNow>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?)\s+from\s+now\b")]
     private static partial Regex TimerRegex();
 
     private static TimeSpan? ParseTime(string text)
@@ -224,7 +234,7 @@ public static partial class RecurrenceTimeRangeParser
     }
 
     private static int? ParseOrdinal(string text) =>
-        Regex.Match(text, @"(?<ordinal>first|second|third|fourth|fifth|last)") is { Success: true } m
+        Regex.Match(text, @"\b(?<ordinal>first|second|third|fourth|fifth|last)\b") is { Success: true } m
             ? m.Groups["ordinal"].Value switch
             {
                 "first" => 1, "second" => 2, "third" => 3,
@@ -235,30 +245,27 @@ public static partial class RecurrenceTimeRangeParser
     private static DayOfWeek? ParseWeekday(string text)
     {
         foreach (var day in Enum.GetValues<DayOfWeek>())
-            if (Regex.IsMatch(text, $@"{day}", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(text, $@"\b{day}\b", RegexOptions.IgnoreCase))
                 return day;
         return null;
     }
 
-    private static DayOfWeek[] ParseWeekdays(string text)
-    {
-        var result = Enum.GetValues<DayOfWeek>()
-            .Where(day => Regex.IsMatch(text, $@"{day}", RegexOptions.IgnoreCase))
+    private static DayOfWeek[] ParseWeekdays(string text) =>
+        Enum.GetValues<DayOfWeek>()
+            .Where(day => Regex.IsMatch(text, $@"\b{day}\b", RegexOptions.IgnoreCase))
             .ToArray();
-        return result;
-    }
 
     private static int? ParseMonth(string text)
     {
         for (var i = 0; i < MonthNames.Length; i++)
-            if (Regex.IsMatch(text, $@"{MonthNames[i].ToLowerInvariant()}", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(text, $@"\b{MonthNames[i].ToLowerInvariant()}\b", RegexOptions.IgnoreCase))
                 return i + 1;
         return null;
     }
 
     private static int? ParseNumericDate(string text, DateTime reference, int? month)
     {
-        var match = Regex.Match(text, @"(?<day>d{1,2})(?:st|nd|rd|th)?");
+        var match = Regex.Match(text, @"\b(?<day>\d{1,2})(?:st|nd|rd|th)?\b");
         if (!match.Success) return null;
         var value = int.Parse(match.Groups["day"].Value, CultureInfo.InvariantCulture);
         return value is >= 1 and <= 31 ? value : null;
@@ -266,23 +273,23 @@ public static partial class RecurrenceTimeRangeParser
 
     private static DateOnly? ParseRelativeDate(string text, DateTime reference)
     {
-        if (Regex.IsMatch(text, @"today")) return DateOnly.FromDateTime(reference);
-        if (Regex.IsMatch(text, @"tomorrow")) return DateOnly.FromDateTime(reference.AddDays(1));
-        if (Regex.IsMatch(text, @"day after tomorrow")) return DateOnly.FromDateTime(reference.AddDays(2));
+        if (Regex.IsMatch(text, @"\btoday\b")) return DateOnly.FromDateTime(reference);
+        if (Regex.IsMatch(text, @"\btomorrow\b")) return DateOnly.FromDateTime(reference.AddDays(1));
+        if (Regex.IsMatch(text, @"\bday after tomorrow\b")) return DateOnly.FromDateTime(reference.AddDays(2));
 
         var weekday = ParseWeekday(text);
-        if (weekday is null || !Regex.IsMatch(text, @"(next|this)")) return null;
+        if (weekday is null || !Regex.IsMatch(text, @"\b(next|this)\b")) return null;
 
         var current = (int)reference.DayOfWeek;
         var target = (int)weekday.Value;
         var delta = (target - current + 7) % 7;
-        if (Regex.IsMatch(text, @"next") || delta == 0) delta = delta == 0 ? 7 : delta;
+        if (Regex.IsMatch(text, @"\bnext\b") || delta == 0) delta = delta == 0 ? 7 : delta;
         return DateOnly.FromDateTime(reference.AddDays(delta));
     }
 
     private static DateOnly? ParseExplicitDate(string text, DateTime reference)
     {
-        var iso = Regex.Match(text, @"(?<y>20d{2})[-/](?<m>d{1,2})[-/](?<d>d{1,2})");
+        var iso = Regex.Match(text, @"\b(?<y>20\d{2})[-/](?<m>\d{1,2})[-/](?<d>\d{1,2})\b");
         if (iso.Success &&
             DateTime.TryParse($"{iso.Groups["y"].Value}-{iso.Groups["m"].Value}-{iso.Groups["d"].Value}", out var value))
             return DateOnly.FromDateTime(value);
@@ -298,7 +305,7 @@ public static partial class RecurrenceTimeRangeParser
         return candidate;
     }
 
-    [GeneratedRegex(@"(?:ats+)?(?<hour>d{1,2})(?::(?<minute>d{2}))?s*(?<ampm>a.?m.?|p.?m.?)|ats+(?<hour2>d{1,2})")]
+    [GeneratedRegex(@"(?:\bat\s+)?(?<hour>\d{1,2})(?::(?<minute>\d{2}))?\s*(?<ampm>a\.?m\.?|p\.?m\.?)\b|\bat\s+(?<hour2>\d{1,2})\b")]
     private static partial Regex TimeRegex();
 
     private static (DateOnly Start, DateOnly End)? ParseDateRange(string text, DateTime reference)
@@ -328,6 +335,6 @@ public static partial class RecurrenceTimeRangeParser
         return candidate;
     }
 
-    [GeneratedRegex(@"(?<sm>[a-z]+)s+(?<sd>d{1,2})(?:st|nd|rd|th)?s+(?:through|to|-)s*(?<em>[a-z]+)s+(?<ed>d{1,2})(?:st|nd|rd|th)?")]
+    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\b")]
     private static partial Regex DateRangeRegex();
 }
