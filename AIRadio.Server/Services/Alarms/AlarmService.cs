@@ -71,11 +71,21 @@ public sealed class AlarmService : IAlarmService
     public ScheduledEvent AddEvent(ScheduledEvent scheduledEvent)
     {
         ArgumentNullException.ThrowIfNull(scheduledEvent);
+
         if (scheduledEvent.Id == Guid.Empty)
             throw new ArgumentException("A scheduled event ID is required.");
-        if (string.IsNullOrWhiteSpace(scheduledEvent.Content))
-            throw new ArgumentException("Event content cannot be empty.");
+
         ValidateRange(scheduledEvent.When, scheduledEvent.Type);
+
+        if (scheduledEvent.Type == ScheduledEventType.Alarm)
+        {
+            if (scheduledEvent.Actions.Count == 0)
+                throw new ArgumentException("Alarm actions cannot be empty.");
+        }
+        else if (string.IsNullOrWhiteSpace(scheduledEvent.Content))
+        {
+            throw new ArgumentException("Event content cannot be empty.");
+        }
 
         lock (_sync)
             _events.Add(Clone(scheduledEvent));
@@ -101,13 +111,18 @@ public sealed class AlarmService : IAlarmService
     public bool AddExclusion(Guid alarmId, RecurrenceTimeRange exclusion)
     {
         ArgumentNullException.ThrowIfNull(exclusion);
+
         lock (_sync)
         {
-            var alarm = _events.FirstOrDefault(x => x.Id == alarmId && x.Type == ScheduledEventType.Alarm);
+            var alarm = _events.FirstOrDefault(
+                x => x.Id == alarmId && x.Type == ScheduledEventType.Alarm);
+
             if (alarm is null)
                 return false;
+
             alarm.Exclusions.Add(Clone(exclusion));
         }
+
         Save();
         return true;
     }
@@ -115,6 +130,7 @@ public sealed class AlarmService : IAlarmService
     private static bool Matches(ScheduledEvent item, DateTime timestamp)
     {
         var date = DateOnly.FromDateTime(timestamp);
+
         if (item.Exclusions.Any(x => MatchesDate(x, date)))
             return false;
 
@@ -131,6 +147,7 @@ public sealed class AlarmService : IAlarmService
             return true;
 
         var time = item.When.TimeOfDay;
+
         return time.HasValue &&
                timestamp.TimeOfDay >= time.Value &&
                timestamp.TimeOfDay < time.Value.Add(TimeSpan.FromMinutes(1));
@@ -140,6 +157,7 @@ public sealed class AlarmService : IAlarmService
     {
         if (range.StartDate.HasValue && date < range.StartDate.Value)
             return false;
+
         if (range.EndDate.HasValue && date > range.EndDate.Value)
             return false;
 
@@ -176,6 +194,7 @@ public sealed class AlarmService : IAlarmService
                 return false;
 
             var occurrence = ((date.Day - 1) / 7) + 1;
+
             return range.WeekOfMonth.Value > 0
                 ? occurrence == range.WeekOfMonth.Value
                 : date.AddDays(7).Month != date.Month;
@@ -193,7 +212,9 @@ public sealed class AlarmService : IAlarmService
         {
             if (date.DayOfWeek != range.WeekdayOfMonth.Value)
                 return false;
+
             var occurrence = ((date.Day - 1) / 7) + 1;
+
             return range.WeekOfMonth.Value > 0
                 ? occurrence == range.WeekOfMonth.Value
                 : date.AddDays(7).Month != date.Month;
@@ -204,8 +225,12 @@ public sealed class AlarmService : IAlarmService
 
     private static void ValidateRange(RecurrenceTimeRange range, ScheduledEventType eventType)
     {
-        if (range.StartDate.HasValue && range.EndDate.HasValue && range.EndDate < range.StartDate)
+        if (range.StartDate.HasValue &&
+            range.EndDate.HasValue &&
+            range.EndDate < range.StartDate)
+        {
             throw new ArgumentException("The end date cannot be before the start date.");
+        }
 
         if (eventType == ScheduledEventType.Alarm && !range.TimeOfDay.HasValue)
             throw new ArgumentException("Alarms require a time.");
@@ -219,10 +244,13 @@ public sealed class AlarmService : IAlarmService
         lock (_sync)
         {
             var item = _events.FirstOrDefault(x => x.Id == id);
+
             if (item is null)
                 return false;
+
             item.Enabled = enabled;
         }
+
         Save();
         return true;
     }
@@ -231,17 +259,24 @@ public sealed class AlarmService : IAlarmService
     {
         if (!File.Exists(_dataFile))
             return;
-        _events = JsonSerializer.Deserialize<List<ScheduledEvent>>(File.ReadAllText(_dataFile), _jsonOptions) ?? [];
+
+        _events = JsonSerializer.Deserialize<List<ScheduledEvent>>(
+            File.ReadAllText(_dataFile),
+            _jsonOptions) ?? [];
     }
 
     private void Save()
     {
         List<ScheduledEvent> snapshot;
+
         lock (_sync)
             snapshot = _events.Select(Clone).ToList();
 
         var temporary = _dataFile + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(snapshot, _jsonOptions));
+        File.WriteAllText(
+            temporary,
+            JsonSerializer.Serialize(snapshot, _jsonOptions));
+
         File.Move(temporary, _dataFile, true);
     }
 
@@ -250,6 +285,7 @@ public sealed class AlarmService : IAlarmService
         Id = source.Id,
         Type = source.Type,
         Content = source.Content,
+        Actions = [.. source.Actions],
         When = Clone(source.When),
         Enabled = source.Enabled,
         CreatedAt = source.CreatedAt,
