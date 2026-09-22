@@ -1,4 +1,3 @@
-using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 
 namespace AIRadio.Server.Services.News;
@@ -33,17 +32,15 @@ Examples:
 
     public string GetLlmResponseInstructions() => """
 NEWS RESPONSE
-Present the returned headlines as a short, conversational radio news briefing.
+The news data is already written for speech.
 
-- The preamble has already been spoken before this response. Do not repeat or add an introduction.
-- Speak each returned news item as a headline followed by its supporting summary.
-- The summary is important context; do not omit it when supplied.
-- Preserve the meaning of each headline and summary, but rewrite slightly when needed for natural speech.
-- Start every news item with {sound:news-breaking}.
-- Do not combine multiple headlines into one sentence.
-- Do not read URLs, timestamps, IDs, source names, or JSON fields aloud.
-- Do not invent facts or add information not present in the result.
-- Do not output a tool request, JSON, Markdown, or an internal explanation.
+- Speak each returned article exactly as supplied.
+- Each article consists of its exact headline followed by its exact summary.
+- Do not rewrite, summarize, shorten, expand, interpret, or reorder the supplied text.
+- Start each article with exactly {sound:news-breaking}.
+- Do not speak field labels such as "Headline" or "Summary".
+- Do not read URLs, timestamps, IDs, source names, or other metadata aloud.
+- Do not add facts or commentary.
 """;
 
     public async Task<ToolResult> ExecuteAsync(
@@ -62,52 +59,30 @@ Present the returned headlines as a short, conversational radio news briefing.
 
         var result = await _newsService.GetHeadlinesAsync(cancellationToken);
 
-        var commands = result.Articles
+        var articles = result.Articles
             .Where(article => !string.IsNullOrWhiteSpace(article.Title))
-            .Select(article => new LlmCommand(
-                """
-                Convert the supplied news headline and summary into one natural spoken news item.
-
-                The supplied headline and summary are authoritative.
-                Speak the complete headline first, then briefly summarize the supplied
-                summary so the listener understands the story. The summary is supporting
-                context for the headline; do not merely repeat the headline.
-
-                Rules:
-                - Start with exactly one {sound:news-breaking} tag.
-                - {sound:news-breaking} is the only sound tag permitted.
-                - Speak the complete headline.
-                - If a summary is supplied, follow it with one or two concise sentences
-                  explaining the important information from that summary.
-                - Preserve the facts and meaning of the supplied headline and summary.
-                - You may make minor wording changes needed for natural speech.
-                - Do not invent facts, interpretations, causes, or details.
-                - Do not mention the source.
-                - Do not say "Title", "Summary", or "Description".
-                - Never output a sound tag without spoken news text.
-                - If the summary is empty, speak the headline only.
-                - Output only the sound tag and spoken news item.
-                """,
-                $"Headline: {article.Title}\nSummary: {article.Summary ?? string.Empty}",
-                64))
             .ToList();
 
-        if (commands.Count == 0)
+        if (articles.Count == 0)
             return ToolResult.Failed(Name, "No news headlines are available.");
 
-        commands.Add(new LlmCommand(
-            """
-            Say the supplied closing sentence naturally for a radio news briefing.
-            - Speak only the supplied sentence.
-            - Do not add or change any words.
-            - Do not output a sound tag.
-            """,
-            "And that's all the news for now.",
-            16));
+        var report = string.Join(
+            " ",
+            articles.Select(article =>
+            {
+                var headline = article.Title.Trim();
+                var summary = article.Summary?.Trim();
 
-        return ToolResult.SuccessfulWithLlmCommands(
+                return string.IsNullOrWhiteSpace(summary)
+                    ? $"{{sound:news-breaking}} {headline}."
+                    : $"{{sound:news-breaking}} {headline}. {summary}";
+            }));
+
+        return ToolResult.Successful(
             Name,
-            commands,
-            "News headlines retrieved.");
+            "News headlines retrieved.",
+            data: null,
+            exactPrompt: report,
+            complete: true);
     }
 }
