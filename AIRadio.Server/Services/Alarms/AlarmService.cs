@@ -140,7 +140,9 @@ public sealed class AlarmService : IAlarmService
         return range.Type switch
         {
             SchedulePatternType.Once =>
-                range.StartDate == date,
+                range.StartDate.HasValue &&
+                (range.EndDate ?? range.StartDate.Value) >= date &&
+                date >= range.StartDate.Value,
 
             SchedulePatternType.Daily => true,
 
