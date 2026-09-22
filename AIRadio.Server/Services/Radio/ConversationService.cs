@@ -41,7 +41,7 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(text, null)))
+            if (!_queue.TryEnqueue(new ConversationRequest(text, null, false)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
             return Task.CompletedTask;
         }
@@ -56,7 +56,7 @@ namespace AIRadio.Server.Services.Radio
             var completion = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
-            if (!_queue.TryEnqueue(new ConversationRequest(text, completion)))
+            if (!_queue.TryEnqueue(new ConversationRequest(text, completion, true)))
                 throw new InvalidOperationException(
                     "Conversation request was rejected because the conversation queue is not accepting work.");
 
@@ -78,6 +78,15 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
+                if (request.IsAlarm)
+                {
+                    // Alarm actions are independent commands. Start each one
+                    // with a clean conversation state so an outstanding
+                    // interactive question cannot consume the alarm action.
+                    _pendingToolRequest = null;
+                    await _llama.ResetAsync(cancellationToken);
+                }
+
                 if (_pendingToolRequest is not null)
                 {
                     var pendingRequest = ApplyPendingToolInput(request.Text);
@@ -427,6 +436,7 @@ namespace AIRadio.Server.Services.Radio
 
         private sealed record ConversationRequest(
             string Text,
-            TaskCompletionSource<bool>? Completion);
+            TaskCompletionSource<bool>? Completion,
+            bool IsAlarm);
     }
 }
