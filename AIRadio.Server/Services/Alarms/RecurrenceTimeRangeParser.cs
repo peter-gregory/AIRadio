@@ -129,8 +129,8 @@ public static partial class RecurrenceTimeRangeParser
             return new()
             {
                 Type = SchedulePatternType.Once,
-                StartDate = reference.Date,
-                EndDate = reference.Date,
+                StartDate = DateOnly.FromDateTime(reference),
+                EndDate = DateOnly.FromDateTime(reference),
                 TimeOfDay = time
             };
 
