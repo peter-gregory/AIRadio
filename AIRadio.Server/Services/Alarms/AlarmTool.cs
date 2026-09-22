@@ -49,7 +49,7 @@ Do not split when into date, time, recurrence, weekday, or other fields.
                 Id = Guid.NewGuid(),
                 Type = ScheduledEventType.Alarm,
                 Content = content,
-                Schedule = range.ToSchedulePattern(),
+                When = range,
                 Enabled = true,
                 CreatedAt = DateTime.Now
             };
