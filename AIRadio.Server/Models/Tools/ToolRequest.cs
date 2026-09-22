@@ -66,6 +66,7 @@ namespace AIRadio.Server.Models.Tools
     {
         Initial,
         ArgumentParsing,
-        PreambleComplete
+        PreambleComplete,
+    AwaitingCurrentLocation
     }
 }
