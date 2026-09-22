@@ -17,6 +17,20 @@ public static partial class RecurrenceTimeRangeParser
         var reference = now ?? DateTime.Now;
         var text = Normalize(expression);
 
+        var timer = ParseTimer(text, reference);
+        if (timer.HasValue)
+        {
+            var dueAt = timer.Value;
+            return new()
+            {
+                Type = SchedulePatternType.Once,
+                StartDate = DateOnly.FromDateTime(dueAt),
+                EndDate = DateOnly.FromDateTime(dueAt),
+                DueAt = dueAt,
+                TimeOfDay = dueAt.TimeOfDay
+            };
+        }
+
         var time = ParseTime(text);
         var ordinal = ParseOrdinal(text);
 
@@ -147,6 +161,35 @@ public static partial class RecurrenceTimeRangeParser
 
     private static bool IsMonthlyDay(string text) =>
         Regex.IsMatch(text, @"\b(every|each)\s+month\b|\bmonthly\b", RegexOptions.IgnoreCase);
+
+    private static DateTime? ParseTimer(string text, DateTime reference)
+    {
+        var match = TimerRegex().Match(text);
+        if (!match.Success)
+            return null;
+
+        var amount = match.Groups["amount"].Success
+            ? double.Parse(match.Groups["amount"].Value, CultureInfo.InvariantCulture)
+            : 1;
+
+        var unit = match.Groups["unit"].Value;
+        var delay = unit switch
+        {
+            "second" or "seconds" or "sec" or "secs" => TimeSpan.FromSeconds(amount),
+            "minute" or "minutes" or "min" or "mins" => TimeSpan.FromMinutes(amount),
+            "hour" or "hours" or "hr" or "hrs" => TimeSpan.FromHours(amount),
+            "day" or "days" => TimeSpan.FromDays(amount),
+            _ => throw new ArgumentException("Unsupported timer duration.")
+        };
+
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Timer duration must be greater than zero.");
+
+        return reference.Add(delay);
+    }
+
+    [GeneratedRegex(@"\bin\s+(?:(?<amount>\d+(?:\.\d+)?)\s+)?(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?)\b")]
+    private static partial Regex TimerRegex();
 
     private static TimeSpan? ParseTime(string text)
     {
