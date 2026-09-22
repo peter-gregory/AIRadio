@@ -91,10 +91,17 @@ namespace AIRadio.Server.Services.Alarms
                             action,
                             cancellationToken);
 
-                        // Processing normally arrives before ProcessAlarmAsync
-                        // returns, but keep the returned identity as the
-                        // authoritative fallback for the event correlation.
                         _activeConversationId = conversationId;
+
+                        // The conversation may have completed before the alarm
+                        // manager received the conversation ID. Check the
+                        // authoritative state once, then rely exclusively on
+                        // state-change events.
+                        if (_conversationService.State == ConversationState.Complete &&
+                            _conversationService.State != ConversationState.WaitingForInput)
+                        {
+                            _conversationCompletion.TrySetResult(true);
+                        }
 
                         await _conversationCompletion.Task.WaitAsync(cancellationToken);
                     }
