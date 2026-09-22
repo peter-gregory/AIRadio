@@ -21,12 +21,9 @@ Example: "What time is it?" -> {tool:time}
     {
         Validate(request, cancellationToken);
         var now = TimeService.GetNow();
-        var speech = $"The current time is {now:h:mm tt}.";
-
         return Task.FromResult(ToolResult.Successful(
             Name,
             "Current local time retrieved.",
-            new { Time = now.ToString("h:mm tt") },
-            speech));
+            new { Time = now.ToString("h:mm tt") }));
     }
 }
