@@ -172,6 +172,20 @@ User: "Play WRLT"
         }
 
         var station = FindStation(request);
+
+        // If the argument parser placed a human station name in stationId,
+        // treat it as a name rather than an identifier. This is a defensive
+        // normalization because station IDs are opaque identifiers while
+        // spoken station names are often non-numeric.
+        if (station is null &&
+            string.IsNullOrWhiteSpace(stationName) &&
+            !string.IsNullOrWhiteSpace(stationId) &&
+            !LooksLikeStationId(stationId))
+        {
+            stationName = stationId;
+            stationId = null;
+        }
+
         if (station is null && !string.IsNullOrWhiteSpace(stationName))
         {
             var searchQuery = stationName.Trim();
@@ -226,6 +240,9 @@ User: "Play WRLT"
             $"Now playing {RadioSpeechFormatter.FormatStationNameForSpeech(station.Name)}.",
             true);
     }
+
+    private static bool LooksLikeStationId(string value) =>
+        Regex.IsMatch(value.Trim(), @"^\d+$");
 }
 
 public sealed class RadioStopTool : RadioToolBase
