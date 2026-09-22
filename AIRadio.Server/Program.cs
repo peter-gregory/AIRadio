@@ -106,6 +106,7 @@ if (!Directory.Exists(soundsDirectory)) throw new DirectoryNotFoundException($"S
 if (!Directory.Exists(promptsDirectory)) throw new DirectoryNotFoundException($"Prompt directory was not found: {promptsDirectory}");
 
 await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(soundsDirectory);
+await app.Services.GetRequiredService<ILocationService>().InitializeAsync();
 await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
 await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
 
