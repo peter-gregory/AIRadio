@@ -1,14 +1,5 @@
 namespace AIRadio.Server.Models.Alarms;
 
-public enum SchedulePatternType
-{
-    Once,
-    Daily,
-    Weekly,
-    Monthly,
-    Yearly
-}
-
 public sealed class RecurrenceTimeRange
 {
     public SchedulePatternType Type { get; set; }
