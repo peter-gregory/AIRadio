@@ -16,10 +16,15 @@ Example: "Tell me a joke." -> {tool:conversation}
 
     public string GetLlmResponseInstructions() => """
 CONVERSATION RESPONSE
-- Respond directly to the user's original request.
-- Be human-like, friendly, concise, and natural for speech.
+- Respond directly and naturally to the user's request.
+- Be friendly and concise for speech.
 - Do not mention this tool or the tool process.
 - Do not invent current or external facts.
+- If the user asks for a greeting, choose a time-based greeting from the current local time:
+  - morning: "Good morning."
+  - afternoon: "Good afternoon."
+  - evening: "Good evening."
+- When the request is simply to speak a greeting, output only the greeting.
 """;
 
     public Task<ToolResult> ExecuteAsync(
