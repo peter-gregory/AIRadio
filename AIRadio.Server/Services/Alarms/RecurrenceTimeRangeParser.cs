@@ -182,10 +182,16 @@ public static partial class RecurrenceTimeRangeParser
             _ => throw new ArgumentException("Unsupported timer duration.")
         };
 
-        if (delay <= TimeSpan.Zero)
-            throw new ArgumentException("Timer duration must be greater than zero.");
+        if (delay < TimeSpan.FromMinutes(1))
+            throw new ArgumentException("I can only set alarms for one minute or longer.");
 
-        return reference.Add(delay);
+        // Alarms are minute-based. Always round up so "in 5 minutes and 20 seconds"
+        // fires at the beginning of the next minute rather than losing time.
+        var dueAt = reference.Add(delay);
+        return new DateTime(
+            dueAt.Year, dueAt.Month, dueAt.Day,
+            dueAt.Hour, dueAt.Minute, 0, dueAt.Kind).AddMinutes(
+                dueAt.Second == 0 && dueAt.Millisecond == 0 ? 0 : 1);
     }
 
     [GeneratedRegex(@"\bin\s+(?:(?<amount>\d+(?:\.\d+)?)\s+)?(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?)\b")]
