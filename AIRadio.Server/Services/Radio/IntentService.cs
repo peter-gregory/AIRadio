@@ -8,6 +8,10 @@ namespace AIRadio.Server.Services.Radio
 
         Task CancelAsync(
             CancellationToken cancellationToken = default);
+
+        Task ProcessAlarmAsync(
+            string text,
+            CancellationToken cancellationToken = default);
     }
 
     public sealed class IntentService : IIntentService, IAsyncDisposable
@@ -50,6 +54,17 @@ namespace AIRadio.Server.Services.Radio
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task ProcessAlarmAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(text);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            _logger.LogInformation("Processing alarm command directly: " + text);
+            return _conversationService.ProcessAsync(text, cancellationToken);
         }
 
         public async Task CancelAsync(
