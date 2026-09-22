@@ -8,7 +8,9 @@ namespace AIRadio.Server.Services.Radio
 {
     public interface IConversationService
     {
+        ConversationState State { get; }
         bool IsWaitingForInput { get; }
+        event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
@@ -24,8 +26,14 @@ namespace AIRadio.Server.Services.Radio
         private readonly AsyncWorkQueue<ConversationRequest> _queue;
         private ToolRequest? _pendingToolRequest;
         private string? _completionPrompt;
+        private ConversationState _state = ConversationState.Idle;
+        private Guid _conversationId;
+        private TaskCompletionSource<bool>? _waitingAlarmCompletion;
+        private Guid _waitingAlarmConversationId;
 
-        public bool IsWaitingForInput => _pendingToolRequest is not null;
+        public ConversationState State => _state;
+        public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
+        public event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
         {
@@ -42,7 +50,7 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(text, null, false)))
+            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, null, false)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
             return Task.CompletedTask;
         }
@@ -57,7 +65,7 @@ namespace AIRadio.Server.Services.Radio
             var completion = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
-            if (!_queue.TryEnqueue(new ConversationRequest(text, completion, true)))
+            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, completion, true)))
                 throw new InvalidOperationException(
                     "Conversation request was rejected because the conversation queue is not accepting work.");
 
@@ -70,12 +78,18 @@ namespace AIRadio.Server.Services.Radio
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
+            _waitingAlarmCompletion?.TrySetCanceled();
+            _waitingAlarmCompletion = null;
+            _waitingAlarmConversationId = Guid.Empty;
+            SetState(ConversationState.Idle, _conversationId);
             _queue.Resume();
         }
 
         private async Task ProcessRequestAsync(ConversationRequest request, CancellationToken cancellationToken)
         {
             var conversationComplete = false;
+            var conversationId = request.ConversationId;
+            _conversationId = conversationId;
 
             try
             {
@@ -85,8 +99,12 @@ namespace AIRadio.Server.Services.Radio
                     // with a clean conversation state so an outstanding
                     // interactive question cannot consume the alarm action.
                     _pendingToolRequest = null;
+                    _waitingAlarmCompletion = request.Completion;
+                    _waitingAlarmConversationId = conversationId;
                     await _llama.ResetAsync(cancellationToken);
                 }
+
+                SetState(ConversationState.Processing, conversationId);
 
                 if (_pendingToolRequest is not null)
                 {
@@ -170,6 +188,17 @@ namespace AIRadio.Server.Services.Radio
                 // Alarm actions can legitimately require user input. Keep the
                 // pending tool request alive so the user's next utterance can
                 // complete the action before the alarm continues to its next action.
+                if (conversationComplete)
+                {
+                    SetState(ConversationState.Complete, conversationId);
+                    CompleteAlarmConversation(conversationId);
+                    SetState(ConversationState.Idle, conversationId);
+                }
+                else
+                {
+                    SetState(ConversationState.WaitingForInput, conversationId);
+                }
+
                 _logger.LogInformation(
                     conversationComplete
                         ? "Llama conversation is complete."
@@ -199,7 +228,8 @@ namespace AIRadio.Server.Services.Radio
                     }
                 }
 
-                request.Completion?.TrySetResult(conversationComplete);
+                if (conversationComplete)
+                    request.Completion?.TrySetResult(true);
             }
         }
 
@@ -352,7 +382,7 @@ namespace AIRadio.Server.Services.Radio
 
                     if (result.PendingRequest is not null)
                     {
-                        _pendingToolRequest = result.PendingRequest;
+                            _pendingToolRequest = result.PendingRequest;
                         return (true, null);
                     }
 
@@ -448,7 +478,39 @@ namespace AIRadio.Server.Services.Radio
 
         public ValueTask DisposeAsync() => _queue.DisposeAsync();
 
+        private void SetState(ConversationState state, Guid conversationId)
+        {
+            if (_state == state)
+                return;
+
+            var previous = _state;
+            _state = state;
+
+            _logger.LogDebug(
+                "Conversation state changed from {Previous} to {Current} ({ConversationId}).",
+                previous,
+                state,
+                conversationId);
+
+            StateChanged?.Invoke(
+                this,
+                new ConversationStateChangedEventArgs(previous, state, conversationId));
+        }
+
+        private void CompleteAlarmConversation(Guid conversationId)
+        {
+            if (_waitingAlarmCompletion is null ||
+                _waitingAlarmConversationId != conversationId)
+                return;
+
+            var completion = _waitingAlarmCompletion;
+            _waitingAlarmCompletion = null;
+            _waitingAlarmConversationId = Guid.Empty;
+            completion.TrySetResult(true);
+        }
+
         private sealed record ConversationRequest(
+            Guid ConversationId,
             string Text,
             TaskCompletionSource<bool>? Completion,
             bool IsAlarm);
