@@ -18,19 +18,34 @@ public sealed class AlarmTool : ITool
     public string GetLlmInstructions() => """
 ALARM TOOL
 Create an alarm that performs one or more actions in order.
-The actions value is the complete human-language action expression. Keep it intact.
-The when value is the complete human date/time expression. Keep it intact.
 
-Format: {tool:alarm,actions=<complete action expression>,when=<complete date/time expression>}
+ARGUMENTS
+- actions: the complete human-language description of everything the alarm should do. Keep the entire action sequence intact.
+- when: the complete human date/time or recurrence expression. Keep it intact.
+
+Format: {tool:alarm,actions=<complete action expression>,when=<complete time expression>}
 
 Examples:
-{tool:alarm,actions="wake me up",when="tomorrow at 7:00 AM"}
-{tool:alarm,actions="speak a greeting, play the news, weather and any events, then play lightning 100",when="6:30 AM"}
+{tool:alarm,actions="speak a greeting, get the news, get the weather, then play lightning 100",when="6:30 AM"}
 {tool:alarm,actions="turn off the oven",when="in 5 minutes"}
 
-Relative durations such as "in 5 minutes" are egg-timer alarms and must be kept intact.
-Do not split actions into tool names or parameters.
-Do not split when into date, time, recurrence, weekday, or other fields.
+The actions value is not a list of tool calls. Do not convert actions into tool names or parameters.
+The when value is not a set of date/time fields. Do not split it into date, time, recurrence, weekday, or other fields.
+Relative durations such as "in 5 minutes" or "5 minutes from now" must remain complete.
+""";
+
+    public string GetLlmResponseInstructions() => """
+ALARM RESPONSE
+Confirm only when the alarm will activate.
+
+- Do not mention or describe the alarm actions.
+- Do not repeat the user's request.
+- Use the alarm's When structure to express the activation time naturally.
+- For a one-shot timer, use the Due At value and give the local time.
+- For a one-shot date/time, give the date and time when needed.
+- For a recurring alarm, include the recurrence and time when needed.
+- Prefer natural spoken time such as "3:37 PM" rather than a 24-hour timestamp.
+- Keep the response to one short sentence.
 """;
 
     public Task<ToolResult> ExecuteAsync(
