@@ -10,12 +10,18 @@ public sealed class WeatherTool : ITool
 {
     private readonly IWeatherService _weatherService;
     private readonly ILocationService _locationService;
+    private readonly IWeatherLocationResolver _locationResolver;
     private readonly ILogger<WeatherTool> _logger;
 
-    public WeatherTool(IWeatherService weatherService, ILocationService locationService, ILogger<WeatherTool> logger)
+    public WeatherTool(
+        IWeatherService weatherService,
+        ILocationService locationService,
+        IWeatherLocationResolver locationResolver,
+        ILogger<WeatherTool> logger)
     {
         _weatherService = weatherService;
         _locationService = locationService;
+        _locationResolver = locationResolver;
         _logger = logger;
     }
 
@@ -97,12 +103,46 @@ For a notably windy report:
         }
         else
         {
-            locationForWeather = request.State == ToolRequestState.AwaitingCurrentLocation
-                ? await _locationService.UpdateCurrentLocationAsync(cityName.Trim(), cancellationToken)
-                : await _locationService.ResolveLocationAsync(cityName.Trim(), cancellationToken);
+            var requestedLocation =
+                _locationService.BuildLocation(cityName.Trim());
+
+            if (request.State == ToolRequestState.AwaitingCurrentLocation)
+            {
+                // Validate the user's answer with the weather geocoder before
+                // allowing it to become the radio's persistent location.
+                var lookup =
+                    await _locationResolver.ResolveAsync(
+                        requestedLocation,
+                        cancellationToken);
+
+                if (lookup is null)
+                {
+                    _logger.LogInformation(
+                        "Current location response '{Location}' could not be validated by the location lookup.",
+                        cityName);
+
+                    return ToolResult.Failed(
+                        Name,
+                        $"Unable to determine the location '{cityName}'.");
+                }
+
+                locationForWeather =
+                    await _locationService.UpdateCurrentLocationAsync(
+                        requestedLocation,
+                        cancellationToken);
+            }
+            else
+            {
+                locationForWeather =
+                    await _locationService.ResolveLocationAsync(
+                        cityName.Trim(),
+                        cancellationToken);
+            }
 
             if (locationForWeather is null)
-                return ToolResult.Failed(Name, $"Unable to determine the location '{cityName}'.");
+                return ToolResult.Failed(
+                    Name,
+                    $"Unable to determine the location '{cityName}'.");
         }
 
         if (request.State is ToolRequestState.Initial or ToolRequestState.AwaitingCurrentLocation)
