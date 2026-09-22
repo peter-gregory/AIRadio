@@ -7,7 +7,6 @@ namespace AIRadio.Server.Services.Alarms
         private readonly IAlarmService _alarmService;
         private readonly IRadioManagerService _radioManager;
         private readonly ILogger<AlarmManager> _logger;
-        private readonly HashSet<Guid> _activatedEvents = [];
 
         public AlarmManager(
             IAlarmService alarmService,
@@ -25,10 +24,11 @@ namespace AIRadio.Server.Services.Alarms
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                var loopStart = DateTime.Now;
+                var now = TruncateToMinute(DateTime.Now);
+
                 try
                 {
-                    await ProcessAlarmsAsync(loopStart, stoppingToken);
+                    await ProcessAlarmsAsync(now, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -39,16 +39,9 @@ namespace AIRadio.Server.Services.Alarms
                     _logger.LogError(ex, "Error processing scheduled alarms.");
                 }
 
-                var nextMinute = new DateTime(
-                    loopStart.Year,
-                    loopStart.Month,
-                    loopStart.Day,
-                    loopStart.Hour,
-                    loopStart.Minute,
-                    0,
-                    loopStart.Kind).AddMinutes(1);
-
+                var nextMinute = now.AddMinutes(1);
                 var delay = nextMinute - DateTime.Now;
+
                 if (delay > TimeSpan.Zero)
                     await Task.Delay(delay, stoppingToken);
             }
@@ -57,27 +50,32 @@ namespace AIRadio.Server.Services.Alarms
         }
 
         private async Task ProcessAlarmsAsync(
-            DateTime now,
+            DateTime timestamp,
             CancellationToken cancellationToken)
         {
-            var activeAlarms = _alarmService.GetActiveAlarms(now);
-            var activeIds = activeAlarms.Select(x => x.Id).ToHashSet();
-            _activatedEvents.RemoveWhere(id => !activeIds.Contains(id));
+            var activeAlarms = _alarmService.GetActiveAlarms(timestamp);
 
-            foreach (var scheduledEvent in activeAlarms)
+            foreach (var alarm in activeAlarms)
             {
-                if (!_activatedEvents.Add(scheduledEvent.Id))
-                    continue;
-
                 _logger.LogInformation(
                     "Activating alarm {Id}: {Content}",
-                    scheduledEvent.Id,
-                    scheduledEvent.Content);
+                    alarm.Id,
+                    alarm.Content);
 
                 await _radioManager.RenderAlarmAsync(
-                    scheduledEvent.Content,
+                    alarm.Content,
                     cancellationToken);
             }
         }
+
+        private static DateTime TruncateToMinute(DateTime timestamp) =>
+            new(
+                timestamp.Year,
+                timestamp.Month,
+                timestamp.Day,
+                timestamp.Hour,
+                timestamp.Minute,
+                0,
+                timestamp.Kind);
     }
 }
