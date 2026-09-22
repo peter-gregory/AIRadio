@@ -105,7 +105,7 @@ For a notably windy report:
                 return ToolResult.Failed(Name, $"Unable to determine the location '{cityName}'.");
         }
 
-        if (request.State == ToolRequestState.Initial)
+        if (request.State is ToolRequestState.Initial or ToolRequestState.AwaitingCurrentLocation)
         {
             var displayLocation = GetDisplayLocation(locationForWeather);
             return ToolResult.Preamble(
