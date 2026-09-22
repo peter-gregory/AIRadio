@@ -9,7 +9,7 @@ namespace AIRadio.Server.Services.Radio
         Task CancelAsync(
             CancellationToken cancellationToken = default);
 
-        Task ProcessAlarmAsync(
+        Task<Guid> ProcessAlarmAsync(
             string text,
             CancellationToken cancellationToken = default);
     }
@@ -56,15 +56,15 @@ namespace AIRadio.Server.Services.Radio
             return Task.CompletedTask;
         }
 
-        public Task ProcessAlarmAsync(
+        public Task<Guid> ProcessAlarmAsync(
             string text,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.LogInformation("Processing alarm command directly: " + text);
-            return _conversationService.ProcessAndWaitAsync(text, cancellationToken);
+            _logger.LogInformation("Starting alarm command directly: " + text);
+            return _conversationService.StartAlarmAsync(text, cancellationToken);
         }
 
         public async Task CancelAsync(
