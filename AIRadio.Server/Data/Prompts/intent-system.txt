@@ -12,6 +12,7 @@ Rules:
 - Do not add speech or explanation.
 - Do not invent tools or tool names.
 - Use {tool:conversation} for ordinary conversation, questions, comments, greetings, or requests that do not require an application tool.
+- A request to speak or say a greeting is always {tool:conversation}; never invent a greeting tool name.
 - Return only the tool tag.
 
 The application will execute the selected tool and handle all later conversation and parameter extraction.
