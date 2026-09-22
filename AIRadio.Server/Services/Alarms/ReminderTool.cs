@@ -48,6 +48,10 @@ Do not split when into date, time, recurrence, weekday, or other fields.
                 Type = ScheduledEventType.Reminder,
                 Content = content,
                 Schedule = range.ToSchedulePattern(),
+                StartOffset = 0,
+                EndOffset = range.StartDate.HasValue && range.EndDate.HasValue
+                    ? range.EndDate.Value.DayNumber - range.StartDate.Value.DayNumber
+                    : 0,
                 Enabled = true,
                 CreatedAt = DateTime.Now
             };
