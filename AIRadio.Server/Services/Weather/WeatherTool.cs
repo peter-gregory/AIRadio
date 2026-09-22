@@ -83,7 +83,8 @@ For a notably windy report:
                 var pendingRequest = new ToolRequest
                 {
                     Name = Name,
-                    Arguments = new JObject { ["City"] = ToolRequest.RequiredValue }
+                    Arguments = new JObject { ["City"] = ToolRequest.RequiredValue },
+                    State = ToolRequestState.AwaitingCurrentLocation
                 };
 
                 return ToolResult.MissingParameter(
@@ -96,7 +97,9 @@ For a notably windy report:
         }
         else
         {
-            locationForWeather = await _locationService.ResolveLocationAsync(cityName.Trim(), cancellationToken);
+            locationForWeather = request.State == ToolRequestState.AwaitingCurrentLocation
+                ? await _locationService.UpdateCurrentLocationAsync(cityName.Trim(), cancellationToken)
+                : await _locationService.ResolveLocationAsync(cityName.Trim(), cancellationToken);
 
             if (locationForWeather is null)
                 return ToolResult.Failed(Name, $"Unable to determine the location '{cityName}'.");
