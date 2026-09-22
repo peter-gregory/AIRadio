@@ -30,6 +30,7 @@ namespace AIRadio.Server.Services.Alarms
                 try
                 {
                     await ProcessAlarmsAsync(now, stoppingToken);
+                    _alarmService.RemoveExpiredAlarms(now);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
