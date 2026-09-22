@@ -7,6 +7,7 @@ namespace AIRadio.Server.Services.Radio
     public interface IRadioManagerService
     {
         Task ProcessSpeechAsync(string text, CancellationToken cancellationToken = default);
+        Task ProcessAlarmAsync(string text, CancellationToken cancellationToken = default);
         Task RenderAlarmAsync(string content, CancellationToken cancellationToken = default);
         Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default);
         Task PlayPlaylistStationAsync(int index, CancellationToken cancellationToken = default);
@@ -45,6 +46,13 @@ namespace AIRadio.Server.Services.Radio
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             _logger.LogInformation("Processing received voice prompt: " + text);
             return _intentService.ProcessAsync(text, cancellationToken);
+        }
+
+        public Task ProcessAlarmAsync(string text, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(text);
+            _logger.LogInformation("Processing alarm command directly: " + text);
+            return _intentService.ProcessAlarmAsync(text, cancellationToken);
         }
 
         public async Task RenderAlarmAsync(
