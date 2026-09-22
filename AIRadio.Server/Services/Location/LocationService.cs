@@ -14,6 +14,10 @@ namespace AIRadio.Server.Services.Location
             string location,
             CancellationToken cancellationToken = default);
 
+        Task<RadioLocation?> UpdateCurrentLocationAsync(
+            RadioLocation location,
+            CancellationToken cancellationToken = default);
+
         RadioLocation BuildLocation(
             string raw,
             string? address = null,
@@ -95,33 +99,33 @@ namespace AIRadio.Server.Services.Location
             string location,
             CancellationToken cancellationToken = default)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(
-                location);
+            ArgumentException.ThrowIfNullOrWhiteSpace(location);
 
-            var resolved =
-                await ResolveLocationAsync(
-                    location,
-                    cancellationToken);
+            var resolved = await ResolveLocationAsync(location, cancellationToken);
+            return resolved is null
+                ? null
+                : await UpdateCurrentLocationAsync(resolved, cancellationToken);
+        }
 
-            if (resolved is null)
-            {
-                return null;
-            }
+        public async Task<RadioLocation?> UpdateCurrentLocationAsync(
+            RadioLocation location,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(location);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            await _store.SaveAsync(
-                resolved,
-                cancellationToken);
+            await _store.SaveAsync(location, cancellationToken);
 
             lock (_sync)
             {
-                _currentLocation = resolved;
+                _currentLocation = location;
             }
 
             _logger.LogInformation(
                 "Current radio location updated to {Location}.",
-                GetDisplayName(resolved));
+                GetDisplayName(location));
 
-            return resolved;
+            return location;
         }
 
         // ============================================================
