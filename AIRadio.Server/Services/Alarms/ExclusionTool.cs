@@ -46,7 +46,7 @@ Only use an alarm ID returned by the events tool. Never invent an ID.
         try
         {
             var range = RecurrenceTimeRangeParser.Parse(when);
-            var exclusion = ToExclusion(range);
+            var exclusion = range;
             if (!_alarmService.AddExclusion(id, exclusion))
                 return Task.FromResult(ToolResult.Failed(Name, $"Alarm '{id}' was not found."));
 
@@ -65,40 +65,4 @@ Only use an alarm ID returned by the events tool. Never invent an ID.
         return ToolResult.MissingParameter(Name, prompt, pending);
     }
 
-    private static ExclusionRule ToExclusion(RecurrenceTimeRange range)
-    {
-        if (range.Type == SchedulePatternType.Weekly && range.DaysOfWeek.Length > 0)
-            return new ExclusionRule
-            {
-                Type = ExclusionRuleType.Weekly,
-                DaysOfWeek = [.. range.DaysOfWeek]
-            };
-
-        if (range.Type == SchedulePatternType.Monthly)
-            return new ExclusionRule
-            {
-                Type = ExclusionRuleType.Monthly,
-                Month = range.Month,
-                DayOfMonth = range.DayOfMonth,
-                WeekOfMonth = range.WeekOfMonth,
-                WeekdayOfMonth = range.WeekdayOfMonth
-            };
-
-        if (range.Type == SchedulePatternType.Yearly)
-            return new ExclusionRule
-            {
-                Type = ExclusionRuleType.Yearly,
-                Month = range.Month,
-                DayOfMonth = range.DayOfMonth,
-                WeekOfMonth = range.WeekOfMonth,
-                WeekdayOfMonth = range.WeekdayOfMonth
-            };
-
-        return new ExclusionRule
-        {
-            Type = ExclusionRuleType.DateRange,
-            StartDate = range.StartDate,
-            EndDate = range.EndDate
-        };
-    }
 }
