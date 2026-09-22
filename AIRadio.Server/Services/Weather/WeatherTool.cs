@@ -62,8 +62,6 @@ WEATHER RESPONSE
 - Do not use {sound:weather-wind} for an ordinary light breeze.
 - Never invent a sound effect that is not supplied in AVAILABLE SOUND EFFECTS.
 - Keep the response conversational, concise, and natural for speech.
-- End the report exactly with: "And that's the current weather for <Location>." using the Location value from the tool result.
-- Do not add anything after the ending phrase.
 
 EXAMPLES
 For a calm report:
@@ -165,7 +163,8 @@ For a notably windy report:
             return ToolResult.Successful(
                 Name,
                 "Current weather retrieved successfully.",
-                new WeatherCurrentReport(weather.Location, weather.Current));
+                new WeatherCurrentReport(weather.Location, weather.Current),
+                completionPrompt: $"And that's the current weather for {GetDisplayLocation(locationForWeather)}.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
