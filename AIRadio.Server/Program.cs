@@ -81,7 +81,7 @@ builder.Services.AddSingleton<ITool, WifiStatusTool>();
 builder.Services.AddSingleton<ITool, WifiNetworksTool>();
 builder.Services.AddSingleton<ITool, WifiConnectTool>();
 builder.Services.AddSingleton<ITool, AlarmTool>();
-builder.Services.AddSingleton<ITool, ReminderTool>();
+builder.Services.AddSingleton<ITool, EventAddTool>();
 builder.Services.AddSingleton<ITool, ExclusionTool>();
 builder.Services.AddSingleton<ITool, ConversationTool>();
 
