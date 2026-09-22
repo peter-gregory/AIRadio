@@ -30,6 +30,8 @@ Examples:
 {tool:alarm,actions="turn off the oven",when="in 5 minutes"}
 
 The actions value is not a list of tool calls. Do not convert actions into tool names or parameters.
+Preserve every requested action. Do not omit actions joined by "and", commas, or other conjunctions.
+For example, "play the news, weather and any events" contains all three requested actions.
 The when value is not a set of date/time fields. Do not split it into date, time, recurrence, weekday, or other fields.
 Relative durations such as "in 5 minutes" or "5 minutes from now" must remain complete.
 """;
