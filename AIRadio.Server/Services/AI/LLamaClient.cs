@@ -95,12 +95,6 @@ namespace AIRadio.Server.Services.AI
                 else
                 {
                     SetSystemPrompt(BuildToolResponsePrompt());
-
-                    // The previous assistant message is the tool-selection response
-                    // (for example, {tool:news}). It is an intermediate control
-                    // message, not part of the response-round conversation. Keeping
-                    // it in history strongly encourages the small local model to
-                    // repeat the same tool tag instead of producing speech.
                     RemoveLastAssistantResponse();
 
                     foreach (var result in results) AddToolResultToHistory(result);
@@ -109,10 +103,6 @@ namespace AIRadio.Server.Services.AI
                 var requestToken = BeginRequest(cancellationToken);
                 try
                 {
-                    // News speaks each returned headline separately and prefixes
-                    // each one with a sound cue, so allow enough output for the
-                    // complete five-headline briefing without raising the limit
-                    // for shorter tool responses.
                     var responseMaxTokens = isConversation
                         ? 40
                         : _activeToolNames.Contains("news") ? 96 : 48;
@@ -233,10 +223,6 @@ namespace AIRadio.Server.Services.AI
                 if (_activeToolNames.Count == 0)
                     throw new InvalidOperationException("A tool round was requested without an active tool.");
 
-                // The intent response is an intermediate classification result, not
-                // conversation history. Remove it before asking the model to parse
-                // arguments so the chat template sees the original user utterance
-                // as the latest turn rather than continuing the {tool:NAME} response.
                 RemoveLastAssistantResponse();
                 SetSystemPrompt(BuildToolExecutionPrompt());
                 var requestToken = BeginRequest(cancellationToken);
@@ -245,7 +231,11 @@ namespace AIRadio.Server.Services.AI
                     if (!string.IsNullOrWhiteSpace(userMessage))
                         AddUserMessage(userMessage);
 
-                    return await CompleteAsync(requestToken, 24);
+                    // Tool argument requests can contain long natural-language
+                    // values such as alarm action sequences and complete date/time
+                    // expressions. Keep the limit large enough to return the
+                    // entire request without truncating a valid tool tag.
+                    return await CompleteAsync(requestToken, 48);
                 }
                 finally { EndRequest(); }
             }
@@ -387,9 +377,6 @@ namespace AIRadio.Server.Services.AI
             var completion = await _llama.CompleteAsync(message, cancellationToken);
             AddAssistantResponse(completion);
 
-            // Response rounds are speech-only. Never parse a response-round
-            // completion for tool tags because doing so can feed model output
-            // back into the tool executor and create an execution loop.
             if (!parseToolRequests)
             {
                 if (string.IsNullOrWhiteSpace(completion.Content))
