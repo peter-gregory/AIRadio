@@ -131,6 +131,13 @@ namespace AIRadio.Server.Services.Radio
                                     "Tool {ToolName} requires argument parsing from the original utterance.",
                                     selected.Name);
 
+                                if (string.Equals(selected.Name, "alarm", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    await _audioManager.QueueSpeechAsync(
+                                        "Sure, let me set a new alarm for you now.",
+                                        cancellationToken);
+                                }
+
                                 response = await _llama.ContinueToolAsync(cancellationToken);
 
                                 var parsedRequests = response.ToolRequests
@@ -148,15 +155,9 @@ namespace AIRadio.Server.Services.Radio
 
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
 
-                // Alarm actions are independent commands, not interactive
-                // conversation turns. Never allow a missing parameter from one
-                // alarm action to consume the next scheduled action.
-                if (request.Completion is not null && !conversationComplete)
-                {
-                    _pendingToolRequest = null;
-                    conversationComplete = true;
-                }
-
+                // Alarm actions can legitimately require user input. Keep the
+                // pending tool request alive so the user's next utterance can
+                // complete the action before the alarm continues to its next action.
                 _logger.LogInformation(
                     conversationComplete
                         ? "Llama conversation is complete."
