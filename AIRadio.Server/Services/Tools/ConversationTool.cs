@@ -14,18 +14,26 @@ Parameters: none.
 Example: "Tell me a joke." -> {tool:conversation}
 """;
 
-    public string GetLlmResponseInstructions() => """
+    public string GetLlmResponseInstructions()
+    {
+        var hour = DateTime.Now.Hour;
+        var greeting = hour < 12
+            ? "Good morning."
+            : hour < 18
+                ? "Good afternoon."
+                : "Good evening.";
+
+        return $"""
 CONVERSATION RESPONSE
 - Respond directly and naturally to the user's request.
 - Be friendly and concise for speech.
 - Do not mention this tool or the tool process.
 - Do not invent current or external facts.
-- If the user asks for a greeting, choose a time-based greeting from the current local time:
-  - morning: "Good morning."
-  - afternoon: "Good afternoon."
-  - evening: "Good evening."
+- If the user asks you to speak a greeting, speak exactly "{greeting}".
+- Do not choose a different greeting.
 - When the request is simply to speak a greeting, output only the greeting.
 """;
+    }
 
     public Task<ToolResult> ExecuteAsync(
         ToolRequest request,
