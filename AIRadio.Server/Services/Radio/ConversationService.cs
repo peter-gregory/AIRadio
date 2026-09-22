@@ -76,18 +76,20 @@ namespace AIRadio.Server.Services.Radio
         {
             var completion = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
+            var conversationId = Guid.Empty;
 
             EventHandler<ConversationStateChangedEventArgs>? handler = null;
             handler = (_, args) =>
             {
-                if (args.Current == ConversationState.Complete)
+                if (args.Current == ConversationState.Complete &&
+                    args.ConversationId == conversationId)
                     completion.TrySetResult(true);
             };
 
             StateChanged += handler;
             try
             {
-                var conversationId = await StartAlarmAsync(text, cancellationToken);
+                conversationId = await StartAlarmAsync(text, cancellationToken);
 
                 if (State == ConversationState.Complete &&
                     _conversationId == conversationId)
@@ -114,7 +116,11 @@ namespace AIRadio.Server.Services.Radio
         private async Task ProcessRequestAsync(ConversationRequest request, CancellationToken cancellationToken)
         {
             var conversationComplete = false;
-            var conversationId = request.ConversationId;
+            var conversationId = request.IsAlarm
+                ? request.ConversationId
+                : _pendingToolRequest is not null
+                    ? _conversationId
+                    : request.ConversationId;
             _conversationId = conversationId;
 
             try
@@ -240,6 +246,14 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
+                    if (_state != ConversationState.Complete)
+                        SetState(ConversationState.Complete, conversationId);
+
+                    CompleteAlarmConversation(conversationId);
+
+                    if (_state == ConversationState.Complete)
+                        SetState(ConversationState.Idle, conversationId);
+
                     _pendingToolRequest = null;
                     try
                     {
