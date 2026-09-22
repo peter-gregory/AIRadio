@@ -6,7 +6,7 @@ public sealed class RecurrenceTimeRange
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
 
-    // Exact local due time for relative one-shot timers such as "in 5 minutes".
+    // Minute at which a relative one-shot timer is due.
     public DateTime? DueAt { get; set; }
 
     public TimeSpan? TimeOfDay { get; set; }
