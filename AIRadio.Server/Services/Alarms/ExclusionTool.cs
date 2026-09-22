@@ -1,5 +1,6 @@
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Alarms;
 
@@ -34,13 +35,13 @@ Only use an alarm ID returned by the events tool. Never invent an ID.
         var when = request.GetString("when");
 
         if (string.IsNullOrWhiteSpace(idText))
-            return Task.FromResult(ToolResult.MissingParameter(Name, "Which alarm should I exclude?", request));
+            return Task.FromResult(Missing(request, "alarmId", "Which alarm should I exclude?"));
 
         if (!Guid.TryParse(idText, out var id))
             return Task.FromResult(ToolResult.Failed(Name, $"Invalid alarm ID '{idText}'."));
 
         if (string.IsNullOrWhiteSpace(when))
-            return Task.FromResult(ToolResult.MissingParameter(Name, "When should I exclude the alarm?", request));
+            return Task.FromResult(Missing(request, "when", "When should I exclude the alarm?"));
 
         try
         {
@@ -55,6 +56,13 @@ Only use an alarm ID returned by the events tool. Never invent an ID.
         {
             return Task.FromResult(ToolResult.Failed(Name, ex.Message));
         }
+    }
+
+    private ToolResult Missing(ToolRequest request, string parameter, string prompt)
+    {
+        var pending = new ToolRequest { Name = Name, Arguments = (JObject)request.Arguments.DeepClone() };
+        pending.Arguments[parameter] = ToolRequest.RequiredValue;
+        return ToolResult.MissingParameter(Name, prompt, pending);
     }
 
     private static ExclusionRule ToExclusion(RecurrenceTimeRange range)
