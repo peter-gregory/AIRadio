@@ -166,7 +166,7 @@ public sealed class AlarmService : IAlarmService
         var expiration = range.EndDate.Value.ToDateTime(
             TimeOnly.FromTimeSpan(range.TimeOfDay.Value));
 
-        return timestamp >= expiration.AddMinutes(1);
+        return timestamp >= expiration;
     }
 
     private static bool Matches(ScheduledEvent item, DateTime timestamp)
