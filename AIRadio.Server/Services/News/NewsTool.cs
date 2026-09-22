@@ -76,7 +76,7 @@ The news data is already written for speech.
                 return string.IsNullOrWhiteSpace(summary)
                     ? $"{{sound:news-breaking}} {headline}."
                     : $"{{sound:news-breaking}} {headline}. {summary}";
-            }));
+            })) + " That's all the news for now.";
 
         return ToolResult.Successful(
             Name,
