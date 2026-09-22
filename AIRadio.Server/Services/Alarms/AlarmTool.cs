@@ -21,6 +21,8 @@ Format: {tool:alarm,content=<what to say>,when=<complete date/time expression>}
 Examples:
 {tool:alarm,content="Wake me up",when="tomorrow at 7:00 AM"}
 {tool:alarm,content="Take the trash out",when="every weekday at 8:00 AM"}
+{tool:alarm,content="Turn off the oven",when="in 5 minutes"}
+Relative durations such as "in 5 minutes" are egg-timer alarms and must be kept intact.
 Do not split when into date, time, recurrence, weekday, or other fields.
 """;
 
