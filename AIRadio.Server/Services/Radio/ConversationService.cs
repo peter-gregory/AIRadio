@@ -23,6 +23,7 @@ namespace AIRadio.Server.Services.Radio
         private readonly IReadOnlyDictionary<string, ITool> _tools;
         private readonly AsyncWorkQueue<ConversationRequest> _queue;
         private ToolRequest? _pendingToolRequest;
+        private string? _completionPrompt;
 
         public bool IsWaitingForInput => _pendingToolRequest is not null;
 
@@ -154,6 +155,13 @@ namespace AIRadio.Server.Services.Radio
                 }
 
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(_completionPrompt))
+                {
+                    var completionPrompt = _completionPrompt;
+                    _completionPrompt = null;
+                    await _audioManager.PlaySpeechAsync(completionPrompt, cancellationToken);
+                }
 
                 // Alarm actions can legitimately require user input. Keep the
                 // pending tool request alive so the user's next utterance can
@@ -364,6 +372,7 @@ namespace AIRadio.Server.Services.Radio
                     // The tool owns the completion decision. ExactPrompt is direct
                     // speech, while Complete determines whether the result is
                     // terminal or should continue through the response LLM.
+                    _completionPrompt = result.CompletionPrompt;
                     if (!string.IsNullOrWhiteSpace(result.ExactPrompt))
                         await _audioManager.PlaySpeechAsync(result.ExactPrompt, cancellationToken);
 
