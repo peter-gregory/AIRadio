@@ -11,6 +11,7 @@ namespace AIRadio.Server.Services.Radio
         bool IsWaitingForInput { get; }
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
+        Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
 
@@ -40,9 +41,26 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(text)))
+            if (!_queue.TryEnqueue(new ConversationRequest(text, null)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
             return Task.CompletedTask;
+        }
+
+        public async Task ProcessAndWaitAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(text);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            if (!_queue.TryEnqueue(new ConversationRequest(text, completion)))
+                throw new InvalidOperationException(
+                    "Conversation request was rejected because the conversation queue is not accepting work.");
+
+            await completion.Task.WaitAsync(cancellationToken);
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -120,6 +138,16 @@ namespace AIRadio.Server.Services.Radio
                 }
 
                 await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
+
+                // Alarm actions are independent commands, not interactive
+                // conversation turns. Never allow a missing parameter from one
+                // alarm action to consume the next scheduled action.
+                if (request.Completion is not null && !conversationComplete)
+                {
+                    _pendingToolRequest = null;
+                    conversationComplete = true;
+                }
+
                 _logger.LogInformation(
                     conversationComplete
                         ? "Llama conversation is complete."
@@ -148,6 +176,8 @@ namespace AIRadio.Server.Services.Radio
                         _logger.LogError(ex, "Failed to reset the Llama conversation.");
                     }
                 }
+
+                request.Completion?.TrySetResult(conversationComplete);
             }
         }
 
@@ -395,6 +425,8 @@ namespace AIRadio.Server.Services.Radio
 
         public ValueTask DisposeAsync() => _queue.DisposeAsync();
 
-        private sealed record ConversationRequest(string Text);
+        private sealed record ConversationRequest(
+            string Text,
+            TaskCompletionSource<bool>? Completion);
     }
 }
