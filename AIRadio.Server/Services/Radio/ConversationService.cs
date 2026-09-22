@@ -109,6 +109,7 @@ namespace AIRadio.Server.Services.Radio
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
+            SetState(ConversationState.Complete, _conversationId);
             SetState(ConversationState.Idle, _conversationId);
             _queue.Resume();
         }
@@ -415,7 +416,7 @@ namespace AIRadio.Server.Services.Radio
 
                     if (result.PendingRequest is not null)
                     {
-                            _pendingToolRequest = result.PendingRequest;
+                        _pendingToolRequest = result.PendingRequest;
                         return (true, null);
                     }
 
