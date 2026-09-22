@@ -64,7 +64,7 @@ namespace AIRadio.Server.Services.Radio
             cancellationToken.ThrowIfCancellationRequested();
 
             _logger.LogInformation("Processing alarm command directly: " + text);
-            return _conversationService.ProcessAsync(text, cancellationToken);
+            return _conversationService.ProcessAndWaitAsync(text, cancellationToken);
         }
 
         public async Task CancelAsync(
