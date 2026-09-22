@@ -24,7 +24,7 @@ namespace AIRadio.Server.Services.Alarms
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                var now = TruncateToMinute(DateTime.Now);
+                var now = TruncateToSecond(DateTime.Now);
 
                 try
                 {
@@ -39,8 +39,8 @@ namespace AIRadio.Server.Services.Alarms
                     _logger.LogError(ex, "Error processing scheduled alarms.");
                 }
 
-                var nextMinute = now.AddMinutes(1);
-                var delay = nextMinute - DateTime.Now;
+                var nextSecond = now.AddSeconds(1);
+                var delay = nextSecond - DateTime.Now;
 
                 if (delay > TimeSpan.Zero)
                     await Task.Delay(delay, stoppingToken);
@@ -65,17 +65,21 @@ namespace AIRadio.Server.Services.Alarms
                 await _radioManager.RenderAlarmAsync(
                     alarm.Content,
                     cancellationToken);
+
+                // A one-shot alarm must not fire again on the next poll.
+                if (alarm.When.Type == SchedulePatternType.Once)
+                    _alarmService.DisableEvent(alarm.Id);
             }
         }
 
-        private static DateTime TruncateToMinute(DateTime timestamp) =>
+        private static DateTime TruncateToSecond(DateTime timestamp) =>
             new(
                 timestamp.Year,
                 timestamp.Month,
                 timestamp.Day,
                 timestamp.Hour,
                 timestamp.Minute,
-                0,
+                timestamp.Second,
                 timestamp.Kind);
     }
 }
