@@ -235,7 +235,7 @@ namespace AIRadio.Server.Services.AI
                     // values such as alarm action sequences and complete date/time
                     // expressions. Keep the limit large enough to return the
                     // entire request without truncating a valid tool tag.
-                    return await CompleteAsync(requestToken, 48);
+                    return await CompleteAsync(requestToken, 64);
                 }
                 finally { EndRequest(); }
             }
