@@ -24,7 +24,7 @@ namespace AIRadio.Server.Services.Alarms
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                var now = TruncateToSecond(DateTime.Now);
+                var now = DateTime.Now;
 
                 try
                 {
@@ -39,11 +39,9 @@ namespace AIRadio.Server.Services.Alarms
                     _logger.LogError(ex, "Error processing scheduled alarms.");
                 }
 
-                var nextSecond = now.AddSeconds(1);
-                var delay = nextSecond - DateTime.Now;
-
-                if (delay > TimeSpan.Zero)
-                    await Task.Delay(delay, stoppingToken);
+                // Poll frequently enough to catch a relative timer whose due time
+                // includes seconds, while still keeping the manager lightweight.
+                await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken);
             }
 
             _logger.LogInformation("Alarm manager stopped.");
@@ -72,14 +70,5 @@ namespace AIRadio.Server.Services.Alarms
             }
         }
 
-        private static DateTime TruncateToSecond(DateTime timestamp) =>
-            new(
-                timestamp.Year,
-                timestamp.Month,
-                timestamp.Day,
-                timestamp.Hour,
-                timestamp.Minute,
-                timestamp.Second,
-                timestamp.Kind);
     }
 }
