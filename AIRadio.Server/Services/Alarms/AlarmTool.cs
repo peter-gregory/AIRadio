@@ -86,12 +86,94 @@ Confirm only when the alarm will activate.
             };
 
             var added = _alarmService.AddEvent(scheduled);
-            return Task.FromResult(ToolResult.Successful(Name, "Alarm added.", added));
+            var confirmation = FormatConfirmation(range);
+
+            return Task.FromResult(
+                ToolResult.Successful(
+                    Name,
+                    "Alarm added.",
+                    added,
+                    exactPrompt: confirmation,
+                    complete: true));
         }
         catch (Exception ex)
         {
             return Task.FromResult(ToolResult.Failed(Name, ex.Message));
         }
+    }
+
+    private static string FormatConfirmation(RecurrenceTimeRange range)
+    {
+        var time = range.TimeOfDay.HasValue
+            ? DateTime.Today.Add(range.TimeOfDay.Value).ToString("h:mm tt")
+            : string.Empty;
+
+        return range.Type switch
+        {
+            SchedulePatternType.Once when range.DueAt.HasValue =>
+                $"Okay, your alarm is set for {range.DueAt.Value:h:mm tt}.",
+
+            SchedulePatternType.Once when range.StartDate.HasValue &&
+                                         range.StartDate.Value == DateOnly.FromDateTime(DateTime.Now) &&
+                                         !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for {time}.",
+
+            SchedulePatternType.Once when range.StartDate.HasValue && !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for {range.StartDate.Value:MMMM d} at {time}.",
+
+            SchedulePatternType.Once when range.StartDate.HasValue =>
+                $"Okay, your alarm is set for {range.StartDate.Value:MMMM d}.",
+
+            SchedulePatternType.Daily when !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for every day at {time}.",
+
+            SchedulePatternType.Weekly when !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for every {FormatDays(range.DaysOfWeek)} at {time}.",
+
+            SchedulePatternType.Monthly when range.WeekOfMonth.HasValue &&
+                                             range.WeekdayOfMonth.HasValue &&
+                                             !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for {FormatOrdinal(range.WeekOfMonth.Value)} {range.WeekdayOfMonth.Value} of every month at {time}.",
+
+            SchedulePatternType.Monthly when range.DayOfMonth.HasValue &&
+                                             !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for the {FormatOrdinal(range.DayOfMonth.Value)} of every month at {time}.",
+
+            SchedulePatternType.Yearly when range.Month.HasValue &&
+                                            range.DayOfMonth.HasValue &&
+                                            !string.IsNullOrEmpty(time) =>
+                $"Okay, your alarm is set for {new DateTime(2000, range.Month.Value, range.DayOfMonth.Value):MMMM d} every year at {time}.",
+
+            _ => "Okay, your alarm is set."
+        };
+    }
+
+    private static string FormatDays(IReadOnlyList<DayOfWeek> days)
+    {
+        if (days.Count == 0)
+            return "the scheduled days";
+
+        var names = days.Select(x => x.ToString()).ToArray();
+        return names.Length switch
+        {
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => string.Join(", ", names[..^1]) + $", and {names[^1]}"
+        };
+    }
+
+    private static string FormatOrdinal(int value)
+    {
+        if (value == -1)
+            return "last";
+
+        return value switch
+        {
+            1 => "1st",
+            2 => "2nd",
+            3 => "3rd",
+            _ => $"{value}th"
+        };
     }
 
     private ToolResult Missing(ToolRequest request, string parameter, string prompt)
