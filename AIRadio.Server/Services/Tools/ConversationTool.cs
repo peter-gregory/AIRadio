@@ -33,9 +33,11 @@ CONVERSATION RESPONSE
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var localTime = DateTime.Now.ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+
         return Task.FromResult(
             ToolResult.Successful(
                 Name,
-                "Conversation response requested."));
+                $"Conversation response requested. Current local time is {localTime}."));
     }
 }
