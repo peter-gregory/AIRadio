@@ -1,5 +1,6 @@
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Models.Tools;
+using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Alarms;
 
@@ -32,10 +33,10 @@ Do not split when into date, time, recurrence, weekday, or other fields.
         var when = request.GetString("when");
 
         if (string.IsNullOrWhiteSpace(content))
-            return Task.FromResult(ToolResult.MissingParameter(Name, "What should the alarm say?", request));
+            return Task.FromResult(Missing(request, "content", "What should the alarm say?"));
 
         if (string.IsNullOrWhiteSpace(when))
-            return Task.FromResult(ToolResult.MissingParameter(Name, "When should the alarm go off?", request));
+            return Task.FromResult(Missing(request, "when", "When should the alarm go off?"));
 
         try
         {
@@ -61,4 +62,11 @@ Do not split when into date, time, recurrence, weekday, or other fields.
             return Task.FromResult(ToolResult.Failed(Name, ex.Message));
         }
     }
+    private ToolResult Missing(ToolRequest request, string parameter, string prompt)
+    {
+        var pending = new ToolRequest { Name = Name, Arguments = (JObject)request.Arguments.DeepClone() };
+        pending.Arguments[parameter] = ToolRequest.RequiredValue;
+        return ToolResult.MissingParameter(Name, prompt, pending);
+    }
+
 }
