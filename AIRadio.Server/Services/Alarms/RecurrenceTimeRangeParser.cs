@@ -19,6 +19,16 @@ public static partial class RecurrenceTimeRangeParser
 
         var time = ParseTime(text);
         var ordinal = ParseOrdinal(text);
+
+        var dateRange = ParseDateRange(text, reference);
+        if (dateRange.HasValue)
+            return new()
+            {
+                Type = SchedulePatternType.Once,
+                StartDate = dateRange.Value.Start,
+                EndDate = dateRange.Value.End,
+                TimeOfDay = time
+            };
         var weekday = ParseWeekday(text);
         var month = ParseMonth(text);
         var day = ParseNumericDate(text, reference, month);
@@ -144,11 +154,12 @@ public static partial class RecurrenceTimeRangeParser
         if (!match.Success)
             return null;
 
-        var hour = int.Parse(match.Groups["hour"].Value, CultureInfo.InvariantCulture);
+        var hourText = match.Groups["hour"].Success ? match.Groups["hour"].Value : match.Groups["hour2"].Value;
+        var hour = int.Parse(hourText, CultureInfo.InvariantCulture);
         var minute = match.Groups["minute"].Success
             ? int.Parse(match.Groups["minute"].Value, CultureInfo.InvariantCulture)
             : 0;
-        var meridiem = match.Groups["ampm"].Value;
+        var meridiem = match.Groups["ampm"].Value.Replace(".", string.Empty, StringComparison.Ordinal);
 
         if (!string.IsNullOrEmpty(meridiem))
         {
@@ -238,6 +249,36 @@ public static partial class RecurrenceTimeRangeParser
         return candidate;
     }
 
-    [GeneratedRegex(@"\b(?<hour>\d{1,2})(?::(?<minute>\d{2}))?\s*(?<ampm>a\.?m\.?|p\.?m\.?)?\b")]
+    [GeneratedRegex(@"(?:\bat\s+)?(?<hour>\d{1,2})(?::(?<minute>\d{2}))?\s*(?<ampm>a\.?m\.?|p\.?m\.?)\b|\bat\s+(?<hour2>\d{1,2})\b")]
     private static partial Regex TimeRegex();
+
+    private static (DateOnly Start, DateOnly End)? ParseDateRange(string text, DateTime reference)
+    {
+        var match = DateRangeRegex().Match(text);
+        if (!match.Success)
+            return null;
+
+        var start = ParseMonthDay(match.Groups["sm"].Value, match.Groups["sd"].Value, reference);
+        var end = ParseMonthDay(match.Groups["em"].Value, match.Groups["ed"].Value, reference, start.Year);
+        if (end < start)
+            end = end.AddYears(1);
+
+        return (start, end);
+    }
+
+    private static DateOnly ParseMonthDay(string monthText, string dayText, DateTime reference, int? preferredYear = null)
+    {
+        var month = Array.FindIndex(MonthNames, x => x.Equals(monthText, StringComparison.OrdinalIgnoreCase)) + 1;
+        var day = int.Parse(dayText, CultureInfo.InvariantCulture);
+        if (month < 1 || day < 1 || day > DateTime.DaysInMonth(preferredYear ?? reference.Year, month))
+            throw new ArgumentException("Invalid date in date/time expression.");
+
+        var candidate = new DateOnly(preferredYear ?? reference.Year, month, day);
+        if (!preferredYear.HasValue && candidate < DateOnly.FromDateTime(reference.Date))
+            candidate = candidate.AddYears(1);
+        return candidate;
+    }
+
+    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\b")]
+    private static partial Regex DateRangeRegex();
 }
