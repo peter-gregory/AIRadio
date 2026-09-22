@@ -36,6 +36,11 @@ namespace AIRadio.Server.Models.Tools
         public string? ExactPrompt { get; set; }
 
         /// <summary>
+        /// Direct speech to play after the response LLM has finished speaking.
+        /// </summary>
+        public string? CompletionPrompt { get; set; }
+
+        /// <summary>
         /// Tool request to resume after MissingParameter or Preamble.
         /// </summary>
         public ToolRequest? PendingRequest { get; set; }
@@ -64,7 +69,8 @@ namespace AIRadio.Server.Models.Tools
             string? message = null,
             object? data = null,
             string? exactPrompt = null,
-            bool complete = false)
+            bool complete = false,
+            string? completionPrompt = null)
         {
             return new ToolResult
             {
@@ -74,7 +80,8 @@ namespace AIRadio.Server.Models.Tools
                 Message = message,
                 Data = data,
                 ExactPrompt = exactPrompt,
-                Complete = complete
+                Complete = complete,
+                CompletionPrompt = completionPrompt
             };
         }
 
