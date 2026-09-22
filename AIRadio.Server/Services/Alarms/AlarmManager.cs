@@ -40,12 +40,11 @@ namespace AIRadio.Server.Services.Alarms
                     _logger.LogError(ex, "Error processing scheduled alarms.");
                 }
 
-                // Alarms are intentionally minute-resolution. Polling once per minute
-                // avoids unnecessary work for short-lived timer requests.
                 var nextMinute = new DateTime(
                     DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day,
                     DateTime.Now.Hour, DateTime.Now.Minute, 0).AddMinutes(1);
                 var delay = nextMinute - DateTime.Now;
+
                 if (delay > TimeSpan.Zero)
                     await Task.Delay(delay, stoppingToken);
             }
@@ -62,19 +61,34 @@ namespace AIRadio.Server.Services.Alarms
             foreach (var alarm in activeAlarms)
             {
                 _logger.LogInformation(
-                    "Activating alarm {Id}: {Content}",
+                    "Activating alarm {Id} with {ActionCount} actions.",
                     alarm.Id,
-                    alarm.Content);
+                    alarm.Actions.Count);
 
-                await _radioManager.RenderAlarmAsync(
-                    alarm.Content,
-                    cancellationToken);
+                try
+                {
+                    foreach (var action in alarm.Actions)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
 
-                // A one-shot alarm must not fire again on the next poll.
-                if (alarm.When.Type == SchedulePatternType.Once)
-                    _alarmService.DisableEvent(alarm.Id);
+                        _logger.LogInformation(
+                            "Executing alarm {Id} action: {Action}",
+                            alarm.Id,
+                            action);
+
+                        await _radioManager.ProcessSpeechAsync(
+                            action,
+                            cancellationToken);
+                    }
+                }
+                finally
+                {
+                    // A one-shot alarm is consumed even if an action fails so
+                    // a failed action does not repeat on the next poll.
+                    if (alarm.When.Type == SchedulePatternType.Once)
+                        _alarmService.DisableEvent(alarm.Id);
+                }
             }
         }
-
     }
 }
