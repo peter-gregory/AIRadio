@@ -7,16 +7,22 @@ namespace AIRadio.Server.Services.Alarms
     {
         private readonly IAlarmService _alarmService;
         private readonly IRadioManagerService _radioManager;
+        private readonly IConversationService _conversationService;
         private readonly ILogger<AlarmManager> _logger;
+        private TaskCompletionSource<bool>? _conversationCompletion;
+        private Guid _activeConversationId;
 
         public AlarmManager(
             IAlarmService alarmService,
             IRadioManagerService radioManager,
+            IConversationService conversationService,
             ILogger<AlarmManager> logger)
         {
             _alarmService = alarmService;
             _radioManager = radioManager;
+            _conversationService = conversationService;
             _logger = logger;
+            _conversationService.StateChanged += OnConversationStateChanged;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -77,19 +83,72 @@ namespace AIRadio.Server.Services.Alarms
                             alarm.Id,
                             action);
 
-                        await _radioManager.ProcessAlarmAsync(
+                        _conversationCompletion = new TaskCompletionSource<bool>(
+                            TaskCreationOptions.RunContinuationsAsynchronously);
+                        _activeConversationId = Guid.Empty;
+
+                        var conversationId = await _radioManager.ProcessAlarmAsync(
                             action,
                             cancellationToken);
+
+                        // Processing normally arrives before ProcessAlarmAsync
+                        // returns, but keep the returned identity as the
+                        // authoritative fallback for the event correlation.
+                        _activeConversationId = conversationId;
+
+                        await _conversationCompletion.Task.WaitAsync(cancellationToken);
                     }
                 }
                 finally
                 {
+                    _conversationCompletion = null;
+                    _activeConversationId = Guid.Empty;
+
                     // A one-shot alarm is consumed even if an action fails so
                     // a failed action does not repeat on the next poll.
                     if (alarm.When.Type == SchedulePatternType.Once)
                         _alarmService.DisableEvent(alarm.Id);
                 }
             }
+        }
+
+        private void OnConversationStateChanged(
+            object? sender,
+            ConversationStateChangedEventArgs args)
+        {
+            switch (args.Current)
+            {
+                case ConversationState.Processing:
+                    _activeConversationId = args.ConversationId;
+                    _logger.LogDebug(
+                        "Alarm manager observed conversation {ConversationId} entering Processing.",
+                        args.ConversationId);
+                    break;
+
+                case ConversationState.WaitingForInput:
+                    _logger.LogDebug(
+                        "Alarm manager observed conversation {ConversationId} waiting for user input.",
+                        args.ConversationId);
+                    break;
+
+                case ConversationState.Complete:
+                    if (_conversationCompletion is not null &&
+                        _activeConversationId == args.ConversationId)
+                    {
+                        _logger.LogDebug(
+                            "Alarm manager observed conversation {ConversationId} complete; releasing current action.",
+                            args.ConversationId);
+                        _conversationCompletion.TrySetResult(true);
+                    }
+                    break;
+            }
+        }
+
+        public override void Dispose()
+        {
+            _conversationService.StateChanged -= OnConversationStateChanged;
+            _conversationCompletion?.TrySetCanceled();
+            base.Dispose();
         }
     }
 }
