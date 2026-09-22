@@ -2,7 +2,7 @@ namespace AIRadio.Server.Models.Alarms;
 
 public sealed class RecurrenceTimeRange
 {
-    public SchedulePatternType Type { get; init; }
+    public SchedulePatternType Type { get; set; }
     public DateOnly? StartDate { get; init; }
     public DateOnly? EndDate { get; init; }
     public TimeSpan? TimeOfDay { get; init; }
