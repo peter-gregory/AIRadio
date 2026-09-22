@@ -316,7 +316,10 @@ namespace AIRadio.Server.Services.AI
             if (_conversationResponseSystemPrompt is null)
                 throw new InvalidOperationException("The conversation response system prompt has not been initialized.");
 
-            return _conversationResponseSystemPrompt;
+            return string.Join(
+                "\n",
+                _conversationResponseSystemPrompt,
+                $"CURRENT LOCAL TIME: {DateTime.Now:h:mm tt}");
         }
 
         private string BuildToolResponsePrompt()
