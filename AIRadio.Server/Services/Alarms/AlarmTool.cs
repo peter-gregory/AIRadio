@@ -51,7 +51,7 @@ Do not split when into date, time, recurrence, weekday, or other fields.
 
         try
         {
-            var actions = AlarmActionsParser.Parse(actionsText);
+            var actions = AlarmActionsParser.Parse(actionsText).ToList();
             var range = RecurrenceTimeRangeParser.Parse(when);
 
             if (actions.Count == 0)
