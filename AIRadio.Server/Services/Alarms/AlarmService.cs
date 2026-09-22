@@ -13,6 +13,7 @@ public interface IAlarmService
     bool EnableEvent(Guid id);
     bool DisableEvent(Guid id);
     bool AddExclusion(Guid alarmId, RecurrenceTimeRange exclusion);
+    int RemoveExpiredAlarms(DateTime? timestamp = null);
 }
 
 public sealed class AlarmService : IAlarmService
@@ -125,6 +126,47 @@ public sealed class AlarmService : IAlarmService
 
         Save();
         return true;
+    }
+
+    public int RemoveExpiredAlarms(DateTime? timestamp = null)
+    {
+        var now = timestamp ?? DateTime.Now;
+        int removed;
+
+        lock (_sync)
+        {
+            removed = _events.RemoveAll(
+                x => x.Enabled &&
+                     x.Type == ScheduledEventType.Alarm &&
+                     IsExpired(x, now));
+        }
+
+        if (removed > 0)
+        {
+            Save();
+            _logger.LogInformation("Removed {Count} expired alarm(s).", removed);
+        }
+
+        return removed;
+    }
+
+    private static bool IsExpired(ScheduledEvent item, DateTime timestamp)
+    {
+        var range = item.When;
+
+        if (range.DueAt.HasValue)
+            return timestamp >= range.DueAt.Value.AddMinutes(1);
+
+        if (!range.EndDate.HasValue)
+            return false;
+
+        if (!range.TimeOfDay.HasValue)
+            return timestamp.Date > range.EndDate.Value.ToDateTime(TimeOnly.MinValue).Date;
+
+        var expiration = range.EndDate.Value.ToDateTime(
+            TimeOnly.FromTimeSpan(range.TimeOfDay.Value));
+
+        return timestamp >= expiration.AddMinutes(1);
     }
 
     private static bool Matches(ScheduledEvent item, DateTime timestamp)
