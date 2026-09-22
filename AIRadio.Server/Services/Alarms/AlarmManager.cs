@@ -77,7 +77,7 @@ namespace AIRadio.Server.Services.Alarms
                             alarm.Id,
                             action);
 
-                        await _radioManager.ProcessSpeechAsync(
+                        await _radioManager.ProcessAlarmAsync(
                             action,
                             cancellationToken);
                     }
