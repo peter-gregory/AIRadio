@@ -118,6 +118,9 @@ public sealed class AlarmService : IAlarmService
         if (item.Exclusions.Any(x => MatchesDate(x, date)))
             return false;
 
+        if (item.When.DueAt.HasValue)
+            return timestamp >= item.When.DueAt.Value && timestamp < item.When.DueAt.Value.AddSeconds(1);
+
         if (!MatchesDate(item.When, date))
             return false;
 
@@ -255,6 +258,7 @@ public sealed class AlarmService : IAlarmService
         Type = source.Type,
         StartDate = source.StartDate,
         EndDate = source.EndDate,
+        DueAt = source.DueAt,
         TimeOfDay = source.TimeOfDay,
         DaysOfWeek = [.. source.DaysOfWeek],
         Month = source.Month,
