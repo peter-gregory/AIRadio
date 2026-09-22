@@ -249,8 +249,6 @@ namespace AIRadio.Server.Services.Radio
                     if (_state != ConversationState.Complete)
                         SetState(ConversationState.Complete, conversationId);
 
-                    CompleteAlarmConversation(conversationId);
-
                     if (_state == ConversationState.Complete)
                         SetState(ConversationState.Idle, conversationId);
 
