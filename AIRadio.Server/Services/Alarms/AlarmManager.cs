@@ -39,9 +39,14 @@ namespace AIRadio.Server.Services.Alarms
                     _logger.LogError(ex, "Error processing scheduled alarms.");
                 }
 
-                // Poll frequently enough to catch a relative timer whose due time
-                // includes seconds, while still keeping the manager lightweight.
-                await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken);
+                // Alarms are intentionally minute-resolution. Polling once per minute
+                // avoids unnecessary work for short-lived timer requests.
+                var nextMinute = new DateTime(
+                    DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day,
+                    DateTime.Now.Hour, DateTime.Now.Minute, 0).AddMinutes(1);
+                var delay = nextMinute - DateTime.Now;
+                if (delay > TimeSpan.Zero)
+                    await Task.Delay(delay, stoppingToken);
             }
 
             _logger.LogInformation("Alarm manager stopped.");
