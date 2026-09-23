@@ -98,10 +98,6 @@ public:
         const uint32_t preferred_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kPreferredBufferMilliseconds) / 1000));
         const uint32_t minimum_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kMinimumBufferMilliseconds) / 1000));
         const uint32_t maximum_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kMaximumBufferMilliseconds) / 1000));
-        const uint32_t preferred_bytes = preferred_frames * bytes_per_frame_;
-        const uint32_t minimum_bytes = minimum_frames * bytes_per_frame_;
-        const uint32_t maximum_bytes = maximum_frames * bytes_per_frame_;
-
         debug("REQUEST buffers: preferred=%u frames (%zu ms), range=%u..%u frames, buffers=%zu..%zu",
               preferred_frames, kPreferredBufferMilliseconds,
               minimum_frames, maximum_frames,
@@ -203,7 +199,12 @@ public:
             return result;
         }
 
-        while (!connection_ready_ && !connection_error_)
+        // PipeWire can report PAUSED/STREAMING before it invokes add_buffer.
+        // Do not treat the state transition as startup completion until the
+        // native buffer has actually been delivered and processed by
+        // on_add_buffer().
+        while ((!connection_ready_ || !block_bytes_ || !block_frames_) &&
+               !connection_error_)
             pw_thread_loop_wait(loop_);
 
         if (connection_error_ < 0) {
@@ -711,6 +712,9 @@ private:
 
         ++self->pipewire_buffer_count_;
         self->debug("ADD_BUFFER count=%zu maxsize=%u", self->pipewire_buffer_count_, d->maxsize);
+        // Wake start(): the stream state may have become ready before this
+        // callback, so buffer availability is a separate startup condition.
+        pw_thread_loop_signal(self->loop_, false);
     }
 
     static void on_param_changed(
