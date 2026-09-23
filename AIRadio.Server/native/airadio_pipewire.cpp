@@ -71,7 +71,8 @@ public:
           bytes_per_frame_(channels * (bits / 8)),
           block_frames_(rate / 10),
           block_bytes_(block_frames_ * bytes_per_frame_),
-          blocks_(kRingBlocks) {}
+          blocks_(kRingBlocks),
+          debug_enabled_(std::getenv("AIRADIO_PIPEWIRE_DEBUG") != nullptr) {}
 
     ~PipeWireBackend() { destroy(); }
 
@@ -84,6 +85,10 @@ public:
             last_error_ = "AIRadio PipeWire audio must be 16 kHz, 16-bit, mono";
             return -22;
         }
+
+        debug("START source format: %u Hz, %u ch, %u-bit, %u bytes/frame, %u frames/block, %zu bytes/block",
+              sample_rate_, channels_, bits_per_sample_, bytes_per_frame_,
+              block_frames_, block_bytes_);
 
         try {
             for (auto &block : blocks_)
@@ -134,6 +139,7 @@ public:
         static const pw_stream_events events = {
             PW_VERSION_STREAM_EVENTS, nullptr,
             &PipeWireBackend::on_state_changed, nullptr, nullptr, nullptr,
+            &PipeWireBackend::on_param_changed,
             nullptr, nullptr, &PipeWireBackend::on_process,
             &PipeWireBackend::on_drained, nullptr, nullptr
         };
@@ -183,6 +189,7 @@ public:
             return e;
         }
 
+        debug("STREAM connected; negotiated format is reported by param_changed");
         pw_thread_loop_unlock(loop_);
         pipewire_thread_ = std::thread([this] { pipewire_worker(); });
         completion_thread_ = std::thread([this] { completion_worker(); });
@@ -495,12 +502,22 @@ private:
         }
 
         PcmBlock *block = &blocks_[submit_index_];
+
+        debug("SUBMIT block=%zu write=%zu tail=%zu buffer=%p maxsize=%u requested=%u pre_chunk(size=%u offset=%u stride=%d)",
+              submit_index_, write, tail_index_, static_cast<void *>(buffer),
+              d->maxsize, buffer->requested, d->chunk->size,
+              d->chunk->offset, d->chunk->stride);
+
         std::memcpy(d->data, block->data.get(), block_bytes_);
         d->chunk->offset = 0;
         d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
         d->chunk->size = static_cast<uint32_t>(block_bytes_);
         buffer->size = block_frames_;
         buffer->user_data = block;
+
+        debug("SUBMIT queued block=%zu buffer=%p size=%u frames=%u stride=%d",
+              submit_index_, static_cast<void *>(buffer),
+              d->chunk->size, buffer->size, d->chunk->stride);
 
         submit_index_ = next_index(submit_index_);
         ++pipewire_active_count_;
@@ -528,6 +545,11 @@ private:
         if (!buffer || !buffer->buffer) return;
 
         auto *completed = static_cast<PcmBlock *>(buffer->user_data);
+
+        debug("PROCESS buffer=%p user_data=%p active_before=%zu tail=%zu submit=%zu",
+              static_cast<void *>(buffer), static_cast<void *>(completed),
+              pipewire_active_count_, tail_index_, submit_index_);
+
         if (completed) {
             if (pipewire_active_count_)
                 --pipewire_active_count_;
@@ -547,6 +569,8 @@ private:
                 std::lock_guard<std::mutex> ring_lock(ring_mutex_);
                 tail_index_ = next_index(tail_index_);
                 producer_gate_.set();
+                debug("PROCESS retired block; new tail=%zu active=%zu",
+                      tail_index_, pipewire_active_count_);
             }
         }
 
@@ -597,11 +621,60 @@ private:
         }
     }
 
+    static void on_param_changed(
+        void *data, uint32_t id, const spa_pod *param) {
+        auto *self = static_cast<PipeWireBackend *>(data);
+
+        if (!param) {
+            self->debug("PARAM id=%u param=NULL", id);
+            return;
+        }
+
+        if (id != SPA_PARAM_Format) {
+            self->debug("PARAM id=%u", id);
+            return;
+        }
+
+        spa_audio_info_raw info{};
+        if (spa_format_audio_raw_parse(param, &info) < 0) {
+            self->debug("FORMAT unable to parse negotiated format");
+            return;
+        }
+
+        self->debug(
+            "FORMAT negotiated: format=%s rate=%u channels=%u",
+            spa_debug_type_find_short(SPA_TYPE_AUDIO_FORMAT, info.format),
+            info.rate, info.channels);
+
+        if (info.rate != self->sample_rate_ ||
+            info.channels != self->channels_ ||
+            info.format != SPA_AUDIO_FORMAT_S16) {
+            self->debug(
+                "FORMAT WARNING: source=%u Hz/%u ch/S16 but PipeWire negotiated %u Hz/%u ch/%s",
+                self->sample_rate_, self->channels_,
+                info.rate, info.channels,
+                spa_debug_type_find_short(SPA_TYPE_AUDIO_FORMAT, info.format));
+        }
+    }
+
     static void on_process(void *data) {
         static_cast<PipeWireBackend *>(data)->process();
     }
 
-    static void on_drained(void *) {}
+    static void on_drained(void *data) {
+        static_cast<PipeWireBackend *>(data)->debug("DRAINED callback");
+    }
+
+    void debug(const char *format, ...) const {
+        if (!debug_enabled_) return;
+
+        va_list args;
+        va_start(args, format);
+        std::fprintf(stderr, "[AIRadioPipeWire] ");
+        std::vfprintf(stderr, format, args);
+        std::fprintf(stderr, "\n");
+        va_end(args);
+    }
 
     void completion_worker() {
         for (;;) {
@@ -677,6 +750,7 @@ private:
     bool cancelled_ = false;
     bool connection_ready_ = false;
     int connection_error_ = 0;
+    const bool debug_enabled_;
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<uint64_t> outstanding_frames_{0};
