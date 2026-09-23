@@ -445,6 +445,13 @@ private:
         if (!end_of_utterance_.load()) return;
         std::lock_guard<std::mutex> lock(fifo_mutex_);
         if (fifo_available_locked() || queued_frames_.load()) return;
+
+        // Avoid leaving an empty EARLY_PROCESS playback stream active.
+        if (active_) {
+            pw_stream_set_active(stream_, false);
+            active_ = false;
+        }
+
         if (!completion_pending_.exchange(true))
             completion_cv_.notify_one();
     }
