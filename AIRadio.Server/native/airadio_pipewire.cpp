@@ -178,7 +178,7 @@ public:
         const spa_pod *params[2];
         uint32_t n_params = 0;
         params[n_params++] = spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info);
-        params[n_params++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+        params[n_params++] = static_cast<const spa_pod *>(spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
             SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMaxPipeWireBuffers)),
             SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
             SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(preferred_bytes), static_cast<int>(minimum_bytes), static_cast<int>(maximum_bytes)),
