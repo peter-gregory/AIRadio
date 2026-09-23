@@ -78,11 +78,13 @@ public:
     }
 
     void wait() const noexcept {
-        bool expected = false;
-        while (!state_.load(std::memory_order_acquire)) {
+        for (;;) {
+            if (state_.exchange(false, std::memory_order_acq_rel))
+                return;
+
+            bool expected = false;
             state_.wait(expected, std::memory_order_relaxed);
         }
-        state_.store(false, std::memory_order_release);
     }
 
 private:
