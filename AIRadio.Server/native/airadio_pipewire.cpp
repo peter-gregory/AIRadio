@@ -502,6 +502,9 @@ private:
                         pw_stream_set_active(stream_, false);
                         active_ = false;
                     }
+                    end_of_utterance_ = false;
+                    cancelled_ = false;
+                    completion_pending_.store(false, std::memory_order_release);
                 }
 
                 if (any_ready() && !active_) {
