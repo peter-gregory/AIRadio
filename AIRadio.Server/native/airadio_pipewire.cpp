@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <semaphore>
 
 namespace {
 constexpr size_t kPodBufferBytes = 1024;
@@ -69,28 +70,15 @@ private:
 
 class AutoResetEvent {
 public:
-    explicit AutoResetEvent(bool set = false)
-        : state_(set) {}
-
+    explicit AutoResetEvent(bool set = false) : semaphore_(set ? 1 : 0) {}
     void set() noexcept {
-        state_.store(true, std::memory_order_release);
-        state_.notify_one();
+        semaphore_.try_acquire();
+        semaphore_.release();
     }
-
-    void wait() const noexcept {
-        for (;;) {
-            if (state_.exchange(false, std::memory_order_acq_rel))
-                return;
-
-            bool expected = false;
-            state_.wait(expected, std::memory_order_relaxed);
-        }
-    }
-
+    void wait() noexcept { semaphore_.acquire(); }
 private:
-    mutable std::atomic<bool> state_;
+    std::binary_semaphore semaphore_;
 };
-
 class PipeWireBackend {
 public:
     PipeWireBackend(uint32_t rate, uint32_t channels, uint32_t bits)
@@ -508,6 +496,14 @@ private:
                 if (shutting_down_.load(std::memory_order_acquire))
                     break;
 
+                if (completion_pending_.load(std::memory_order_acquire) &&
+                    pipewire_active_count_ == 0 && !any_ready()) {
+                    if (active_) {
+                        pw_stream_set_active(stream_, false);
+                        active_ = false;
+                    }
+                }
+
                 if (any_ready() && !active_) {
                     int r = pw_stream_set_active(stream_, true);
                     if (r < 0) {
@@ -887,16 +883,8 @@ private:
                     false, std::memory_order_acq_rel))
                 continue;
 
-            if (loop_) {
-                pw_thread_loop_lock(loop_);
-                end_of_utterance_ = false;
-                cancelled_ = false;
-                if (active_) {
-                    pw_stream_set_active(stream_, false);
-                    active_ = false;
-                }
-                pw_thread_loop_unlock(loop_);
-            }
+            // The PipeWire worker owns stream activation/deactivation.
+            // This worker only delivers the managed completion callback.
 
             // Managed/C# completion is deliberately isolated from the
             // PipeWire process callback. This callback may block or perform
