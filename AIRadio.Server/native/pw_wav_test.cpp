@@ -13,6 +13,10 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 
 namespace {
 
@@ -63,6 +67,14 @@ struct Player {
     bool debug = true;
     uint32_t latency_ms = 100;
     bool latency_explicit = false;
+
+    std::mutex worker_mutex;
+    std::condition_variable worker_cv;
+    std::atomic<bool> worker_requested{false};
+    std::atomic<bool> stop_worker{false};
+    std::thread worker;
+    std::unordered_map<pw_buffer *, uint32_t> queued_buffers;
+    uint64_t queued_pipewire_frames = 0;
 };
 
 static bool read_wav(const char *filename, WavFile &wav)
@@ -264,120 +276,170 @@ static void param_changed(
     }
 }
 
-static void process(void *userdata)
+static void request_process(void *userdata)
 {
     auto *p = static_cast<Player *>(userdata);
+    p->worker_requested.store(true, std::memory_order_release);
+    p->worker_cv.notify_one();
+}
 
-    pw_buffer *buffer = pw_stream_dequeue_buffer(p->stream);
+/*
+ * All PipeWire buffer dequeue/fill/queue operations run here, not in
+ * process(). This mirrors the AIRadio architecture and exercises ASYNC
+ * playback with variable requested sizes.
+ */
+static void playback_worker(Player *p)
+{
+    for (;;) {
+        std::unique_lock<std::mutex> wait_lock(p->worker_mutex);
+        p->worker_cv.wait(wait_lock, [p] {
+            return p->stop_worker.load(std::memory_order_acquire) ||
+                   p->worker_requested.load(std::memory_order_acquire);
+        });
 
-    if (!buffer || !buffer->buffer) {
-        std::cerr << "[TEST] PROCESS ERROR: no buffer returned\n";
-        p->failed = true;
-        pw_thread_loop_signal(p->loop, false);
-        return;
-    }
+        if (p->stop_worker.load(std::memory_order_acquire))
+            return;
 
-    if (!buffer->buffer->n_datas || !buffer->buffer->datas) {
-        std::cerr << "[TEST] PROCESS ERROR: no spa data\n";
-        p->failed = true;
-        pw_stream_return_buffer(p->stream, buffer);
-        pw_thread_loop_signal(p->loop, false);
-        return;
-    }
+        p->worker_requested.store(false, std::memory_order_release);
+        wait_lock.unlock();
 
-    spa_data *d = &buffer->buffer->datas[0];
+        pw_thread_loop_lock(p->loop);
 
-    if (!d->data || !d->chunk) {
-        std::cerr << "[TEST] PROCESS ERROR: invalid spa data/chunk\n";
-        p->failed = true;
-        pw_stream_return_buffer(p->stream, buffer);
-        pw_thread_loop_signal(p->loop, false);
-        return;
-    }
-
-    const size_t bytes_per_frame =
-        static_cast<size_t>(p->wav.channels) * 2;
-
-    const size_t remaining = p->wav.pcm.size() - p->offset;
-    size_t bytes = std::min(remaining, static_cast<size_t>(d->maxsize));
-    bytes -= bytes % bytes_per_frame;
-
-    const uint64_t max_frames = d->maxsize / bytes_per_frame;
-    const double max_ms = p->wav.sample_rate
-        ? (1000.0 * static_cast<double>(max_frames) / p->wav.sample_rate)
-        : 0.0;
-    const double requested_ms = p->wav.sample_rate
-        ? (1000.0 * static_cast<double>(buffer->requested) / p->wav.sample_rate)
-        : 0.0;
-
-    std::cerr
-        << "[TEST] BUFFER #" << p->buffers_queued
-        << " ptr=" << static_cast<void *>(buffer)
-        << " maxsize=" << d->maxsize << " bytes"
-        << " max_frames=" << max_frames
-        << " max_ms=" << max_ms
-        << " requested=" << buffer->requested << " frames"
-        << " requested_ms=" << requested_ms
-        << " offset=" << d->chunk->offset
-        << " old_size=" << d->chunk->size
-        << " stride=" << d->chunk->stride
-        << " flags=0x" << std::hex << d->flags << std::dec
-        << " wav_remaining=" << remaining
-        << " submit_bytes=" << bytes
-        << "\n";
-
-    if (bytes == 0) {
-        std::cerr << "[TEST] No more WAV data; returning empty buffer\n";
-        d->chunk->offset = 0;
-        d->chunk->size = 0;
-        d->chunk->stride = static_cast<int32_t>(bytes_per_frame);
-        pw_stream_queue_buffer(p->stream, buffer);
-        return;
-    }
-
-    std::memcpy(d->data, p->wav.pcm.data() + p->offset, bytes);
-
-    d->chunk->offset = 0;
-    d->chunk->size = static_cast<uint32_t>(bytes);
-    d->chunk->stride = static_cast<int32_t>(bytes_per_frame);
-
-    p->offset += bytes;
-    p->frames_queued += bytes / bytes_per_frame;
-    ++p->buffers_queued;
-
-    const bool final_buffer = p->offset >= p->wav.pcm.size();
-
-    std::cerr
-        << "[TEST] QUEUE buffer #" << (p->buffers_queued - 1)
-        << " bytes=" << d->chunk->size
-        << " frames=" << (bytes / bytes_per_frame)
-        << " final=" << (final_buffer ? "yes" : "no")
-        << "\n";
-
-    const int r = pw_stream_queue_buffer(p->stream, buffer);
-
-    if (r < 0) {
-        std::cerr << "[TEST] QUEUE ERROR: " << r << "\n";
-        p->failed = true;
-        pw_thread_loop_signal(p->loop, false);
-        return;
-    }
-
-    if (final_buffer && !p->final_buffer_queued) {
-        p->final_buffer_queued = true;
-
-        /*
-         * Ask PipeWire to drain the stream. With drain=true the drained
-         * callback is delivered after queued playback has completed.
-         */
-        const int fr = pw_stream_flush(p->stream, true);
-        std::cerr << "[TEST] FINAL BUFFER QUEUED; flush(drain=true) => "
-                  << fr << "\n";
-
-        if (fr < 0) {
-            p->failed = true;
-            pw_thread_loop_signal(p->loop, false);
+        if (!p->connected || p->failed) {
+            pw_thread_loop_unlock(p->loop);
+            continue;
         }
+
+        if (!p->stream) {
+            pw_thread_loop_unlock(p->loop);
+            continue;
+        }
+
+        const int active_result = pw_stream_set_active(p->stream, true);
+        if (active_result < 0) {
+            std::cerr << "[TEST] set_active failed: " << active_result << "\n";
+            p->failed = true;
+            pw_thread_loop_unlock(p->loop);
+            continue;
+        }
+
+        for (;;) {
+            pw_buffer *buffer = pw_stream_dequeue_buffer(p->stream);
+            if (!buffer || !buffer->buffer)
+                break;
+
+            auto it = p->queued_buffers.find(buffer);
+            if (it != p->queued_buffers.end()) {
+                p->queued_pipewire_frames -= it->second;
+                p->queued_buffers.erase(it);
+            }
+
+            if (!buffer->buffer->n_datas || !buffer->buffer->datas) {
+                p->failed = true;
+                pw_stream_return_buffer(p->stream, buffer);
+                break;
+            }
+
+            spa_data *d = &buffer->buffer->datas[0];
+            if (!d->data || !d->chunk || !d->maxsize) {
+                p->failed = true;
+                pw_stream_return_buffer(p->stream, buffer);
+                break;
+            }
+
+            const size_t bytes_per_frame =
+                static_cast<size_t>(p->wav.channels) * 2;
+            const size_t capacity_frames = d->maxsize / bytes_per_frame;
+            const size_t requested_frames =
+                buffer->requested
+                    ? static_cast<size_t>(buffer->requested)
+                    : capacity_frames;
+
+            const size_t remaining =
+                p->wav.pcm.size() - p->offset;
+            const size_t frames = std::min({
+                capacity_frames,
+                requested_frames,
+                remaining / bytes_per_frame
+            });
+
+            const double requested_ms = p->wav.sample_rate
+                ? 1000.0 * buffer->requested / p->wav.sample_rate
+                : 0.0;
+
+            std::cerr
+                << "[TEST] DEQUEUE buffer=" << static_cast<void *>(buffer)
+                << " requested=" << buffer->requested
+                << " requested_ms=" << requested_ms
+                << " capacity=" << capacity_frames
+                << " queued_before=" << p->queued_pipewire_frames
+                << " source_remaining=" << remaining
+                << " submit=" << frames
+                << "\n";
+
+            if (!frames) {
+                /*
+                 * Source is exhausted. Return the available buffer and ask
+                 * PipeWire to drain the buffers already queued.
+                 */
+                pw_stream_return_buffer(p->stream, buffer);
+
+                if (!p->final_buffer_queued && p->offset >= p->wav.pcm.size()) {
+                    p->final_buffer_queued = true;
+                    const int dr = pw_stream_flush(p->stream, true);
+                    std::cerr << "[TEST] SOURCE COMPLETE; flush(drain=true) => "
+                              << dr << "\n";
+                    if (dr < 0) p->failed = true;
+                }
+                break;
+            }
+
+            std::memcpy(d->data, p->wav.pcm.data() + p->offset,
+                        frames * bytes_per_frame);
+
+            d->chunk->offset = 0;
+            d->chunk->stride = static_cast<int32_t>(bytes_per_frame);
+            d->chunk->size =
+                static_cast<uint32_t>(frames * bytes_per_frame);
+            buffer->size = frames;
+
+            const int qr = pw_stream_queue_buffer(p->stream, buffer);
+            if (qr < 0) {
+                std::cerr << "[TEST] queue failed: " << qr << "\n";
+                p->failed = true;
+                break;
+            }
+
+            p->offset += frames * bytes_per_frame;
+            ++p->buffers_queued;
+            p->frames_queued += frames;
+            p->queued_pipewire_frames += frames;
+            p->queued_buffers[buffer] = static_cast<uint32_t>(frames);
+
+            std::cerr
+                << "[TEST] QUEUE buffer=" << static_cast<void *>(buffer)
+                << " requested=" << buffer->requested
+                << " frames=" << frames
+                << " queued=" << p->queued_pipewire_frames
+                << " source=" << p->offset << "/" << p->wav.pcm.size()
+                << "\n";
+
+            if (p->queued_pipewire_frames >=
+                    static_cast<uint64_t>(p->wav.sample_rate) * 2 &&
+                p->offset < p->wav.pcm.size())
+                break;
+
+            if (p->offset >= p->wav.pcm.size()) {
+                p->final_buffer_queued = true;
+                const int dr = pw_stream_flush(p->stream, true);
+                std::cerr << "[TEST] FINAL BUFFER QUEUED; "
+                          << "flush(drain=true) => " << dr << "\n";
+                if (dr < 0) p->failed = true;
+                break;
+            }
+        }
+
+        pw_thread_loop_unlock(p->loop);
     }
 }
 
@@ -399,7 +461,7 @@ static const pw_stream_events events = {
     &param_changed,
     nullptr,
     nullptr,
-    &process,
+    &request_process,
     &drained,
     nullptr,
     nullptr
@@ -611,16 +673,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    std::cerr << "[TEST] Starting playback\n";
-    const int ar = pw_stream_set_active(player.stream, true);
-
-    if (ar < 0) {
-        std::cerr << "ERROR: pw_stream_set_active failed: " << ar << "\n";
-        player.failed = true;
-    }
+    std::cerr << "[TEST] Starting playback with helper worker\n";
+    player.worker = std::thread(playback_worker, &player);
+    player.worker_requested.store(true, std::memory_order_release);
+    player.worker_cv.notify_one();
 
     while (!player.failed && !player.drained)
         pw_thread_loop_wait(player.loop);
+
+    player.stop_worker.store(true, std::memory_order_release);
+    player.worker_cv.notify_one();
+    if (player.worker.joinable())
+        player.worker.join();
 
     std::cerr
         << "[TEST] RESULT "
