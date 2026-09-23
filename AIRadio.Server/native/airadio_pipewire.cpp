@@ -123,7 +123,6 @@ public:
         tail_index_.store(0, std::memory_order_relaxed);
         head_fill_bytes_ = 0;
         max_active_buffers_ = kMinPipeWireBuffers;
-        available_buffers_.clear();
         available_buffer_count_ = 0;
         active_ = false;
         end_of_utterance_ = false;
@@ -445,7 +444,6 @@ public:
                 pw_stream_destroy(stream_);
                 stream_ = nullptr;
             }
-            available_buffers_.clear();
             available_buffer_count_ = 0;
             pw_thread_loop_unlock(loop_);
             pw_thread_loop_stop(loop_);
@@ -796,7 +794,6 @@ private:
             return;
         }
 
-        ++self->pipewire_buffer_count_;
         // Wake start(): the stream state may have become ready before this
         // callback, so buffer availability is a separate startup condition.
         pw_thread_loop_signal(self->loop_, false);
