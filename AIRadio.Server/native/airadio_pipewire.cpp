@@ -208,25 +208,15 @@ public:
             return e;
         }
 
-        // This stream does not report usable mapped buffers through
-        // add_buffer on this PipeWire graph. Activate it so the process
-        // callback can dequeue the first mapped buffer and establish the
-        // native block size there.
-        int ar = pw_stream_set_active(stream_, true);
-        if (ar < 0) {
-            last_error_ = "pw_stream_set_active failed: " + std::to_string(ar);
+        // The mapped buffers are available through add_buffer() on the
+        // current PipeWire graph. Keep the stream inactive until there is
+        // actual AIRadio audio to submit. Activating an empty output stream
+        // here causes PipeWire to repeatedly invoke process() with no audio
+        // queued, creating a busy loop.
+        if (!block_bytes_ || !block_frames_) {
+            last_error_ = "PipeWire did not provide a usable audio buffer";
             pw_thread_loop_unlock(loop_);
-            return ar;
-        }
-        active_ = true;
-
-        while (!block_bytes_ || !block_frames_)
-            pw_thread_loop_wait(loop_);
-
-        if (connection_error_ < 0) {
-            int e = connection_error_;
-            pw_thread_loop_unlock(loop_);
-            return e;
+            return -22;
         }
 
         debug("STREAM connected; native buffer=%zu bytes, %u frames (%.1f ms), active limit=%zu buffers",
