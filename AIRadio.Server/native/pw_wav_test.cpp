@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -60,6 +61,8 @@ struct Player {
     int connection_error = 0;
 
     bool debug = true;
+    uint32_t latency_ms = 100;
+    bool latency_explicit = false;
 };
 
 static bool read_wav(const char *filename, WavFile &wav)
@@ -299,14 +302,26 @@ static void process(void *userdata)
     size_t bytes = std::min(remaining, static_cast<size_t>(d->maxsize));
     bytes -= bytes % bytes_per_frame;
 
+    const uint64_t max_frames = d->maxsize / bytes_per_frame;
+    const double max_ms = p->wav.sample_rate
+        ? (1000.0 * static_cast<double>(max_frames) / p->wav.sample_rate)
+        : 0.0;
+    const double requested_ms = p->wav.sample_rate
+        ? (1000.0 * static_cast<double>(buffer->requested) / p->wav.sample_rate)
+        : 0.0;
+
     std::cerr
         << "[TEST] BUFFER #" << p->buffers_queued
         << " ptr=" << static_cast<void *>(buffer)
-        << " maxsize=" << d->maxsize
-        << " requested=" << buffer->requested
+        << " maxsize=" << d->maxsize << " bytes"
+        << " max_frames=" << max_frames
+        << " max_ms=" << max_ms
+        << " requested=" << buffer->requested << " frames"
+        << " requested_ms=" << requested_ms
         << " offset=" << d->chunk->offset
         << " old_size=" << d->chunk->size
         << " stride=" << d->chunk->stride
+        << " flags=0x" << std::hex << d->flags << std::dec
         << " wav_remaining=" << remaining
         << " submit_bytes=" << bytes
         << "\n";
@@ -376,7 +391,7 @@ static void drained(void *userdata)
 }
 
 static const pw_stream_events events = {
-    PW_VERSION_STREAM_EVENTS,
+    .version = PW_VERSION_STREAM_EVENTS,
     nullptr,
     &state_changed,
     nullptr,
@@ -392,16 +407,76 @@ static const pw_stream_events events = {
 
 } // namespace
 
+static bool parse_latency_ms(const char *value, uint32_t &latency_ms)
+{
+    if (!value || !*value)
+        return false;
+
+    char *end = nullptr;
+    errno = 0;
+    const unsigned long value_ms = std::strtoul(value, &end, 10);
+    if (errno != 0 || end == value || value_ms == 0 || value_ms > 600000)
+        return false;
+
+    if (*end == 'm' && end[1] == 's' && end[2] == '\0') {
+        latency_ms = static_cast<uint32_t>(value_ms);
+        return true;
+    }
+
+    if (*end == '\0') {
+        latency_ms = static_cast<uint32_t>(value_ms);
+        return true;
+    }
+
+    return false;
+}
+
+static void print_usage(const char *program)
+{
+    std::cerr
+        << "Usage: " << program << " [--latency=MS] <file.wav>\n"
+        << "       " << program << " [--latency MS] <file.wav>\n"
+        << "  --latency=MS   Requested PipeWire node latency (default: 100ms)\n";
+}
+
+} // namespace
+
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <file.wav>\n";
+    Player player;
+    const char *filename = nullptr;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg(argv[i]);
+        if (arg == "--latency") {
+            if (i + 1 >= argc || !parse_latency_ms(argv[++i], player.latency_ms)) {
+                print_usage(argv[0]);
+                return 2;
+            }
+            player.latency_explicit = true;
+        }
+        else if (arg.rfind("--latency=", 0) == 0) {
+            if (!parse_latency_ms(arg.c_str() + 10, player.latency_ms)) {
+                print_usage(argv[0]);
+                return 2;
+            }
+            player.latency_explicit = true;
+        }
+        else if (!filename) {
+            filename = argv[i];
+        }
+        else {
+            print_usage(argv[0]);
+            return 2;
+        }
+    }
+
+    if (!filename) {
+        print_usage(argv[0]);
         return 2;
     }
 
-    Player player;
-
-    if (!read_wav(argv[1], player.wav))
+    if (!read_wav(filename, player.wav))
         return 1;
 
     const size_t bytes_per_frame =
@@ -441,11 +516,22 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    const uint64_t latency_frames =
+        (static_cast<uint64_t>(player.wav.sample_rate) * player.latency_ms + 999) / 1000;
+    const std::string latency =
+        std::to_string(latency_frames) + "/" + std::to_string(player.wav.sample_rate);
+
+    std::cerr
+        << "[TEST] REQUEST LATENCY "
+        << player.latency_ms << " ms"
+        << " (" << latency_frames << " frames/" << player.wav.sample_rate << ")\n";
+
     pw_properties *props = pw_properties_new(
         PW_KEY_MEDIA_TYPE, "Audio",
         PW_KEY_MEDIA_CATEGORY, "Playback",
         PW_KEY_MEDIA_ROLE, "Music",
         PW_KEY_NODE_STREAM, "true",
+        PW_KEY_NODE_LATENCY, latency.c_str(),
         nullptr);
 
     player.stream = pw_stream_new_simple(
