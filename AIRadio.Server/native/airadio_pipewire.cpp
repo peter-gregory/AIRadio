@@ -36,7 +36,8 @@ constexpr size_t kFifoSeconds = 60;
 
 // Target PipeWire queue depth. Individual PipeWire buffers are variable-sized
 // and follow pw_buffer::requested; there is no artificial buffer-count limit.
-constexpr size_t kPipeWireTargetSeconds = 2;
+constexpr size_t kPipeWireTargetMilliseconds = 200;
+constexpr size_t kPipeWireFillMilliseconds = 100;
 
 class PipeWireBackend {
 public:
@@ -55,7 +56,8 @@ public:
         }
 
         fifo_capacity_frames_ = static_cast<size_t>(sample_rate_) * 60;
-        target_frames_ = static_cast<uint64_t>(sample_rate_) * 2;
+        target_frames_ = static_cast<uint64_t>(sample_rate_) * kPipeWireTargetMilliseconds / 1000;
+        fill_frames_ = static_cast<size_t>(sample_rate_) * kPipeWireFillMilliseconds / 1000;
         try { fifo_.resize(fifo_capacity_frames_ * bytes_per_frame_); }
         catch (...) { last_error_ = "Unable to allocate AIRadio PCM FIFO"; return -12; }
 
@@ -408,12 +410,15 @@ private:
         const size_t capacity = d->maxsize / bytes_per_frame_;
         if (!capacity) return false;
 
-        const size_t requested =
-            buffer->requested ? static_cast<size_t>(buffer->requested) : capacity;
+        const size_t requested = buffer->requested
+            ? static_cast<size_t>(buffer->requested) : 0;
 
         std::lock_guard<std::mutex> lock(fifo_mutex_);
+        // pw_buffer::requested is a resampler demand/suggestion for the current
+        // graph quantum, not a maximum buffer size. AIRadio deliberately fills
+        // larger chunks so the application worker does not wake every quantum.
         const size_t frames =
-            std::min({requested, capacity, fifo_available_locked()});
+            std::min({fill_frames_, capacity, fifo_available_locked()});
         if (!frames) return false;
 
         read_fifo_locked(static_cast<uint8_t *>(d->data), frames);
@@ -432,7 +437,7 @@ private:
         queued_frames_.fetch_add(frames);
         fifo_space_cv_.notify_all();
 
-        debug("QUEUE buffer=%p requested=%llu capacity=%zu frames=%zu queued=%llu buffers=%zu fifo=%zu",
+        debug("FILL buffer=%p requested=%llu capacity=%zu frames=%zu queued=%llu buffers=%zu fifo=%zu",
               static_cast<void *>(buffer),
               static_cast<unsigned long long>(buffer->requested),
               capacity, frames,
@@ -563,6 +568,7 @@ private:
     uint32_t sample_rate_, channels_, bits_, bytes_per_frame_;
     size_t fifo_capacity_frames_ = 0;
     uint64_t target_frames_ = 0;
+    size_t fill_frames_ = 0;
     std::vector<uint8_t> fifo_;
     uint64_t read_frame_ = 0, write_frame_ = 0;
     mutable std::mutex fifo_mutex_;
