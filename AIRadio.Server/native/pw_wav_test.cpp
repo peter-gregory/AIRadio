@@ -391,7 +391,7 @@ static void drained(void *userdata)
 }
 
 static const pw_stream_events events = {
-    .version = PW_VERSION_STREAM_EVENTS,
+    PW_VERSION_STREAM_EVENTS,
     nullptr,
     &state_changed,
     nullptr,
@@ -404,8 +404,6 @@ static const pw_stream_events events = {
     nullptr,
     nullptr
 };
-
-} // namespace
 
 static bool parse_latency_ms(const char *value, uint32_t &latency_ms)
 {
