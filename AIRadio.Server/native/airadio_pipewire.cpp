@@ -4,6 +4,7 @@
 #include <spa/param/param.h>
 #include <spa/param/audio/raw-utils.h>
 #include <spa/param/audio/raw-types.h>
+#include <spa/param/buffers.h>
 #include <spa/param/props.h>
 #include <spa/pod/builder.h>
 #include <algorithm>
@@ -18,18 +19,21 @@
 #include <vector>
 
 namespace {
-constexpr size_t kPipeWireBuffers = 8;
 constexpr size_t kPodBufferBytes = 1024;
+constexpr size_t kMinPipeWireBuffers = 2;
+constexpr size_t kMaxPipeWireBuffers = 4;
 
 // AIRadio audio is standardized as 16 kHz, 16-bit, mono PCM.
-// Audio is kept in fixed 100 ms blocks. The ring holds just over five
-// minutes of audio and never grows while playback is active.
+// PipeWire buffer size is negotiated and then used as the AIRadio ring block size.
+// Prefer about 400 ms while keeping the negotiated range below 500 ms so
+// two active buffers remain under one second for responsive cancellation.
 constexpr uint32_t kAIRadioSampleRate = 16000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
-constexpr size_t kBlockMilliseconds = 100;
-constexpr size_t kDataBlocks =
-    (300 * 1000) / kBlockMilliseconds;       // 3000 = 5 minutes
+constexpr size_t kPreferredBufferMilliseconds = 400;
+constexpr size_t kMinimumBufferMilliseconds = 200;
+constexpr size_t kMaximumBufferMilliseconds = 499;
+constexpr size_t kDataBlocks = 750;
 constexpr size_t kReserveBlocks = 2;
 constexpr size_t kRingBlocks = kDataBlocks + kReserveBlocks;
 
@@ -70,8 +74,8 @@ public:
           channels_(channels),
           bits_per_sample_(bits),
           bytes_per_frame_(channels * (bits / 8)),
-          block_frames_(rate / 10),
-          block_bytes_(block_frames_ * bytes_per_frame_),
+          block_frames_(0),
+          block_bytes_(0),
           blocks_(kRingBlocks),
           debug_enabled_(std::getenv("AIRADIO_PIPEWIRE_DEBUG") != nullptr) {}
 
@@ -87,23 +91,28 @@ public:
             return -22;
         }
 
-        debug("START source format: %u Hz, %u ch, %u-bit, %u bytes/frame, %u frames/block, %zu bytes/block",
-              sample_rate_, channels_, bits_per_sample_, bytes_per_frame_,
-              block_frames_, block_bytes_);
+        debug("START source format: %u Hz, %u ch, %u-bit, %u bytes/frame",
+              sample_rate_, channels_, bits_per_sample_, bytes_per_frame_);
 
-        try {
-            for (auto &block : blocks_)
-                block.data = std::make_unique<uint8_t[]>(block_bytes_);
-        } catch (...) {
-            last_error_ = "Unable to allocate AIRadio audio ring buffer";
-            return -12;
-        }
+        const uint32_t preferred_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kPreferredBufferMilliseconds) / 1000));
+        const uint32_t minimum_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kMinimumBufferMilliseconds) / 1000));
+        const uint32_t maximum_frames = static_cast<uint32_t>(((static_cast<uint64_t>(sample_rate_) * kMaximumBufferMilliseconds) / 1000));
+        const uint32_t preferred_bytes = preferred_frames * bytes_per_frame_;
+        const uint32_t minimum_bytes = minimum_frames * bytes_per_frame_;
+        const uint32_t maximum_bytes = maximum_frames * bytes_per_frame_;
+
+        debug("REQUEST buffers: preferred=%u frames (%zu ms), range=%u..%u frames, buffers=%zu..%zu",
+              preferred_frames, kPreferredBufferMilliseconds,
+              minimum_frames, maximum_frames,
+              kMinPipeWireBuffers, kMaxPipeWireBuffers);
 
         write_index_.store(0, std::memory_order_relaxed);
         submit_index_ = 0;
         tail_index_ = 0;
         head_fill_bytes_ = 0;
         pipewire_active_count_ = 0;
+        pipewire_buffer_count_ = 0;
+        max_active_buffers_ = kMinPipeWireBuffers;
         idle_buffer_ = nullptr;
         active_ = false;
         end_of_utterance_ = false;
@@ -123,7 +132,7 @@ public:
             return lr;
         }
 
-        std::string latency = std::to_string(block_frames_) + "/" +
+        std::string latency = std::to_string(preferred_frames) + "/" +
                               std::to_string(sample_rate_);
         pw_properties *props = pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio",
@@ -144,7 +153,7 @@ public:
             .control_info = nullptr,
             .io_changed = nullptr,
             .param_changed = &PipeWireBackend::on_param_changed,
-            .add_buffer = nullptr,
+            .add_buffer = &PipeWireBackend::on_add_buffer,
             .remove_buffer = nullptr,
             .process = &PipeWireBackend::on_process,
             .drained = &PipeWireBackend::on_drained,
@@ -165,10 +174,16 @@ public:
         spa_audio_info_raw info = SPA_AUDIO_INFO_RAW_INIT(
             .format = SPA_AUDIO_FORMAT_S16, .rate = sample_rate_,
             .channels = channels_);
-        const spa_pod *params[1] = {
-            spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info)
-        };
-        if (!params[0]) {
+        const spa_pod *params[2];
+        uint32_t n_params = 0;
+        params[n_params++] = spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info);
+        params[n_params++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+            SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMaxPipeWireBuffers)),
+            SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+            SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(preferred_bytes), static_cast<int>(minimum_bytes), static_cast<int>(maximum_bytes)),
+            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(static_cast<int>(bytes_per_frame_)),
+            SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(1 << SPA_DATA_MemPtr));
+        if (!params[0] || !params[1]) {
             pw_thread_loop_unlock(loop_);
             return -22;
         }
@@ -181,7 +196,7 @@ public:
                 PW_STREAM_FLAG_AUTOCONNECT |
                 PW_STREAM_FLAG_MAP_BUFFERS |
                 PW_STREAM_FLAG_INACTIVE),
-            params, 1);
+            params, n_params);
         if (result < 0) {
             last_error_ = "pw_stream_connect failed: " + std::to_string(result);
             pw_thread_loop_unlock(loop_);
@@ -197,7 +212,16 @@ public:
             return e;
         }
 
-        debug("STREAM connected; negotiated format is reported by param_changed");
+        if (!block_bytes_ || !block_frames_) {
+            last_error_ = "PipeWire did not provide a usable audio buffer";
+            pw_thread_loop_unlock(loop_);
+            return -22;
+        }
+
+        debug("STREAM connected; native buffer=%zu bytes, %u frames (%.1f ms), active limit=%zu buffers",
+              block_bytes_, block_frames_,
+              1000.0 * block_frames_ / sample_rate_,
+              max_active_buffers_);
         pw_thread_loop_unlock(loop_);
         pipewire_thread_ = std::thread([this] { pipewire_worker(); });
         completion_thread_ = std::thread([this] { completion_worker(); });
@@ -452,7 +476,7 @@ private:
                 }
 
                 if (idle_buffer_ &&
-                    pipewire_active_count_ < kPipeWireBuffers &&
+                    pipewire_active_count_ < max_active_buffers_ &&
                     any_ready()) {
                     pw_buffer *buffer = idle_buffer_;
                     idle_buffer_ = nullptr;
@@ -469,7 +493,7 @@ private:
                     const bool ready = any_ready();
                     const bool can_send =
                         idle_buffer_ &&
-                        pipewire_active_count_ < kPipeWireBuffers &&
+                        pipewire_active_count_ < max_active_buffers_ &&
                         ready;
 
                     if (can_send) {
@@ -629,6 +653,66 @@ private:
         }
     }
 
+    static void on_add_buffer(void *data, pw_buffer *buffer) {
+        auto *self = static_cast<PipeWireBackend *>(data);
+
+        if (!buffer || !buffer->buffer || !buffer->buffer->n_datas ||
+            !buffer->buffer->datas) {
+            self->connection_error_ = -5;
+            self->last_error_ = "PipeWire added an invalid audio buffer";
+            pw_thread_loop_signal(self->loop_, false);
+            return;
+        }
+
+        spa_data *d = &buffer->buffer->datas[0];
+        if (!d->data || !d->maxsize || !self->bytes_per_frame_) {
+            self->connection_error_ = -5;
+            self->last_error_ = "PipeWire added an unusable audio buffer";
+            pw_thread_loop_signal(self->loop_, false);
+            return;
+        }
+
+        const uint32_t native_bytes = d->maxsize - (d->maxsize % self->bytes_per_frame_);
+        if (!native_bytes) {
+            self->connection_error_ = -22;
+            self->last_error_ = "PipeWire audio buffer is smaller than one frame";
+            pw_thread_loop_signal(self->loop_, false);
+            return;
+        }
+
+        if (!self->block_bytes_) {
+            self->block_bytes_ = native_bytes;
+            self->block_frames_ = self->block_bytes_ / self->bytes_per_frame_;
+
+            try {
+                for (auto &block : self->blocks_)
+                    block.data = std::make_unique<uint8_t[]>(self->block_bytes_);
+            } catch (...) {
+                self->connection_error_ = -12;
+                self->last_error_ = "Unable to allocate AIRadio audio ring buffer";
+                pw_thread_loop_signal(self->loop_, false);
+                return;
+            }
+
+            const size_t under_one_second = self->sample_rate_ > 1 ? (self->sample_rate_ - 1) / self->block_frames_ : 0;
+            self->max_active_buffers_ = std::max(kMinPipeWireBuffers, under_one_second);
+
+            self->debug("ADD_BUFFER native size=%u -> ring block=%zu bytes, %u frames (%.1f ms), active limit=%zu",
+                        d->maxsize, self->block_bytes_, self->block_frames_,
+                        1000.0 * self->block_frames_ / self->sample_rate_,
+                        self->max_active_buffers_);
+        } else if (native_bytes != self->block_bytes_) {
+            self->connection_error_ = -22;
+            self->last_error_ = "PipeWire negotiated inconsistent audio buffer sizes";
+            self->debug("ADD_BUFFER size mismatch: first=%zu current=%u", self->block_bytes_, d->maxsize);
+            pw_thread_loop_signal(self->loop_, false);
+            return;
+        }
+
+        ++self->pipewire_buffer_count_;
+        self->debug("ADD_BUFFER count=%zu maxsize=%u", self->pipewire_buffer_count_, d->maxsize);
+    }
+
     static void on_param_changed(
         void *data, uint32_t id, const spa_pod *param) {
         auto *self = static_cast<PipeWireBackend *>(data);
@@ -748,6 +832,8 @@ private:
     size_t head_fill_bytes_ = 0;         // producer thread only
 
     size_t pipewire_active_count_ = 0;
+    size_t pipewire_buffer_count_ = 0;
+    size_t max_active_buffers_ = kMinPipeWireBuffers;
     pw_buffer *idle_buffer_ = nullptr;
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
