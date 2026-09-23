@@ -4,6 +4,7 @@
 #include <spa/pod/builder.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
