@@ -12,7 +12,6 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <semaphore>
 #include <string>
 #include <thread>
 #include <vector>
@@ -35,6 +34,32 @@ constexpr size_t kRingBlocks = kDataBlocks + kReserveBlocks;
 
 struct PcmBlock {
     std::unique_ptr<uint8_t[]> data;
+};
+
+
+class ManualResetEvent {
+public:
+    explicit ManualResetEvent(bool set = false)
+        : state_(set) {}
+
+    void set() noexcept {
+        state_.store(true, std::memory_order_release);
+        state_.notify_one();
+    }
+
+    void reset() noexcept {
+        state_.store(false, std::memory_order_release);
+    }
+
+    void wait() const noexcept {
+        bool expected = false;
+        while (!state_.load(std::memory_order_acquire)) {
+            state_.wait(expected, std::memory_order_relaxed);
+        }
+    }
+
+private:
+    std::atomic<bool> state_;
 };
 
 class PipeWireBackend {
@@ -78,8 +103,7 @@ public:
         end_of_utterance_ = false;
         cancelled_ = false;
         shutting_down_.store(false, std::memory_order_release);
-        producer_waiting_.store(false, std::memory_order_release);
-        while (space_event_.try_acquire()) {}
+        producer_gate_.set();
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -181,23 +205,12 @@ public:
                     return -16;
                 }
 
-                // A partial producer block already owns one ring slot, so
-                // it can always be completed. Only wait when a new block
-                // would reduce the free space to the final reserved block.
-                if (head_fill_bytes_ == 0 && free_blocks() <= 1) {
-                    // Event used for producer back-pressure. Unlike a mutex,
-                    // it can safely be signaled by the PipeWire thread.
-                    producer_waiting_.store(true, std::memory_order_release);
-
-                    // Re-check after publishing the waiting state to close
-                    // the race where PipeWire releases a buffer just before
-                    // the producer starts waiting.
-                    if (free_blocks() > 1) {
-                        producer_waiting_.store(false, std::memory_order_release);
-                    } else {
-                        space_event_.acquire();
-                        producer_waiting_.store(false, std::memory_order_release);
-                    }
+                // The gate is normally set. It is reset exactly when
+                // advancing the producer head leaves only the final reserved
+                // buffer. A blocked producer is released when PipeWire advances
+                // the tail and sets the gate again.
+                if (head_fill_bytes_ == 0) {
+                    producer_gate_.wait();
 
                     if (shutting_down_.load(std::memory_order_acquire) ||
                         end_of_utterance_ || cancelled_) {
@@ -221,6 +234,12 @@ public:
                         std::memory_order_relaxed));
                     write_index_.store(next, std::memory_order_release);
                     head_fill_bytes_ = 0;
+
+                    // Reset the producer gate as the head enters the final
+                    // reserved position. The producer cannot begin another
+                    // block until PipeWire releases one at the tail.
+                    if (free_blocks() <= 1)
+                        producer_gate_.reset();
                 }
             }
         }
@@ -248,6 +267,7 @@ public:
             // PipeWire. Already submitted blocks must remain untouched.
             write_index_.store(submit_index_, std::memory_order_release);
             head_fill_bytes_ = 0;
+            producer_gate_.set();
         } else if (head_fill_bytes_) {
             std::memset(
                 blocks_[write_index_.load(std::memory_order_relaxed)]
@@ -260,12 +280,14 @@ public:
             head_fill_bytes_ = 0;
         }
 
+        // Ending/cancelling releases the producer gate so it cannot remain
+        // closed across the next utterance.
+        producer_gate_.set();
+
         service_pipewire();
         maybe_complete();
         pw_thread_loop_unlock(loop_);
 
-        if (producer_waiting_.load(std::memory_order_acquire))
-            space_event_.release();
         return 0;
     }
 
@@ -320,8 +342,7 @@ public:
 
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
-        if (producer_waiting_.load(std::memory_order_acquire))
-            space_event_.release();
+        producer_gate_.set();
 
         if (loop_) {
             pw_thread_loop_lock(loop_);
@@ -471,9 +492,11 @@ private:
                 last_error_ = "PipeWire completed an unexpected PCM block";
                 queue_error_callback(-5, last_error_);
             } else {
+                // Moving the tail releases a complete ring slot and
+                // opens the producer gate. The gate remains set until the
+                // producer later advances the head into the reserved boundary.
                 tail_index_ = next_index(tail_index_);
-                if (producer_waiting_.load(std::memory_order_acquire))
-                    space_event_.release();
+                producer_gate_.set();
             }
         }
 
@@ -606,11 +629,10 @@ private:
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
-    // Binary event for producer back-pressure. The producer waits only
-    // when one buffer remains; PipeWire signals when a complete buffer is
-    // released.
-    std::binary_semaphore space_event_{0};
-    std::atomic<bool> producer_waiting_{false};
+    // Manual-reset atomic gate for producer back-pressure.
+    // SET means the producer may proceed. RESET means the ring is at its
+    // reserved boundary and the producer waits until PipeWire advances tail.
+    ManualResetEvent producer_gate_{true};
 
     std::thread completion_thread_;
     std::mutex completion_mutex_;
