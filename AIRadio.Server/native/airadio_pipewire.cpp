@@ -175,16 +175,15 @@ public:
         spa_audio_info_raw info = SPA_AUDIO_INFO_RAW_INIT(
             .format = SPA_AUDIO_FORMAT_S16, .rate = sample_rate_,
             .channels = channels_);
-        const spa_pod *params[2];
-        uint32_t n_params = 0;
-        params[n_params++] = spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info);
-        params[n_params++] = static_cast<const spa_pod *>(spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
-            SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMinPipeWireBuffers), static_cast<int>(kMaxPipeWireBuffers)),
-            SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
-            SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(preferred_bytes), static_cast<int>(minimum_bytes), static_cast<int>(maximum_bytes)),
-            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(static_cast<int>(bytes_per_frame_)),
-            SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(1 << SPA_DATA_MemPtr)));
-        if (!params[0] || !params[1]) {
+        // Let PipeWire negotiate the actual buffer layout. The standalone
+        // WAV test shows that the graph chooses a usable native buffer size;
+        // AIRadio uses that negotiated size as its ring block size in
+        // on_add_buffer(). Supplying our own SPA_PARAM_Buffers constraint here
+        // can prevent the graph from allocating any buffers at all.
+        const spa_pod *params[1] = {
+            spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info)
+        };
+        if (!params[0]) {
             pw_thread_loop_unlock(loop_);
             return -22;
         }
@@ -197,7 +196,7 @@ public:
                 PW_STREAM_FLAG_AUTOCONNECT |
                 PW_STREAM_FLAG_MAP_BUFFERS |
                 PW_STREAM_FLAG_INACTIVE),
-            params, n_params);
+            params, 1);
         if (result < 0) {
             last_error_ = "pw_stream_connect failed: " + std::to_string(result);
             pw_thread_loop_unlock(loop_);
