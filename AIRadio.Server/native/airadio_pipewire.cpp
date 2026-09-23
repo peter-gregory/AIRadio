@@ -87,7 +87,7 @@ public:
         if (sample_rate_ != kAIRadioSampleRate ||
             channels_ != kAIRadioChannels ||
             bits_per_sample_ != kAIRadioBits ||
-            !block_frames_ || !block_bytes_) {
+            !bytes_per_frame_) {
             last_error_ = "AIRadio PipeWire audio must be 16 kHz, 16-bit, mono";
             return -22;
         }
