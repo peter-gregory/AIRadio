@@ -124,6 +124,7 @@ public:
         head_fill_bytes_ = 0;
         max_active_buffers_ = kMinPipeWireBuffers;
         available_buffer_count_ = 0;
+        queued_buffer_count_ = 0;
         active_ = false;
         end_of_utterance_ = false;
         cancelled_ = false;
@@ -445,6 +446,7 @@ public:
                 stream_ = nullptr;
             }
             available_buffer_count_ = 0;
+            queued_buffer_count_ = 0;
             pw_thread_loop_unlock(loop_);
             pw_thread_loop_stop(loop_);
             pw_thread_loop_destroy(loop_);
@@ -604,17 +606,29 @@ private:
         outstanding_frames_.fetch_add(
             block_frames_, std::memory_order_release);
 
+        if (queued_buffer_count_ >= queued_buffers_.size()) {
+            active_index_.store(active, std::memory_order_release);
+            outstanding_frames_.fetch_sub(block_frames_, std::memory_order_acq_rel);
+            pw_stream_return_buffer(stream_, buffer);
+            queue_error_callback(-28, "PipeWire queued buffer tracking pool is full");
+            return;
+        }
+        queued_buffers_[queued_buffer_count_++] = buffer;
+
         debug("SUBMIT queued block=%zu buffer=%p size=%u frames=%u stride=%d",
               active, static_cast<void *>(buffer),
               d->chunk->size, buffer->size, d->chunk->stride);
 
         int r = pw_stream_queue_buffer(stream_, buffer);
         if (r < 0) {
+            if (queued_buffer_count_) {
+                --queued_buffer_count_;
+                queued_buffers_[queued_buffer_count_] = nullptr;
+            }
             active_index_.store(active, std::memory_order_release);
-
-            outstanding_frames_.fetch_sub(
-                block_frames_, std::memory_order_acq_rel);
-
+            outstanding_frames_.fetch_sub(block_frames_, std::memory_order_acq_rel);
+            if (available_buffer_count_ < available_buffers_.size())
+                available_buffers_[available_buffer_count_++] = buffer;
             queue_error_callback(r, "pw_stream_queue_buffer failed");
         }
     }
@@ -677,17 +691,40 @@ private:
               active_index_.load(std::memory_order_acquire),
               head_index_.load(std::memory_order_acquire));
 
-        if (active_before) {
+        // A process callback may return an initially available PipeWire buffer.
+        // Only a buffer that we previously queued represents completion of an
+        // AIRadio ring block.
+        size_t queued_index = queued_buffer_count_;
+        for (size_t i = 0; i < queued_buffer_count_; ++i) {
+            if (queued_buffers_[i] == buffer) {
+                queued_index = i;
+                break;
+            }
+        }
+
+        if (queued_index < queued_buffer_count_) {
+            queued_buffers_[queued_index] = queued_buffers_[queued_buffer_count_ - 1];
+            queued_buffers_[--queued_buffer_count_] = nullptr;
+
+            if (!active_before) {
+                queue_error_callback(-5, "PipeWire returned a queued buffer with no active AIRadio block");
+                return;
+            }
+
             tail_index_.store(
                 next_index(tail_index_.load(std::memory_order_relaxed)),
                 std::memory_order_release);
-            outstanding_frames_.fetch_sub(
-                block_frames_, std::memory_order_acq_rel);
+            outstanding_frames_.fetch_sub(block_frames_, std::memory_order_acq_rel);
             buffer_full_event_.set();
 
-            debug("PROCESS retired block; new tail=%zu active=%zu",
+            debug("PROCESS retired block; new tail=%zu active=%zu queued=%zu",
                   tail_index_.load(std::memory_order_acquire),
-                  active_count());
+                  active_count(), queued_buffer_count_);
+        } else {
+            debug("PROCESS available buffer=%p was not queued; tail unchanged=%zu active=%zu queued=%zu",
+                  static_cast<void *>(buffer),
+                  tail_index_.load(std::memory_order_acquire),
+                  active_count(), queued_buffer_count_);
         }
 
         // process() and the queue thread both run under the PipeWire thread
@@ -922,6 +959,11 @@ private:
     size_t max_active_buffers_ = kMinPipeWireBuffers;
     std::array<pw_buffer *, kMaxPipeWireBuffers> available_buffers_{};
     size_t available_buffer_count_ = 0;
+
+    // Buffers in this list have been queued to PipeWire. A returned buffer
+    // only retires an AIRadio ring block if it is found here.
+    std::array<pw_buffer *, kMaxPipeWireBuffers> queued_buffers_{};
+    size_t queued_buffer_count_ = 0;
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
 
