@@ -3,6 +3,7 @@
 #include <spa/buffer/buffer.h>
 #include <spa/param/param.h>
 #include <spa/param/audio/raw-utils.h>
+#include <spa/param/audio/raw-types.h>
 #include <spa/param/props.h>
 #include <spa/pod/builder.h>
 #include <algorithm>
@@ -137,11 +138,18 @@ public:
         }
 
         static const pw_stream_events events = {
-            PW_VERSION_STREAM_EVENTS, nullptr,
-            &PipeWireBackend::on_state_changed, nullptr, nullptr, nullptr,
-            &PipeWireBackend::on_param_changed,
-            nullptr, nullptr, &PipeWireBackend::on_process,
-            &PipeWireBackend::on_drained, nullptr, nullptr
+            PW_VERSION_STREAM_EVENTS,
+            .destroy = nullptr,
+            .state_changed = &PipeWireBackend::on_state_changed,
+            .control_info = nullptr,
+            .io_changed = nullptr,
+            .param_changed = &PipeWireBackend::on_param_changed,
+            .add_buffer = nullptr,
+            .remove_buffer = nullptr,
+            .process = &PipeWireBackend::on_process,
+            .drained = &PipeWireBackend::on_drained,
+            .command = nullptr,
+            .trigger_done = nullptr
         };
 
         stream_ = pw_stream_new_simple(
@@ -653,7 +661,7 @@ private:
                 "FORMAT WARNING: source=%u Hz/%u ch/S16 but PipeWire negotiated %u Hz/%u ch/%s",
                 self->sample_rate_, self->channels_,
                 info.rate, info.channels,
-                spa_debug_type_find_short(SPA_TYPE_AUDIO_FORMAT, info.format));
+                spa_type_audio_format_to_short_name(info.format));
         }
     }
 
