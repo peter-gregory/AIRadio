@@ -600,7 +600,12 @@ private:
         pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
         if (!buffer || !buffer->buffer) return;
 
+        // user_data is only valid while this PipeWire buffer is queued.
+        // Clear it immediately after dequeue so a buffer that is returned
+        // without being submitted cannot be mistaken for a second completion
+        // when PipeWire presents it again.
         auto *completed = static_cast<PcmBlock *>(buffer->user_data);
+        buffer->user_data = nullptr;
 
         // With MAP_BUFFERS, the graph supplies the mapped buffer through
         // dequeue_buffer() in process(). Establish AIRadio's fixed ring block
@@ -655,6 +660,8 @@ private:
               pipewire_active_count_, tail_index_, submit_index_);
 
         if (completed) {
+            // A non-null user_data means this buffer was previously queued by
+            // submit(), so this dequeue represents completion of that block.
             if (pipewire_active_count_)
                 --pipewire_active_count_;
 
