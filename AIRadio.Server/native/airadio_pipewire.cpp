@@ -430,6 +430,7 @@ private:
 
         queued_buffers_[buffer] = static_cast<uint32_t>(frames);
         queued_frames_.fetch_add(frames);
+        fifo_space_cv_.notify_all();
 
         debug("QUEUE buffer=%p requested=%llu capacity=%zu frames=%zu queued=%llu buffers=%zu fifo=%zu",
               static_cast<void *>(buffer),
