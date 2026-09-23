@@ -25,66 +25,19 @@
 #include <semaphore>
 
 namespace {
-constexpr size_t kPodBufferBytes = 1024;
-constexpr size_t kMinPipeWireBuffers = 2;
-constexpr size_t kMaxPipeWireBuffers = 4;
 
-// AIRadio audio is standardized as 16 kHz, 16-bit, mono PCM.
-// PipeWire buffer size is negotiated and then used as the AIRadio ring block size.
-// Prefer about 400 ms while keeping the negotiated range below 500 ms so
-// two active buffers remain under one second for responsive cancellation.
+constexpr size_t kPodBufferBytes = 1024;
 constexpr uint32_t kAIRadioSampleRate = 16000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
-constexpr size_t kPreferredBufferMilliseconds = 400;
-constexpr size_t kMinimumBufferMilliseconds = 200;
-constexpr size_t kMaximumBufferMilliseconds = 499;
-constexpr size_t kDataBlocks =
-    (300 * 1000) / kMinimumBufferMilliseconds;
-constexpr size_t kReserveBlocks = 2;
-constexpr size_t kRingBlocks = kDataBlocks + kReserveBlocks;
 
-struct PcmBlock {
-    std::unique_ptr<uint8_t[]> data;
-};
+// Application-owned PCM FIFO: 60 seconds at the AIRadio format.
+constexpr size_t kFifoSeconds = 60;
 
+// Target PipeWire queue depth. Individual PipeWire buffers are variable-sized
+// and follow pw_buffer::requested; there is no artificial buffer-count limit.
+constexpr size_t kPipeWireTargetSeconds = 2;
 
-class ManualResetEvent {
-public:
-    explicit ManualResetEvent(bool set = false)
-        : state_(set) {}
-
-    void set() noexcept {
-        state_.store(true, std::memory_order_release);
-        state_.notify_one();
-    }
-
-    void reset() noexcept {
-        state_.store(false, std::memory_order_release);
-    }
-
-    void wait() const noexcept {
-        bool expected = false;
-        while (!state_.load(std::memory_order_acquire)) {
-            state_.wait(expected, std::memory_order_relaxed);
-        }
-    }
-
-private:
-    std::atomic<bool> state_;
-};
-
-class AutoResetEvent {
-public:
-    explicit AutoResetEvent(bool set = false) : semaphore_(set ? 1 : 0) {}
-    void set() noexcept {
-        semaphore_.try_acquire();
-        semaphore_.release();
-    }
-    void wait() noexcept { semaphore_.acquire(); }
-private:
-    std::binary_semaphore semaphore_;
-};
 class PipeWireBackend {
 public:
     PipeWireBackend(uint32_t rate, uint32_t channels, uint32_t bits)
