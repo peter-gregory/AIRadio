@@ -10,7 +10,6 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -18,55 +17,66 @@
 #include <vector>
 
 namespace {
-constexpr size_t kInitialBlocks = 64;
 constexpr size_t kPipeWireBuffers = 8;
 constexpr size_t kPodBufferBytes = 1024;
 
-struct PcmBlock { std::unique_ptr<uint8_t[]> data; };
+// AIRadio audio is standardized as 16 kHz, 16-bit, mono PCM.
+// Audio is kept in fixed 100 ms blocks. The ring holds just over five
+// minutes of audio and never grows while playback is active.
+constexpr uint32_t kAIRadioSampleRate = 16000;
+constexpr uint32_t kAIRadioChannels = 1;
+constexpr uint32_t kAIRadioBits = 16;
+constexpr size_t kBlockMilliseconds = 100;
+constexpr size_t kDataBlocks =
+    (300 * 1000) / kBlockMilliseconds;       // 3000 = 5 minutes
+constexpr size_t kReserveBlocks = 2;
+constexpr size_t kRingBlocks = kDataBlocks + kReserveBlocks;
 
-struct Generation {
-    Generation(size_t capacity, size_t bytes) {
-        blocks.reserve(capacity);
-        for (size_t i = 0; i < capacity; ++i) {
-            auto b = std::make_unique<PcmBlock>();
-            b->data = std::make_unique<uint8_t[]>(bytes);
-            blocks.push_back(std::move(b));
-        }
-    }
-
-    std::vector<std::unique_ptr<PcmBlock>> blocks;
-
-    // Each generation is a ring with one slot permanently left empty.
-    // tail   = oldest block still owned by the queue/PipeWire.
-    // active = oldest block not yet submitted to PipeWire.
-    // head   = next block to be written by enqueue().
-    //
-    // The state of every block is therefore implicit:
-    //   tail -> active : submitted to PipeWire, awaiting completion
-    //   active -> head  : ready to submit
-    //   head -> tail    : free
-    //
-    // No full flag is required. A generation is full when next(head)==tail.
-    size_t head = 0;
-    size_t active = 0;
-    size_t tail = 0;
-    Generation *next = nullptr;
+struct PcmBlock {
+    std::unique_ptr<uint8_t[]> data;
 };
 
 class PipeWireBackend {
 public:
     PipeWireBackend(uint32_t rate, uint32_t channels, uint32_t bits)
-        : sample_rate_(rate), channels_(channels), bits_per_sample_(bits),
+        : sample_rate_(rate),
+          channels_(channels),
+          bits_per_sample_(bits),
           bytes_per_frame_(channels * (bits / 8)),
           block_frames_(rate / 10),
-          block_bytes_(block_frames_ * bytes_per_frame_) {}
+          block_bytes_(block_frames_ * bytes_per_frame_),
+          blocks_(kRingBlocks) {}
 
     ~PipeWireBackend() { destroy(); }
 
     int start() {
         if (started_) return 0;
-        if (!sample_rate_ || !channels_ || bits_per_sample_ != 16 ||
-            !block_frames_ || !block_bytes_) return -22;
+        if (sample_rate_ != kAIRadioSampleRate ||
+            channels_ != kAIRadioChannels ||
+            bits_per_sample_ != kAIRadioBits ||
+            !block_frames_ || !block_bytes_) {
+            last_error_ = "AIRadio PipeWire audio must be 16 kHz, 16-bit, mono";
+            return -22;
+        }
+
+        try {
+            for (auto &block : blocks_)
+                block.data = std::make_unique<uint8_t[]>(block_bytes_);
+        } catch (...) {
+            last_error_ = "Unable to allocate AIRadio audio ring buffer";
+            return -12;
+        }
+
+        write_index_.store(0, std::memory_order_relaxed);
+        submit_index_ = 0;
+        tail_index_ = 0;
+        head_fill_bytes_ = 0;
+        pipewire_active_count_ = 0;
+        idle_buffer_ = nullptr;
+        active_ = false;
+        end_of_utterance_ = false;
+        cancelled_ = false;
+        shutting_down_.store(false, std::memory_order_release);
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -74,7 +84,10 @@ public:
 
         pw_thread_loop_lock(loop_);
         int lr = pw_thread_loop_start(loop_);
-        if (lr < 0) { pw_thread_loop_unlock(loop_); return lr; }
+        if (lr < 0) {
+            pw_thread_loop_unlock(loop_);
+            return lr;
+        }
 
         std::string latency = std::to_string(block_frames_) + "/" +
                               std::to_string(sample_rate_);
@@ -85,7 +98,10 @@ public:
             PW_KEY_NODE_LATENCY, latency.c_str(),
             PW_KEY_NODE_MAX_LATENCY, latency.c_str(),
             PW_KEY_NODE_STREAM, "true", nullptr);
-        if (!props) { pw_thread_loop_unlock(loop_); return -12; }
+        if (!props) {
+            pw_thread_loop_unlock(loop_);
+            return -12;
+        }
 
         static const pw_stream_events events = {
             PW_VERSION_STREAM_EVENTS, nullptr,
@@ -97,7 +113,10 @@ public:
         stream_ = pw_stream_new_simple(
             pw_thread_loop_get_loop(loop_), "AIRadioAudioOutput",
             props, &events, this);
-        if (!stream_) { pw_thread_loop_unlock(loop_); return -12; }
+        if (!stream_) {
+            pw_thread_loop_unlock(loop_);
+            return -12;
+        }
 
         uint8_t pod[kPodBufferBytes];
         spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod, sizeof(pod));
@@ -107,7 +126,10 @@ public:
         const spa_pod *params[1] = {
             spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &info)
         };
-        if (!params[0]) { pw_thread_loop_unlock(loop_); return -22; }
+        if (!params[0]) {
+            pw_thread_loop_unlock(loop_);
+            return -22;
+        }
 
         connection_ready_ = false;
         connection_error_ = 0;
@@ -126,6 +148,7 @@ public:
 
         while (!connection_ready_ && !connection_error_)
             pw_thread_loop_wait(loop_);
+
         if (connection_error_ < 0) {
             int e = connection_error_;
             pw_thread_loop_unlock(loop_);
@@ -142,45 +165,57 @@ public:
         if (!started_ || !stream_ || !loop_) return -107;
         if (count && !segments) return -22;
 
-        pw_thread_loop_lock(loop_);
-        if (end_of_utterance_) {
-            pw_thread_loop_unlock(loop_);
-            return -16;
-        }
-
         for (size_t i = 0; i < count; ++i) {
             if (!segments[i].size) continue;
-            if (!segments[i].data) {
-                pw_thread_loop_unlock(loop_);
-                return -22;
-            }
+            if (!segments[i].data) return -22;
 
             const uint8_t *src = segments[i].data;
             size_t left = segments[i].size;
+
             while (left) {
-                if (!producer_) create_generation();
+                if (end_of_utterance_ || cancelled_ ||
+                    shutting_down_.load(std::memory_order_acquire)) {
+                    return -16;
+                }
+
+                // A partial producer block already owns one ring slot, so
+                // it can always be completed. Only wait when a new block
+                // would reduce the free space to the final reserved block.
+                if (head_fill_bytes_ == 0 && free_blocks() <= 1) {
+                    std::unique_lock<std::mutex> lock(space_mutex_);
+                    space_cv_.wait(lock, [this] {
+                        return shutting_down_.load(std::memory_order_acquire) ||
+                               end_of_utterance_ || cancelled_ ||
+                               free_blocks() > 1;
+                    });
+
+                    if (shutting_down_.load(std::memory_order_acquire) ||
+                        end_of_utterance_ || cancelled_) {
+                        return -16;
+                    }
+                }
 
                 size_t space = block_bytes_ - head_fill_bytes_;
                 size_t n = std::min(space, left);
-                std::memcpy(producer_->blocks[producer_->head]->data.get() +
-                                head_fill_bytes_, src, n);
+                std::memcpy(
+                    blocks_[write_index_.load(std::memory_order_relaxed)]
+                        .data.get() + head_fill_bytes_,
+                    src, n);
+
                 src += n;
                 left -= n;
                 head_fill_bytes_ += n;
 
                 if (head_fill_bytes_ == block_bytes_) {
-                    producer_->head = next(*producer_, producer_->head);
+                    size_t next = next_index(write_index_.load(
+                        std::memory_order_relaxed));
+                    write_index_.store(next, std::memory_order_release);
                     head_fill_bytes_ = 0;
-
-                    // Leave one slot empty. Once the producer reaches the
-                    // slot immediately before tail, this generation is full
-                    // and all subsequent samples go into a new generation.
-                    if (is_full(*producer_))
-                        create_generation();
                 }
             }
         }
 
+        pw_thread_loop_lock(loop_);
         service_pipewire();
         pw_thread_loop_unlock(loop_);
         return 0;
@@ -199,22 +234,27 @@ public:
         cancelled_ = cancel;
 
         if (cancel) {
-            discard_ready();
+            // Discard only blocks which have not yet been submitted to
+            // PipeWire. Already submitted blocks must remain untouched.
+            write_index_.store(submit_index_, std::memory_order_release);
             head_fill_bytes_ = 0;
         } else if (head_fill_bytes_) {
             std::memset(
-                producer_->blocks[producer_->head]->data.get() + head_fill_bytes_,
+                blocks_[write_index_.load(std::memory_order_relaxed)]
+                    .data.get() + head_fill_bytes_,
                 0, block_bytes_ - head_fill_bytes_);
-            producer_->head = next(*producer_, producer_->head);
-            head_fill_bytes_ = 0;
 
-            if (is_full(*producer_))
-                create_generation();
+            size_t next = next_index(write_index_.load(
+                std::memory_order_relaxed));
+            write_index_.store(next, std::memory_order_release);
+            head_fill_bytes_ = 0;
         }
 
         service_pipewire();
         maybe_complete();
         pw_thread_loop_unlock(loop_);
+
+        space_cv_.notify_all();
         return 0;
     }
 
@@ -223,16 +263,23 @@ public:
     int set_volume(float volume) {
         if (!started_ || !stream_ || !loop_) return -107;
         volume = std::clamp(volume, 0.0f, 1.0f);
+
         pw_thread_loop_lock(loop_);
-        int r = pw_stream_set_control(stream_, SPA_PROP_volume, 1, &volume, nullptr);
-        if (r >= 0) volume_.store(volume, std::memory_order_release);
-        else last_error_ = "pw_stream_set_control(volume) failed: " + std::to_string(r);
+        int r = pw_stream_set_control(
+            stream_, SPA_PROP_volume, 1, &volume, nullptr);
+        if (r >= 0)
+            volume_.store(volume, std::memory_order_release);
+        else
+            last_error_ = "pw_stream_set_control(volume) failed: " +
+                          std::to_string(r);
         pw_thread_loop_unlock(loop_);
         return r;
     }
 
     uint64_t queued_frames() const noexcept {
-        return queued_blocks() * block_frames_ +
+        size_t submit = submit_index_;
+        size_t write = write_index_.load(std::memory_order_acquire);
+        return distance(submit, write) * block_frames_ +
                head_fill_bytes_ / bytes_per_frame_;
     }
 
@@ -240,21 +287,30 @@ public:
         return outstanding_frames_.load(std::memory_order_acquire);
     }
 
-    float volume() const noexcept { return volume_.load(std::memory_order_acquire); }
+    float volume() const noexcept {
+        return volume_.load(std::memory_order_acquire);
+    }
 
     void set_playback_callback(AIRadioPlaybackCallback cb, void *ud) {
         std::lock_guard<std::mutex> l(callback_mutex_);
-        playback_callback_ = cb; playback_user_data_ = ud;
+        playback_callback_ = cb;
+        playback_user_data_ = ud;
     }
 
     void set_error_callback(AIRadioErrorCallback cb, void *ud) {
         std::lock_guard<std::mutex> l(callback_mutex_);
-        error_callback_ = cb; error_user_data_ = ud;
+        error_callback_ = cb;
+        error_user_data_ = ud;
     }
 
-    const char *last_error() const noexcept { return last_error_.c_str(); }
+    const char *last_error() const noexcept {
+        return last_error_.c_str();
+    }
 
     void destroy() {
+        shutting_down_.store(true, std::memory_order_release);
+        space_cv_.notify_all();
+
         if (loop_) {
             pw_thread_loop_lock(loop_);
             if (stream_) {
@@ -274,95 +330,39 @@ public:
             stop_completion_thread_ = true;
         }
         completion_cv_.notify_all();
-        if (completion_thread_.joinable()) completion_thread_.join();
+        if (completion_thread_.joinable())
+            completion_thread_.join();
 
-        generations_.clear();
-        producer_ = tail_generation_ = active_generation_ = nullptr;
+        blocks_.clear();
         started_ = false;
         pw_deinit();
     }
 
 private:
-    static size_t next(const Generation &g, size_t i) {
-        return (i + 1) % g.blocks.size();
+    size_t next_index(size_t index) const noexcept {
+        return (index + 1) % kRingBlocks;
     }
 
-    static bool is_empty(const Generation &g) noexcept {
-        return g.tail == g.head;
+    size_t distance(size_t from, size_t to) const noexcept {
+        return to >= from ? to - from : kRingBlocks - from + to;
     }
 
-    static bool is_full(const Generation &g) noexcept {
-        return next(g, g.head) == g.tail;
-    }
+    size_t free_blocks() const noexcept {
+        size_t tail = tail_index_;
+        size_t write = write_index_.load(std::memory_order_acquire);
+        size_t used = distance(tail, write);
 
-    static size_t distance(const Generation &g, size_t from, size_t to) noexcept {
-        return to >= from ? to - from : g.blocks.size() - from + to;
-    }
+        // write points at the current producer block. A partially filled
+        // block is occupied even though it has not been published yet.
+        if (head_fill_bytes_)
+            ++used;
 
-    static size_t queued(const Generation &g) noexcept {
-        return distance(g, g.tail, g.head);
-    }
-
-    static size_t outstanding(const Generation &g) noexcept {
-        return distance(g, g.tail, g.active);
-    }
-
-    static size_t ready(const Generation &g) noexcept {
-        return distance(g, g.active, g.head);
-    }
-
-    void create_generation() {
-        size_t capacity = generations_.empty()
-            ? kInitialBlocks
-            : generations_.back()->blocks.size() * 2;
-        auto g = std::make_unique<Generation>(capacity, block_bytes_);
-        Generation *raw = g.get();
-        if (!generations_.empty()) generations_.back()->next = raw;
-        generations_.push_back(std::move(g));
-        producer_ = raw;
-        if (!tail_generation_) tail_generation_ = raw;
-        if (!active_generation_) active_generation_ = raw;
-    }
-
-    void discard_ready() {
-        // Keep blocks already submitted to PipeWire. Discard everything
-        // from active through head in every generation. After this, the
-        // newest generation is the producer and has no ready data.
-        for (Generation *g = active_generation_; g; g = g->next) {
-            g->head = g->active;
-            if (g == producer_) break;
-        }
-        if (producer_)
-            producer_->head = producer_->active;
-    }
-
-    size_t queued_blocks() const noexcept {
-        size_t n = 0;
-        for (Generation *g = tail_generation_; g; g = g->next)
-            n += queued(*g) - outstanding(*g);
-        return n;
+        return kRingBlocks - used;
     }
 
     bool any_ready() const noexcept {
-        for (Generation *g = active_generation_; g; g = g->next)
-            if (ready(*g) != 0) return true;
-        return false;
-    }
-
-    Generation *find_ready_generation() {
-        for (Generation *g = active_generation_; g; g = g->next) {
-            if (ready(*g) != 0)
-                return g;
-        }
-        return nullptr;
-    }
-
-    Generation *find_outstanding_generation() {
-        for (Generation *g = tail_generation_; g; g = g->next) {
-            if (outstanding(*g) != 0)
-                return g;
-        }
-        return nullptr;
+        return submit_index_ !=
+               write_index_.load(std::memory_order_acquire);
     }
 
     void service_pipewire() {
@@ -371,14 +371,17 @@ private:
         if (any_ready() && !active_) {
             int r = pw_stream_set_active(stream_, true);
             if (r < 0) {
-                last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
+                last_error_ = "pw_stream_set_active failed: " +
+                              std::to_string(r);
                 queue_error_callback(r, last_error_);
                 return;
             }
             active_ = true;
         }
 
-        if (idle_buffer_ && pipewire_active_count_ < kPipeWireBuffers && any_ready()) {
+        if (idle_buffer_ &&
+            pipewire_active_count_ < kPipeWireBuffers &&
+            any_ready()) {
             pw_buffer *b = idle_buffer_;
             idle_buffer_ = nullptr;
             submit(b);
@@ -386,13 +389,14 @@ private:
     }
 
     void submit(pw_buffer *buffer) {
-        Generation *g = find_ready_generation();
-        if (!g) {
+        size_t write = write_index_.load(std::memory_order_acquire);
+        if (submit_index_ == write) {
             idle_buffer_ = buffer;
             return;
         }
 
         if (!buffer || !buffer->buffer) return;
+
         spa_buffer *sb = buffer->buffer;
         if (!sb->n_datas || !sb->datas) {
             pw_stream_return_buffer(stream_, buffer);
@@ -402,11 +406,12 @@ private:
         spa_data *d = &sb->datas[0];
         if (!d->data || !d->chunk || d->maxsize < block_bytes_) {
             pw_stream_return_buffer(stream_, buffer);
-            queue_error_callback(-5, "PipeWire buffer is smaller than a 100 ms PCM block");
+            queue_error_callback(
+                -5, "PipeWire buffer is smaller than a 100 ms PCM block");
             return;
         }
 
-        PcmBlock *block = g->blocks[g->active].get();
+        PcmBlock *block = &blocks_[submit_index_];
         std::memcpy(d->data, block->data.get(), block_bytes_);
         d->chunk->offset = 0;
         d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
@@ -414,19 +419,23 @@ private:
         buffer->size = block_frames_;
         buffer->user_data = block;
 
-        g->active = next(*g, g->active);
+        submit_index_ = next_index(submit_index_);
         ++pipewire_active_count_;
-        outstanding_frames_.fetch_add(block_frames_, std::memory_order_release);
+        outstanding_frames_.fetch_add(
+            block_frames_, std::memory_order_release);
 
         int r = pw_stream_queue_buffer(stream_, buffer);
         if (r < 0) {
-            // Restore active because the block was not accepted by PipeWire.
-            g->active = (g->active + g->blocks.size() - 1) % g->blocks.size();
+            submit_index_ = (submit_index_ + kRingBlocks - 1) %
+                            kRingBlocks;
             --pipewire_active_count_;
-            uint64_t current = outstanding_frames_.load(std::memory_order_relaxed);
+
+            uint64_t current =
+                outstanding_frames_.load(std::memory_order_relaxed);
             outstanding_frames_.store(
                 current >= block_frames_ ? current - block_frames_ : 0,
                 std::memory_order_release);
+
             queue_error_callback(r, "pw_stream_queue_buffer failed");
         }
     }
@@ -437,52 +446,31 @@ private:
 
         auto *completed = static_cast<PcmBlock *>(buffer->user_data);
         if (completed) {
-            if (pipewire_active_count_) --pipewire_active_count_;
-            uint64_t current = outstanding_frames_.load(std::memory_order_relaxed);
+            if (pipewire_active_count_)
+                --pipewire_active_count_;
+
+            uint64_t current =
+                outstanding_frames_.load(std::memory_order_relaxed);
             outstanding_frames_.store(
                 current >= block_frames_ ? current - block_frames_ : 0,
                 std::memory_order_release);
-            complete_tail(completed);
+
+            if (completed != &blocks_[tail_index_]) {
+                last_error_ = "PipeWire completed an unexpected PCM block";
+                queue_error_callback(-5, last_error_);
+            } else {
+                tail_index_ = next_index(tail_index_);
+                space_cv_.notify_one();
+            }
         }
 
         submit(buffer);
-        reclaim();
         maybe_complete();
     }
 
-    void complete_tail(PcmBlock *block) {
-        Generation *g = find_outstanding_generation();
-        if (!g) return;
-
-        // PipeWire returns buffers in playback order. The oldest generation
-        // with an outstanding block therefore owns the completed block.
-        PcmBlock *expected = g->blocks[g->tail].get();
-        if (block && block != expected) {
-            last_error_ = "PipeWire completed an unexpected PCM block";
-            queue_error_callback(-5, last_error_);
-            return;
-        }
-
-        g->tail = next(*g, g->tail);
-    }
-
-    void reclaim() {
-        while (generations_.size() > 1 && tail_generation_) {
-            if (!is_empty(*tail_generation_)) break;
-
-            Generation *old = tail_generation_;
-            tail_generation_ = old->next;
-            if (active_generation_ == old) active_generation_ = tail_generation_;
-            if (producer_ == old) producer_ = tail_generation_;
-            generations_.pop_front();
-        }
-    }
-
     bool unprocessed() const noexcept {
-        for (Generation *g = tail_generation_; g; g = g->next) {
-            if (!is_empty(*g)) return true;
-        }
-        return false;
+        return tail_index_ !=
+               write_index_.load(std::memory_order_acquire);
     }
 
     void maybe_complete() {
@@ -494,19 +482,26 @@ private:
             active_ = false;
         }
 
-        if (!completion_pending_.exchange(true, std::memory_order_acq_rel))
+        if (!completion_pending_.exchange(
+                true, std::memory_order_acq_rel)) {
             completion_cv_.notify_one();
+        }
     }
 
     static void on_state_changed(
-        void *data, pw_stream_state, pw_stream_state state, const char *error) {
+        void *data, pw_stream_state, pw_stream_state state,
+        const char *error) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
+
+        if (state == PW_STREAM_STATE_PAUSED ||
+            state == PW_STREAM_STATE_STREAMING) {
             self->connection_ready_ = true;
             pw_thread_loop_signal(self->loop_, false);
         } else if (state == PW_STREAM_STATE_ERROR) {
             self->connection_error_ = -5;
-            self->last_error_ = error ? error : "PipeWire stream entered an error state";
+            self->last_error_ = error
+                ? error
+                : "PipeWire stream entered an error state";
             self->queue_error_callback(-5, self->last_error_);
             pw_thread_loop_signal(self->loop_, false);
         }
@@ -523,18 +518,16 @@ private:
             std::unique_lock<std::mutex> l(completion_mutex_);
             completion_cv_.wait(l, [this] {
                 return stop_completion_thread_ ||
-                       completion_pending_.load(std::memory_order_acquire);
+                       completion_pending_.load(
+                           std::memory_order_acquire);
             });
-            if (stop_completion_thread_) return;
+
+            if (stop_completion_thread_)
+                return;
+
             completion_pending_.store(false, std::memory_order_release);
             l.unlock();
 
-            /*
-             * The completion callback marks the boundary between utterances.
-             * Reset the native end-of-utterance barrier before invoking the
-             * host callback so the host may immediately enqueue the next
-             * utterance from its completion handler.
-             */
             if (loop_) {
                 pw_thread_loop_lock(loop_);
                 end_of_utterance_ = false;
@@ -557,7 +550,8 @@ private:
         if (cb) cb(ud);
     }
 
-    void queue_error_callback(int code, const std::string &message) {
+    void queue_error_callback(
+        int code, const std::string &message) {
         AIRadioErrorCallback cb;
         void *ud;
         {
@@ -568,26 +562,46 @@ private:
         if (cb) cb(ud, code, message.c_str());
     }
 
-    uint32_t sample_rate_, channels_, bits_per_sample_, bytes_per_frame_, block_frames_;
+    uint32_t sample_rate_;
+    uint32_t channels_;
+    uint32_t bits_per_sample_;
+    uint32_t bytes_per_frame_;
+    uint32_t block_frames_;
     size_t block_bytes_;
-    std::deque<std::unique_ptr<Generation>> generations_;
-    Generation *producer_ = nullptr, *tail_generation_ = nullptr, *active_generation_ = nullptr;
-    size_t head_fill_bytes_ = 0;
+
+    // One fixed-size ring. There are no generations and no reallocations.
+    std::vector<PcmBlock> blocks_;
+    std::atomic<size_t> write_index_{0}; // producer publishes completed blocks
+    size_t submit_index_ = 0;            // PipeWire loop thread
+    size_t tail_index_ = 0;              // PipeWire loop thread
+    size_t head_fill_bytes_ = 0;         // producer thread only
+
     size_t pipewire_active_count_ = 0;
     pw_buffer *idle_buffer_ = nullptr;
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
-    bool started_ = false, active_ = false, end_of_utterance_ = false, cancelled_ = false;
+
+    bool started_ = false;
+    bool active_ = false;
+    bool end_of_utterance_ = false;
+    bool cancelled_ = false;
     bool connection_ready_ = false;
     int connection_error_ = 0;
+
+    std::atomic<bool> shutting_down_{false};
     std::atomic<uint64_t> outstanding_frames_{0};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
+
+    std::mutex space_mutex_;
+    std::condition_variable space_cv_;
+
     std::thread completion_thread_;
     std::mutex completion_mutex_;
     std::condition_variable completion_cv_;
     bool stop_completion_thread_ = false;
     std::atomic<bool> completion_pending_{false};
+
     std::mutex callback_mutex_;
     AIRadioPlaybackCallback playback_callback_ = nullptr;
     void *playback_user_data_ = nullptr;
@@ -603,102 +617,76 @@ struct AIRadioPipeWire {
 };
 
 extern "C" {
-AIRADIO_API AIRadioPipeWire *airadio_pw_create(uint32_t r, uint32_t c, uint32_t b) {
-    try { return new AIRadioPipeWire(r, c, b); } catch (...) { return nullptr; }
+AIRADIO_API AIRadioPipeWire *airadio_pw_create(
+    uint32_t r, uint32_t c, uint32_t b) {
+    try { return new AIRadioPipeWire(r, c, b); }
+    catch (...) { return nullptr; }
 }
-AIRADIO_API int airadio_pw_start(AIRadioPipeWire *c)
-{
-    if (!c)
-        return -22;
 
-    try
-    {
-        return c->backend.start();
-    }
-    catch (...)
-    {
-        return -5;
-    }
+AIRADIO_API int airadio_pw_start(AIRadioPipeWire *c) {
+    if (!c) return -22;
+    try { return c->backend.start(); }
+    catch (...) { return -5; }
 }
+
 AIRADIO_API int airadio_pw_enqueue(
     AIRadioPipeWire *c,
     const AIRadioPcmSegment *s,
-    size_t n)
-{
-    if (!c)
-        return -22;
-
-    try
-    {
-        return c->backend.enqueue(s, n);
-    }
-    catch (...)
-    {
-        return -5;
-    }
+    size_t n) {
+    if (!c) return -22;
+    try { return c->backend.enqueue(s, n); }
+    catch (...) { return -5; }
 }
-AIRADIO_API int airadio_pw_end_utterance(AIRadioPipeWire *c, int cancel)
-{
-    if (!c)
-        return -22;
 
-    try
-    {
-        return c->backend.end_utterance(cancel != 0);
-    }
-    catch (...)
-    {
-        return -5;
-    }
+AIRADIO_API int airadio_pw_end_utterance(
+    AIRadioPipeWire *c, int cancel) {
+    if (!c) return -22;
+    try { return c->backend.end_utterance(cancel != 0); }
+    catch (...) { return -5; }
 }
-AIRADIO_API int airadio_pw_clear(AIRadioPipeWire *c)
-{
-    if (!c)
-        return -22;
 
-    try
-    {
-        return c->backend.clear();
-    }
-    catch (...)
-    {
-        return -5;
-    }
+AIRADIO_API int airadio_pw_clear(AIRadioPipeWire *c) {
+    if (!c) return -22;
+    try { return c->backend.clear(); }
+    catch (...) { return -5; }
 }
-AIRADIO_API int airadio_pw_set_volume(AIRadioPipeWire *c, float v)
-{
-    if (!c)
-        return -22;
 
-    try
-    {
-        return c->backend.set_volume(v);
-    }
-    catch (...)
-    {
-        return -5;
-    }
+AIRADIO_API int airadio_pw_set_volume(
+    AIRadioPipeWire *c, float v) {
+    if (!c) return -22;
+    try { return c->backend.set_volume(v); }
+    catch (...) { return -5; }
 }
+
 AIRADIO_API float airadio_pw_get_volume(AIRadioPipeWire *c) {
     return c ? c->backend.volume() : 0.0f;
 }
-AIRADIO_API uint64_t airadio_pw_queued_frames(AIRadioPipeWire *c) {
+
+AIRADIO_API uint64_t airadio_pw_queued_frames(
+    AIRadioPipeWire *c) {
     return c ? c->backend.queued_frames() : 0;
 }
-AIRADIO_API uint64_t airadio_pw_outstanding_frames(AIRadioPipeWire *c) {
+
+AIRADIO_API uint64_t airadio_pw_outstanding_frames(
+    AIRadioPipeWire *c) {
     return c ? c->backend.outstanding_frames() : 0;
 }
+
 AIRADIO_API void airadio_pw_set_playback_complete_callback(
     AIRadioPipeWire *c, AIRadioPlaybackCallback cb, void *ud) {
     if (c) c->backend.set_playback_callback(cb, ud);
 }
+
 AIRADIO_API void airadio_pw_set_error_callback(
     AIRadioPipeWire *c, AIRadioErrorCallback cb, void *ud) {
     if (c) c->backend.set_error_callback(cb, ud);
 }
-AIRADIO_API const char *airadio_pw_last_error(AIRadioPipeWire *c) {
+
+AIRADIO_API const char *airadio_pw_last_error(
+    AIRadioPipeWire *c) {
     return c ? c->backend.last_error() : "invalid context";
 }
+
 AIRADIO_API void airadio_pw_destroy(AIRadioPipeWire *c) {
     delete c;
 }
