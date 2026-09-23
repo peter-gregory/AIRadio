@@ -183,7 +183,7 @@ public:
             SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
             SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_RANGE_Int(static_cast<int>(preferred_bytes), static_cast<int>(minimum_bytes), static_cast<int>(maximum_bytes)),
             SPA_PARAM_BUFFERS_stride, SPA_POD_Int(static_cast<int>(bytes_per_frame_)),
-            SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(1 << SPA_DATA_MemPtr));
+            SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(1 << SPA_DATA_MemPtr)));
         if (!params[0] || !params[1]) {
             pw_thread_loop_unlock(loop_);
             return -22;
