@@ -104,6 +104,7 @@ public:
         cancelled_ = false;
         shutting_down_.store(false, std::memory_order_release);
         producer_gate_.set();
+        pipewire_work_event_.reset();
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -183,6 +184,7 @@ public:
         }
 
         pw_thread_loop_unlock(loop_);
+        pipewire_thread_ = std::thread([this] { pipewire_worker(); });
         completion_thread_ = std::thread([this] { completion_worker(); });
         started_ = true;
         return 0;
@@ -252,9 +254,7 @@ public:
             }
         }
 
-        pw_thread_loop_lock(loop_);
-        service_pipewire();
-        pw_thread_loop_unlock(loop_);
+        pipewire_work_event_.set();
         return 0;
     }
 
@@ -293,7 +293,7 @@ public:
         // closed across the next utterance.
         producer_gate_.set();
 
-        service_pipewire();
+        pipewire_work_event_.set();
         maybe_complete();
         pw_thread_loop_unlock(loop_);
 
@@ -352,6 +352,19 @@ public:
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
         producer_gate_.set();
+        pipewire_work_event_.set();
+
+        {
+            std::lock_guard<std::mutex> l(completion_mutex_);
+            stop_completion_thread_ = true;
+        }
+        completion_cv_.notify_all();
+
+        if (pipewire_thread_.joinable())
+            pipewire_thread_.join();
+
+        if (completion_thread_.joinable())
+            completion_thread_.join();
 
         if (loop_) {
             pw_thread_loop_lock(loop_);
@@ -366,14 +379,6 @@ public:
             pw_thread_loop_destroy(loop_);
             loop_ = nullptr;
         }
-
-        {
-            std::lock_guard<std::mutex> l(completion_mutex_);
-            stop_completion_thread_ = true;
-        }
-        completion_cv_.notify_all();
-        if (completion_thread_.joinable())
-            completion_thread_.join();
 
         blocks_.clear();
         started_ = false;
@@ -407,26 +412,62 @@ private:
                write_index_.load(std::memory_order_acquire);
     }
 
-    void service_pipewire() {
-        if (!stream_) return;
+    void pipewire_worker() {
+        for (;;) {
+            pipewire_work_event_.wait();
 
-        if (any_ready() && !active_) {
-            int r = pw_stream_set_active(stream_, true);
-            if (r < 0) {
-                last_error_ = "pw_stream_set_active failed: " +
-                              std::to_string(r);
-                queue_error_callback(r, last_error_);
+            if (shutting_down_.load(std::memory_order_acquire))
                 return;
-            }
-            active_ = true;
-        }
 
-        if (idle_buffer_ &&
-            pipewire_active_count_ < kPipeWireBuffers &&
-            any_ready()) {
-            pw_buffer *b = idle_buffer_;
-            idle_buffer_ = nullptr;
-            submit(b);
+            pw_thread_loop_lock(loop_);
+
+            for (;;) {
+                if (shutting_down_.load(std::memory_order_acquire))
+                    break;
+
+                if (any_ready() && !active_) {
+                    int r = pw_stream_set_active(stream_, true);
+                    if (r < 0) {
+                        last_error_ = "pw_stream_set_active failed: " +
+                                      std::to_string(r);
+                        queue_error_callback(r, last_error_);
+                        break;
+                    }
+                    active_ = true;
+                }
+
+                if (idle_buffer_ &&
+                    pipewire_active_count_ < kPipeWireBuffers &&
+                    any_ready()) {
+                    pw_buffer *buffer = idle_buffer_;
+                    idle_buffer_ = nullptr;
+                    submit(buffer);
+                    continue;
+                }
+
+                // No immediate work remains. Reset the event while holding
+                // ring_mutex_ so a producer cannot publish a new block
+                // between the state check and the reset.
+                {
+                    std::lock_guard<std::mutex> ring_lock(ring_mutex_);
+
+                    const bool ready = any_ready();
+                    const bool can_send =
+                        idle_buffer_ &&
+                        pipewire_active_count_ < kPipeWireBuffers &&
+                        ready;
+
+                    if (can_send) {
+                        pipewire_work_event_.set();
+                        continue;
+                    }
+
+                    pipewire_work_event_.reset();
+                }
+                break;
+            }
+
+            pw_thread_loop_unlock(loop_);
         }
     }
 
@@ -509,7 +550,11 @@ private:
             }
         }
 
-        submit(buffer);
+        // The PipeWire buffer is now available to the dedicated send worker.
+        // Do not queue it from the process callback.
+        idle_buffer_ = buffer;
+        pipewire_work_event_.set();
+
         maybe_complete();
     }
 
@@ -647,6 +692,11 @@ private:
     // reserved boundary and the producer waits until PipeWire advances tail.
     ManualResetEvent producer_gate_{true};
 
+    // SET means the PipeWire worker has work to inspect. RESET means there
+    // is currently no ring data and no released PipeWire buffer to process.
+    ManualResetEvent pipewire_work_event_{false};
+
+    std::thread pipewire_thread_;
     std::thread completion_thread_;
     std::mutex completion_mutex_;
     std::condition_variable completion_cv_;
