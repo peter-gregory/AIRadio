@@ -208,12 +208,6 @@ public:
             return e;
         }
 
-        if (!block_bytes_ || !block_frames_) {
-            last_error_ = "PipeWire did not provide a usable audio buffer";
-            pw_thread_loop_unlock(loop_);
-            return -22;
-        }
-
         // This stream does not report usable mapped buffers through
         // add_buffer on this PipeWire graph. Activate it so the process
         // callback can dequeue the first mapped buffer and establish the
@@ -632,33 +626,6 @@ private:
                   max_active_buffers_);
         }
 
-        if (completed) {
-            if (completed != &blocks_[tail_index_]) {
-                last_error_ = "PipeWire completed an unexpected PCM block";
-                queue_error_callback(-5, last_error_);
-            } else {
-                if (pipewire_active_count_)
-                    --pipewire_active_count_;
-                uint64_t current = outstanding_frames_.load(std::memory_order_relaxed);
-                outstanding_frames_.store(current >= block_frames_ ? current - block_frames_ : 0,
-                                           std::memory_order_release);
-                std::lock_guard<std::mutex> ring_lock(ring_mutex_);
-                tail_index_ = next_index(tail_index_);
-                producer_gate_.set();
-                debug("PROCESS retired block; new tail=%zu active=%zu",
-                      tail_index_, pipewire_active_count_);
-            }
-        }
-
-        if (!completed && idle_buffer_) {
-            // We already have a released buffer waiting for the worker.
-            // Return the extra dequeued buffer rather than overwrite it.
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
-        if (!completed)
-            idle_buffer_ = buffer;
-
         debug("PROCESS buffer=%p user_data=%p active_before=%zu tail=%zu submit=%zu",
               static_cast<void *>(buffer), static_cast<void *>(completed),
               pipewire_active_count_, tail_index_, submit_index_);
@@ -689,6 +656,10 @@ private:
 
         // The PipeWire buffer is now available to the dedicated send worker.
         // Do not queue it from the process callback.
+        if (idle_buffer_) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
         idle_buffer_ = buffer;
         pipewire_work_event_.set();
 
