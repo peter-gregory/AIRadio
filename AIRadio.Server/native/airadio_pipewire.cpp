@@ -643,7 +643,7 @@ private:
 
         self->debug(
             "FORMAT negotiated: format=%s rate=%u channels=%u",
-            spa_debug_type_find_short(SPA_TYPE_AUDIO_FORMAT, info.format),
+            spa_type_audio_format_to_short_name(info.format),
             info.rate, info.channels);
 
         if (info.rate != self->sample_rate_ ||
