@@ -208,16 +208,39 @@ public:
             return e;
         }
 
-        // The mapped buffers are available through add_buffer() on the
-        // current PipeWire graph. Keep the stream inactive until there is
-        // actual AIRadio audio to submit. Activating an empty output stream
-        // here causes PipeWire to repeatedly invoke process() with no audio
-        // queued, creating a busy loop.
+        // This PipeWire graph does not deliver add_buffer() callbacks for
+        // MAP_BUFFERS, so discover the native buffer from the first process
+        // callback. Activate the stream only long enough to obtain that
+        // buffer, then immediately return it and deactivate the stream.
+        // This avoids both the startup deadlock (waiting for add_buffer)
+        // and the idle process busy-loop caused by leaving an empty stream
+        // active.
+        int activate_result = pw_stream_set_active(stream_, true);
+        if (activate_result < 0) {
+            last_error_ = "pw_stream_set_active failed during buffer discovery: " +
+                          std::to_string(activate_result);
+            pw_thread_loop_unlock(loop_);
+            return activate_result;
+        }
+
+        while (!block_bytes_ && !connection_error_)
+            pw_thread_loop_wait(loop_);
+
+        if (connection_error_ < 0) {
+            int e = connection_error_;
+            pw_thread_loop_unlock(loop_);
+            return e;
+        }
+
         if (!block_bytes_ || !block_frames_) {
             last_error_ = "PipeWire did not provide a usable audio buffer";
+            pw_stream_set_active(stream_, false);
             pw_thread_loop_unlock(loop_);
             return -22;
         }
+
+        pw_stream_set_active(stream_, false);
+        active_ = false;
 
         debug("STREAM connected; native buffer=%zu bytes, %u frames (%.1f ms), active limit=%zu buffers",
               block_bytes_, block_frames_,
@@ -614,6 +637,17 @@ private:
                   d->maxsize, block_bytes_, block_frames_,
                   1000.0 * block_frames_ / sample_rate_,
                   max_active_buffers_);
+
+            // During startup, this first process callback exists only to
+            // discover the native buffer size. Return the buffer immediately
+            // and deactivate the stream; do not leave it as idle_buffer_.
+            // Normal process callbacks happen only after the worker has
+            // activated the stream for actual audio.
+            pw_stream_return_buffer(stream_, buffer);
+            pw_stream_set_active(stream_, false);
+            active_ = false;
+            pw_thread_loop_signal(loop_, false);
+            return;
         }
 
         debug("PROCESS buffer=%p user_data=%p active_before=%zu tail=%zu submit=%zu",
