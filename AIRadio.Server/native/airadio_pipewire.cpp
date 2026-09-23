@@ -16,6 +16,10 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <array>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 #include <semaphore>
 
 namespace {
@@ -114,20 +118,19 @@ public:
               minimum_frames, maximum_frames,
               kMinPipeWireBuffers, kMaxPipeWireBuffers);
 
-        write_index_.store(0, std::memory_order_relaxed);
-        submit_index_ = 0;
-        tail_index_ = 0;
+        head_index_.store(0, std::memory_order_relaxed);
+        active_index_.store(0, std::memory_order_relaxed);
+        tail_index_.store(0, std::memory_order_relaxed);
         head_fill_bytes_ = 0;
-        pipewire_active_count_ = 0;
-        pipewire_buffer_count_ = 0;
         max_active_buffers_ = kMinPipeWireBuffers;
-        idle_buffer_ = nullptr;
+        available_buffers_.clear();
+        available_buffer_count_ = 0;
         active_ = false;
         end_of_utterance_ = false;
         cancelled_ = false;
         shutting_down_.store(false, std::memory_order_release);
-        producer_gate_.set();
-        pipewire_work_event_.reset();
+        buffer_full_event_.set();
+        buffer_ready_event_.reset();
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -284,15 +287,17 @@ public:
                 // Never wait while holding ring_mutex_: PipeWire must be
                 // able to advance the tail and reopen the producer gate.
                 if (head_fill_bytes_ == 0)
-                    producer_gate_.wait();
+                    buffer_full_event_.wait();
 
                 std::unique_lock<std::mutex> ring_lock(ring_mutex_);
 
                 // The gate may have been reset after the wait but before the
                 // producer acquired the mutex. Recheck the protected state.
-                if (head_fill_bytes_ == 0 && free_blocks() <= 1) {
+                if (head_fill_bytes_ == 0 &&
+                    next_index(head_index_.load(std::memory_order_relaxed)) ==
+                        tail_index_.load(std::memory_order_acquire)) {
                     ring_lock.unlock();
-                    producer_gate_.wait();
+                    buffer_full_event_.wait();
                     continue;
                 }
 
@@ -304,7 +309,7 @@ public:
                 size_t space = block_bytes_ - head_fill_bytes_;
                 size_t n = std::min(space, left);
                 std::memcpy(
-                    blocks_[write_index_.load(std::memory_order_relaxed)]
+                    blocks_[head_index_.load(std::memory_order_relaxed)]
                         .data.get() + head_fill_bytes_,
                     src, n);
 
@@ -313,22 +318,20 @@ public:
                 head_fill_bytes_ += n;
 
                 if (head_fill_bytes_ == block_bytes_) {
-                    size_t next = next_index(write_index_.load(
-                        std::memory_order_relaxed));
-                    write_index_.store(next, std::memory_order_release);
+                    size_t next = next_index(head_index_.load(std::memory_order_relaxed));
+                    head_index_.store(next, std::memory_order_release);
                     head_fill_bytes_ = 0;
 
-                    // Head advancement and gate reset are one protected state
-                    // transition with respect to the PipeWire tail.
-                    if (free_blocks() <= 1)
-                        producer_gate_.reset();
+                    if (next_index(next) == tail_index_.load(std::memory_order_acquire))
+                        buffer_full_event_.reset();
                     else
-                        producer_gate_.set();
+                        buffer_full_event_.set();
+
+                    buffer_ready_event_.set();
                 }
             }
         }
 
-        pipewire_work_event_.set();
         return 0;
     }
 
@@ -348,26 +351,24 @@ public:
         if (cancel) {
             // Discard only blocks which have not yet been submitted to
             // PipeWire. Already submitted blocks must remain untouched.
-            write_index_.store(submit_index_, std::memory_order_release);
+            head_index_.store(active_index_.load(std::memory_order_acquire), std::memory_order_release);
             head_fill_bytes_ = 0;
-            producer_gate_.set();
+            buffer_full_event_.set();
         } else if (head_fill_bytes_) {
             std::memset(
-                blocks_[write_index_.load(std::memory_order_relaxed)]
+                blocks_[head_index_.load(std::memory_order_relaxed)]
                     .data.get() + head_fill_bytes_,
                 0, block_bytes_ - head_fill_bytes_);
 
-            size_t next = next_index(write_index_.load(
-                std::memory_order_relaxed));
-            write_index_.store(next, std::memory_order_release);
+            size_t next = next_index(head_index_.load(std::memory_order_relaxed));
+            head_index_.store(next, std::memory_order_release);
             head_fill_bytes_ = 0;
         }
 
         // Ending/cancelling releases the producer gate so it cannot remain
         // closed across the next utterance.
-        producer_gate_.set();
-
-        pipewire_work_event_.set();
+        buffer_full_event_.set();
+        buffer_ready_event_.set();
         maybe_complete();
         pw_thread_loop_unlock(loop_);
 
@@ -393,9 +394,9 @@ public:
     }
 
     uint64_t queued_frames() const noexcept {
-        size_t submit = submit_index_;
-        size_t write = write_index_.load(std::memory_order_acquire);
-        return distance(submit, write) * block_frames_ +
+        size_t active = active_index_.load(std::memory_order_acquire);
+        size_t head = head_index_.load(std::memory_order_acquire);
+        return distance(active, head) * block_frames_ +
                head_fill_bytes_ / bytes_per_frame_;
     }
 
@@ -425,8 +426,8 @@ public:
 
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
-        producer_gate_.set();
-        pipewire_work_event_.set();
+        buffer_full_event_.set();
+        buffer_ready_event_.set();
 
         stop_completion_thread_.store(true, std::memory_order_release);
         completion_event_.set();
@@ -444,7 +445,8 @@ public:
                 pw_stream_destroy(stream_);
                 stream_ = nullptr;
             }
-            idle_buffer_ = nullptr;
+            available_buffers_.clear();
+            available_buffer_count_ = 0;
             pw_thread_loop_unlock(loop_);
             pw_thread_loop_stop(loop_);
             pw_thread_loop_destroy(loop_);
@@ -466,27 +468,28 @@ private:
     }
 
     size_t free_blocks() const noexcept {
-        size_t tail = tail_index_;
-        size_t write = write_index_.load(std::memory_order_acquire);
-        size_t used = distance(tail, write);
-
-        // write points at the current producer block. A partially filled
-        // block is occupied even though it has not been published yet.
+        size_t tail = tail_index_.load(std::memory_order_acquire);
+        size_t head = head_index_.load(std::memory_order_acquire);
+        size_t used = distance(tail, head);
         if (head_fill_bytes_)
             ++used;
-
         return kRingBlocks - used;
     }
 
     bool any_ready() const noexcept {
-        return submit_index_ !=
-               write_index_.load(std::memory_order_acquire);
+        return active_index_.load(std::memory_order_acquire) !=
+               head_index_.load(std::memory_order_acquire);
+    }
+
+    size_t active_count() const noexcept {
+        return distance(
+            tail_index_.load(std::memory_order_acquire),
+            active_index_.load(std::memory_order_acquire));
     }
 
     void pipewire_worker() {
         for (;;) {
-            pipewire_work_event_.wait();
-
+            buffer_ready_event_.wait();
             if (shutting_down_.load(std::memory_order_acquire))
                 return;
 
@@ -495,17 +498,6 @@ private:
             for (;;) {
                 if (shutting_down_.load(std::memory_order_acquire))
                     break;
-
-                if (completion_pending_.load(std::memory_order_acquire) &&
-                    pipewire_active_count_ == 0 && !any_ready()) {
-                    if (active_) {
-                        pw_stream_set_active(stream_, false);
-                        active_ = false;
-                    }
-                    end_of_utterance_ = false;
-                    cancelled_ = false;
-                    completion_pending_.store(false, std::memory_order_release);
-                }
 
                 if (any_ready() && !active_) {
                     int r = pw_stream_set_active(stream_, true);
@@ -518,33 +510,49 @@ private:
                     active_ = true;
                 }
 
-                if (idle_buffer_ &&
-                    pipewire_active_count_ < max_active_buffers_ &&
-                    any_ready()) {
-                    pw_buffer *buffer = idle_buffer_;
-                    idle_buffer_ = nullptr;
+                while (any_ready() &&
+                       active_count() < max_active_buffers_ &&
+                       available_buffer_count_) {
+                    pw_buffer *buffer =
+                        available_buffers_[--available_buffer_count_];
                     submit(buffer);
-                    continue;
                 }
 
-                // No immediate work remains. Reset the event while holding
-                // ring_mutex_ so a producer cannot publish a new block
-                // between the state check and the reset.
+                const bool ready = any_ready();
+
+                if (end_of_utterance_ && !ready && active_count() == 0 &&
+                    completion_pending_.load(std::memory_order_acquire)) {
+                    if (active_) {
+                        pw_stream_set_active(stream_, false);
+                        active_ = false;
+                    }
+                }
+
+                const bool can_submit =
+                    ready &&
+                    active_count() < max_active_buffers_ &&
+                    available_buffer_count_;
+
+                if (can_submit)
+                    continue;
+
+                // Producer publication and this reset are serialized by
+                // ring_mutex_, preventing a ready notification from being
+                // lost between the predicate check and reset.
                 {
                     std::lock_guard<std::mutex> ring_lock(ring_mutex_);
-
-                    const bool ready = any_ready();
+                    const bool still_ready = any_ready();
                     const bool can_send =
-                        idle_buffer_ &&
-                        pipewire_active_count_ < max_active_buffers_ &&
-                        ready;
+                        still_ready &&
+                        active_count() < max_active_buffers_ &&
+                        available_buffer_count_;
 
                     if (can_send) {
-                        pipewire_work_event_.set();
+                        buffer_ready_event_.set();
                         continue;
                     }
 
-                    pipewire_work_event_.reset();
+                    buffer_ready_event_.reset();
                 }
                 break;
             }
@@ -554,13 +562,18 @@ private:
     }
 
     void submit(pw_buffer *buffer) {
-        size_t write = write_index_.load(std::memory_order_acquire);
-        if (submit_index_ == write) {
-            idle_buffer_ = buffer;
+        const size_t head = head_index_.load(std::memory_order_acquire);
+        const size_t active =
+            active_index_.load(std::memory_order_acquire);
+
+        if (active == head) {
+            if (available_buffer_count_ < available_buffers_.size())
+                available_buffers_[available_buffer_count_++] = buffer;
             return;
         }
 
-        if (!buffer || !buffer->buffer) return;
+        if (!buffer || !buffer->buffer)
+            return;
 
         spa_buffer *sb = buffer->buffer;
         if (!sb->n_datas || !sb->datas) {
@@ -576,40 +589,33 @@ private:
             return;
         }
 
-        PcmBlock *block = &blocks_[submit_index_];
+        PcmBlock *block = &blocks_[active];
 
-        debug("SUBMIT block=%zu write=%zu tail=%zu buffer=%p maxsize=%u requested=%u pre_chunk(size=%u offset=%u stride=%d)",
-              submit_index_, write, tail_index_, static_cast<void *>(buffer),
-              d->maxsize, buffer->requested, d->chunk->size,
-              d->chunk->offset, d->chunk->stride);
+        debug("SUBMIT block=%zu head=%zu tail=%zu buffer=%p maxsize=%u requested=%u pre_chunk(size=%u offset=%u stride=%d)",
+              active, head, tail_index_.load(std::memory_order_acquire),
+              static_cast<void *>(buffer), d->maxsize, buffer->requested,
+              d->chunk->size, d->chunk->offset, d->chunk->stride);
 
         std::memcpy(d->data, block->data.get(), block_bytes_);
         d->chunk->offset = 0;
         d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
         d->chunk->size = static_cast<uint32_t>(block_bytes_);
         buffer->size = block_frames_;
-        buffer->user_data = block;
 
-        debug("SUBMIT queued block=%zu buffer=%p size=%u frames=%u stride=%d",
-              submit_index_, static_cast<void *>(buffer),
-              d->chunk->size, buffer->size, d->chunk->stride);
-
-        submit_index_ = next_index(submit_index_);
-        ++pipewire_active_count_;
+        active_index_.store(next_index(active), std::memory_order_release);
         outstanding_frames_.fetch_add(
             block_frames_, std::memory_order_release);
 
+        debug("SUBMIT queued block=%zu buffer=%p size=%u frames=%u stride=%d",
+              active, static_cast<void *>(buffer),
+              d->chunk->size, buffer->size, d->chunk->stride);
+
         int r = pw_stream_queue_buffer(stream_, buffer);
         if (r < 0) {
-            submit_index_ = (submit_index_ + kRingBlocks - 1) %
-                            kRingBlocks;
-            --pipewire_active_count_;
+            active_index_.store(active, std::memory_order_release);
 
-            uint64_t current =
-                outstanding_frames_.load(std::memory_order_relaxed);
-            outstanding_frames_.store(
-                current >= block_frames_ ? current - block_frames_ : 0,
-                std::memory_order_release);
+            outstanding_frames_.fetch_sub(
+                block_frames_, std::memory_order_acq_rel);
 
             queue_error_callback(r, "pw_stream_queue_buffer failed");
         }
@@ -617,18 +623,14 @@ private:
 
     void process() {
         pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-        if (!buffer || !buffer->buffer) return;
+        if (!buffer || !buffer->buffer)
+            return;
 
-        // user_data is only valid while this PipeWire buffer is queued.
-        // Clear it immediately after dequeue so a buffer that is returned
-        // without being submitted cannot be mistaken for a second completion
-        // when PipeWire presents it again.
-        auto *completed = static_cast<PcmBlock *>(buffer->user_data);
-        buffer->user_data = nullptr;
+        // No user_data mapping is needed. If AIRadio has outstanding
+        // submissions, this process event retires one ring block. Otherwise
+        // it simply makes a PipeWire buffer available to the queue thread.
+        const size_t active_before = active_count();
 
-        // With MAP_BUFFERS, the graph supplies the mapped buffer through
-        // dequeue_buffer() in process(). Establish AIRadio's fixed ring block
-        // from the first native PipeWire buffer.
         if (!block_bytes_) {
             spa_data *d = &buffer->buffer->datas[0];
             const uint32_t native_bytes =
@@ -656,17 +658,14 @@ private:
 
             const size_t under_one_second =
                 sample_rate_ > 1 ? (sample_rate_ - 1) / block_frames_ : 0;
-            max_active_buffers_ = std::max(kMinPipeWireBuffers, under_one_second);
+            max_active_buffers_ =
+                std::max(kMinPipeWireBuffers, under_one_second);
+
             debug("PROCESS established native size=%u -> ring block=%zu bytes, %u frames (%.1f ms), active limit=%zu",
                   d->maxsize, block_bytes_, block_frames_,
                   1000.0 * block_frames_ / sample_rate_,
                   max_active_buffers_);
 
-            // During startup, this first process callback exists only to
-            // discover the native buffer size. Return the buffer immediately
-            // and deactivate the stream; do not leave it as idle_buffer_.
-            // Normal process callbacks happen only after the worker has
-            // activated the stream for actual audio.
             pw_stream_return_buffer(stream_, buffer);
             pw_stream_set_active(stream_, false);
             active_ = false;
@@ -674,56 +673,44 @@ private:
             return;
         }
 
-        debug("PROCESS buffer=%p user_data=%p active_before=%zu tail=%zu submit=%zu",
-              static_cast<void *>(buffer), static_cast<void *>(completed),
-              pipewire_active_count_, tail_index_, submit_index_);
+        debug("PROCESS buffer=%p active_before=%zu tail=%zu active=%zu head=%zu",
+              static_cast<void *>(buffer), active_before,
+              tail_index_.load(std::memory_order_acquire),
+              active_index_.load(std::memory_order_acquire),
+              head_index_.load(std::memory_order_acquire));
 
-        if (completed) {
-            // A non-null user_data means this buffer was previously queued by
-            // submit(), so this dequeue represents completion of that block.
-            if (pipewire_active_count_)
-                --pipewire_active_count_;
-
-            uint64_t current =
-                outstanding_frames_.load(std::memory_order_relaxed);
-            outstanding_frames_.store(
-                current >= block_frames_ ? current - block_frames_ : 0,
+        if (active_before) {
+            tail_index_.store(
+                next_index(tail_index_.load(std::memory_order_relaxed)),
                 std::memory_order_release);
+            outstanding_frames_.fetch_sub(
+                block_frames_, std::memory_order_acq_rel);
+            buffer_full_event_.set();
 
-            if (completed != &blocks_[tail_index_]) {
-                last_error_ = "PipeWire completed an unexpected PCM block";
-                queue_error_callback(-5, last_error_);
-            } else {
-                // Tail advancement and gate opening are one protected
-                // state transition with the producer's head operation.
-                std::lock_guard<std::mutex> ring_lock(ring_mutex_);
-                tail_index_ = next_index(tail_index_);
-                producer_gate_.set();
-                debug("PROCESS retired block; new tail=%zu active=%zu",
-                      tail_index_, pipewire_active_count_);
-            }
+            debug("PROCESS retired block; new tail=%zu active=%zu",
+                  tail_index_.load(std::memory_order_acquire),
+                  active_count());
         }
 
-        // The PipeWire buffer is now available to the dedicated send worker.
-        // Do not queue it from the process callback.
-        if (idle_buffer_) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
-        idle_buffer_ = buffer;
-        pipewire_work_event_.set();
+        // process() and the queue thread both run under the PipeWire thread
+        // loop serialization. The fixed-size pool avoids allocation here.
+        if (available_buffer_count_ < available_buffers_.size())
+            available_buffers_[available_buffer_count_++] = buffer;
 
-        maybe_complete();
+        if (any_ready())
+            buffer_ready_event_.set();
+        else
+            maybe_complete();
     }
 
     bool unprocessed() const noexcept {
-        return tail_index_ !=
-               write_index_.load(std::memory_order_acquire);
+        return tail_index_.load(std::memory_order_acquire) !=
+               head_index_.load(std::memory_order_acquire);
     }
 
     void maybe_complete() {
         if (!end_of_utterance_) return;
-        if (pipewire_active_count_ != 0 || unprocessed()) return;
+        if (active_count() != 0 || unprocessed()) return;
 
         // This is only a state transition/signal. The PipeWire process
         // callback must never invoke managed code or perform potentially
@@ -810,7 +797,6 @@ private:
         }
 
         ++self->pipewire_buffer_count_;
-        self->debug("ADD_BUFFER count=%zu maxsize=%u", self->pipewire_buffer_count_, d->maxsize);
         // Wake start(): the stream state may have become ready before this
         // callback, so buffer availability is a separate startup condition.
         pw_thread_loop_signal(self->loop_, false);
@@ -886,12 +872,15 @@ private:
                     false, std::memory_order_acq_rel))
                 continue;
 
-            // The PipeWire worker owns stream activation/deactivation.
-            // This worker only delivers the managed completion callback.
+            // Completion is the boundary between utterances. Clear the
+            // producer state before entering managed code so the callback can
+            // immediately enqueue the next utterance.
 
             // Managed/C# completion is deliberately isolated from the
             // PipeWire process callback. This callback may block or perform
             // arbitrary worker-thread work.
+            end_of_utterance_ = false;
+            cancelled_ = false;
             queue_playback_callback();
         }
     }
@@ -928,15 +917,14 @@ private:
 
     // One fixed-size ring. There are no generations and no reallocations.
     std::vector<PcmBlock> blocks_;
-    std::atomic<size_t> write_index_{0}; // producer publishes completed blocks
-    size_t submit_index_ = 0;            // PipeWire loop thread
-    size_t tail_index_ = 0;              // PipeWire loop thread
-    size_t head_fill_bytes_ = 0;         // producer thread only
+    std::atomic<size_t> head_index_{0};
+    std::atomic<size_t> active_index_{0};
+    std::atomic<size_t> tail_index_{0};
+    size_t head_fill_bytes_ = 0;
 
-    size_t pipewire_active_count_ = 0;
-    size_t pipewire_buffer_count_ = 0;
     size_t max_active_buffers_ = kMinPipeWireBuffers;
-    pw_buffer *idle_buffer_ = nullptr;
+    std::array<pw_buffer *, kMaxPipeWireBuffers> available_buffers_{};
+    size_t available_buffer_count_ = 0;
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
 
@@ -957,14 +945,12 @@ private:
     // producer and PipeWire consumer. The producer never waits while holding it.
     std::mutex ring_mutex_;
 
-    // Manual-reset atomic gate for producer back-pressure.
-    // SET means the producer may proceed. RESET means the ring is at its
-    // reserved boundary and the producer waits until PipeWire advances tail.
-    ManualResetEvent producer_gate_{true};
+    // SET means next(head) != tail. RESET means exactly one free slot remains.
+    ManualResetEvent buffer_full_event_{true};
 
-    // SET means the PipeWire worker has work to inspect. RESET means there
-    // is currently no ring data and no released PipeWire buffer to process.
-    ManualResetEvent pipewire_work_event_{false};
+    // SET means the queue thread should inspect ring data and reusable
+    // PipeWire buffers.
+    ManualResetEvent buffer_ready_event_{false};
 
     std::thread pipewire_thread_;
     std::thread completion_thread_;
