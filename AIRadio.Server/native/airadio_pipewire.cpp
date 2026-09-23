@@ -350,6 +350,22 @@ private:
                 continue;
             }
 
+            // Do not activate an empty playback stream. With EARLY_PROCESS,
+            // an active stream can repeatedly hand us the same available buffer
+            // even though there is no PCM to queue, causing a tight worker loop.
+            {
+                std::lock_guard<std::mutex> fifo_lock(fifo_mutex_);
+                if (!fifo_available_locked()) {
+                    if (!queued_frames_.load() && active_) {
+                        pw_stream_set_active(stream_, false);
+                        active_ = false;
+                        debug("IDLE stream deactivated; FIFO empty and no queued frames");
+                    }
+                    pw_thread_loop_unlock(loop_);
+                    continue;
+                }
+            }
+
             if (!active_) {
                 const int r = pw_stream_set_active(stream_, true);
                 if (r < 0) {
