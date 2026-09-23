@@ -235,11 +235,15 @@ public:
                     write_index_.store(next, std::memory_order_release);
                     head_fill_bytes_ = 0;
 
-                    // Reset the producer gate as the head enters the final
-                    // reserved position. The producer cannot begin another
-                    // block until PipeWire releases one at the tail.
-                    if (free_blocks() <= 1)
+                    // Close the producer gate when the head reaches the
+                    // reserved boundary. Re-check after reset so a concurrent
+                    // tail advance cannot leave the gate closed after space
+                    // has already been created.
+                    if (free_blocks() <= 1) {
                         producer_gate_.reset();
+                        if (free_blocks() > 1)
+                            producer_gate_.set();
+                    }
                 }
             }
         }
