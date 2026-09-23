@@ -199,12 +199,7 @@ public:
             return result;
         }
 
-        // PipeWire can report PAUSED/STREAMING before it invokes add_buffer.
-        // Do not treat the state transition as startup completion until the
-        // native buffer has actually been delivered and processed by
-        // on_add_buffer().
-        while ((!connection_ready_ || !block_bytes_ || !block_frames_) &&
-               !connection_error_)
+        while (!connection_ready_ && !connection_error_)
             pw_thread_loop_wait(loop_);
 
         if (connection_error_ < 0) {
@@ -217,6 +212,27 @@ public:
             last_error_ = "PipeWire did not provide a usable audio buffer";
             pw_thread_loop_unlock(loop_);
             return -22;
+        }
+
+        // This stream does not report usable mapped buffers through
+        // add_buffer on this PipeWire graph. Activate it so the process
+        // callback can dequeue the first mapped buffer and establish the
+        // native block size there.
+        int ar = pw_stream_set_active(stream_, true);
+        if (ar < 0) {
+            last_error_ = "pw_stream_set_active failed: " + std::to_string(ar);
+            pw_thread_loop_unlock(loop_);
+            return ar;
+        }
+        active_ = true;
+
+        while (!block_bytes_ || !block_frames_)
+            pw_thread_loop_wait(loop_);
+
+        if (connection_error_ < 0) {
+            int e = connection_error_;
+            pw_thread_loop_unlock(loop_);
+            return e;
         }
 
         debug("STREAM connected; native buffer=%zu bytes, %u frames (%.1f ms), active limit=%zu buffers",
@@ -578,6 +594,70 @@ private:
         if (!buffer || !buffer->buffer) return;
 
         auto *completed = static_cast<PcmBlock *>(buffer->user_data);
+
+        // With MAP_BUFFERS, the graph supplies the mapped buffer through
+        // dequeue_buffer() in process(). Establish AIRadio's fixed ring block
+        // from the first native PipeWire buffer.
+        if (!block_bytes_) {
+            spa_data *d = &buffer->buffer->datas[0];
+            const uint32_t native_bytes =
+                d->maxsize - (d->maxsize % bytes_per_frame_);
+            if (!d->data || !d->maxsize || !native_bytes) {
+                connection_error_ = -22;
+                last_error_ = "PipeWire provided an unusable audio buffer";
+                pw_stream_return_buffer(stream_, buffer);
+                pw_thread_loop_signal(loop_, false);
+                return;
+            }
+
+            block_bytes_ = native_bytes;
+            block_frames_ = block_bytes_ / bytes_per_frame_;
+            try {
+                for (auto &block : blocks_)
+                    block.data = std::make_unique<uint8_t[]>(block_bytes_);
+            } catch (...) {
+                connection_error_ = -12;
+                last_error_ = "Unable to allocate AIRadio audio ring buffer";
+                pw_stream_return_buffer(stream_, buffer);
+                pw_thread_loop_signal(loop_, false);
+                return;
+            }
+
+            const size_t under_one_second =
+                sample_rate_ > 1 ? (sample_rate_ - 1) / block_frames_ : 0;
+            max_active_buffers_ = std::max(kMinPipeWireBuffers, under_one_second);
+            debug("PROCESS established native size=%u -> ring block=%zu bytes, %u frames (%.1f ms), active limit=%zu",
+                  d->maxsize, block_bytes_, block_frames_,
+                  1000.0 * block_frames_ / sample_rate_,
+                  max_active_buffers_);
+        }
+
+        if (completed) {
+            if (completed != &blocks_[tail_index_]) {
+                last_error_ = "PipeWire completed an unexpected PCM block";
+                queue_error_callback(-5, last_error_);
+            } else {
+                if (pipewire_active_count_)
+                    --pipewire_active_count_;
+                uint64_t current = outstanding_frames_.load(std::memory_order_relaxed);
+                outstanding_frames_.store(current >= block_frames_ ? current - block_frames_ : 0,
+                                           std::memory_order_release);
+                std::lock_guard<std::mutex> ring_lock(ring_mutex_);
+                tail_index_ = next_index(tail_index_);
+                producer_gate_.set();
+                debug("PROCESS retired block; new tail=%zu active=%zu",
+                      tail_index_, pipewire_active_count_);
+            }
+        }
+
+        if (!completed && idle_buffer_) {
+            // We already have a released buffer waiting for the worker.
+            // Return the extra dequeued buffer rather than overwrite it.
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+        if (!completed)
+            idle_buffer_ = buffer;
 
         debug("PROCESS buffer=%p user_data=%p active_before=%zu tail=%zu submit=%zu",
               static_cast<void *>(buffer), static_cast<void *>(completed),
