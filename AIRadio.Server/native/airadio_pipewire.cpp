@@ -33,7 +33,8 @@ constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kPreferredBufferMilliseconds = 400;
 constexpr size_t kMinimumBufferMilliseconds = 200;
 constexpr size_t kMaximumBufferMilliseconds = 499;
-constexpr size_t kDataBlocks = 750;
+constexpr size_t kDataBlocks =
+    (300 * 1000) / kMinimumBufferMilliseconds;
 constexpr size_t kReserveBlocks = 2;
 constexpr size_t kRingBlocks = kDataBlocks + kReserveBlocks;
 
@@ -529,7 +530,7 @@ private:
         if (!d->data || !d->chunk || d->maxsize < block_bytes_) {
             pw_stream_return_buffer(stream_, buffer);
             queue_error_callback(
-                -5, "PipeWire buffer is smaller than a 100 ms PCM block");
+                -5, "PipeWire buffer is smaller than the negotiated AIRadio ring block");
             return;
         }
 
