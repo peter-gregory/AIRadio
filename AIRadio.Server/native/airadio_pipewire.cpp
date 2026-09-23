@@ -67,6 +67,28 @@ private:
     std::atomic<bool> state_;
 };
 
+class AutoResetEvent {
+public:
+    explicit AutoResetEvent(bool set = false)
+        : state_(set) {}
+
+    void set() noexcept {
+        state_.store(true, std::memory_order_release);
+        state_.notify_one();
+    }
+
+    void wait() const noexcept {
+        bool expected = false;
+        while (!state_.load(std::memory_order_acquire)) {
+            state_.wait(expected, std::memory_order_relaxed);
+        }
+        state_.store(false, std::memory_order_release);
+    }
+
+private:
+    mutable std::atomic<bool> state_;
+};
+
 class PipeWireBackend {
 public:
     PipeWireBackend(uint32_t rate, uint32_t channels, uint32_t bits)
@@ -863,8 +885,6 @@ private:
                     false, std::memory_order_acq_rel))
                 continue;
 
-            completion_event_.reset();
-
             if (loop_) {
                 pw_thread_loop_lock(loop_);
                 end_of_utterance_ = false;
@@ -955,7 +975,7 @@ private:
 
     std::thread pipewire_thread_;
     std::thread completion_thread_;
-    ManualResetEvent completion_event_{false};
+    AutoResetEvent completion_event_{false};
     std::atomic<bool> stop_completion_thread_{false};
     std::atomic<bool> completion_pending_{false};
 
