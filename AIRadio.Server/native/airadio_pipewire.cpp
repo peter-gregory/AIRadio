@@ -13,9 +13,11 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <string>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include <array>
 #include <cstdarg>
 #include <cstdio>
