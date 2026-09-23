@@ -9,7 +9,6 @@
 #include <spa/pod/builder.h>
 #include <algorithm>
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -417,11 +416,8 @@ public:
         producer_gate_.set();
         pipewire_work_event_.set();
 
-        {
-            std::lock_guard<std::mutex> l(completion_mutex_);
-            stop_completion_thread_ = true;
-        }
-        completion_cv_.notify_all();
+        stop_completion_thread_.store(true, std::memory_order_release);
+        completion_event_.set();
 
         if (pipewire_thread_.joinable())
             pipewire_thread_.join();
@@ -706,14 +702,12 @@ private:
         if (!end_of_utterance_) return;
         if (pipewire_active_count_ != 0 || unprocessed()) return;
 
-        if (active_) {
-            pw_stream_set_active(stream_, false);
-            active_ = false;
-        }
-
+        // This is only a state transition/signal. The PipeWire process
+        // callback must never invoke managed code or perform potentially
+        // expensive completion work.
         if (!completion_pending_.exchange(
                 true, std::memory_order_acq_rel)) {
-            completion_cv_.notify_one();
+            completion_event_.set();
         }
     }
 
@@ -856,26 +850,35 @@ private:
 
     void completion_worker() {
         for (;;) {
-            std::unique_lock<std::mutex> l(completion_mutex_);
-            completion_cv_.wait(l, [this] {
-                return stop_completion_thread_ ||
-                       completion_pending_.load(
-                           std::memory_order_acquire);
-            });
+            completion_event_.wait();
 
-            if (stop_completion_thread_)
+            if (stop_completion_thread_.load(std::memory_order_acquire))
                 return;
 
-            completion_pending_.store(false, std::memory_order_release);
-            l.unlock();
+            // Consume exactly one completion notification. If another
+            // completion is signalled while the callback is running, the
+            // pending flag remains set and the event remains set until the
+            // next loop iteration.
+            if (!completion_pending_.exchange(
+                    false, std::memory_order_acq_rel))
+                continue;
+
+            completion_event_.reset();
 
             if (loop_) {
                 pw_thread_loop_lock(loop_);
                 end_of_utterance_ = false;
                 cancelled_ = false;
+                if (active_) {
+                    pw_stream_set_active(stream_, false);
+                    active_ = false;
+                }
                 pw_thread_loop_unlock(loop_);
             }
 
+            // Managed/C# completion is deliberately isolated from the
+            // PipeWire process callback. This callback may block or perform
+            // arbitrary worker-thread work.
             queue_playback_callback();
         }
     }
@@ -952,9 +955,8 @@ private:
 
     std::thread pipewire_thread_;
     std::thread completion_thread_;
-    std::mutex completion_mutex_;
-    std::condition_variable completion_cv_;
-    bool stop_completion_thread_ = false;
+    ManualResetEvent completion_event_{false};
+    std::atomic<bool> stop_completion_thread_{false};
     std::atomic<bool> completion_pending_{false};
 
     std::mutex callback_mutex_;
