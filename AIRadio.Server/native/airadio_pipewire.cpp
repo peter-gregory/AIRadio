@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <semaphore>
 #include <string>
 #include <thread>
 #include <vector>
@@ -77,6 +78,8 @@ public:
         end_of_utterance_ = false;
         cancelled_ = false;
         shutting_down_.store(false, std::memory_order_release);
+        producer_waiting_.store(false, std::memory_order_release);
+        while (space_event_.try_acquire()) {}
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -182,12 +185,19 @@ public:
                 // it can always be completed. Only wait when a new block
                 // would reduce the free space to the final reserved block.
                 if (head_fill_bytes_ == 0 && free_blocks() <= 1) {
-                    std::unique_lock<std::mutex> lock(space_mutex_);
-                    space_cv_.wait(lock, [this] {
-                        return shutting_down_.load(std::memory_order_acquire) ||
-                               end_of_utterance_ || cancelled_ ||
-                               free_blocks() > 1;
-                    });
+                    // Event used for producer back-pressure. Unlike a mutex,
+                    // it can safely be signaled by the PipeWire thread.
+                    producer_waiting_.store(true, std::memory_order_release);
+
+                    // Re-check after publishing the waiting state to close
+                    // the race where PipeWire releases a buffer just before
+                    // the producer starts waiting.
+                    if (free_blocks() > 1) {
+                        producer_waiting_.store(false, std::memory_order_release);
+                    } else {
+                        space_event_.acquire();
+                        producer_waiting_.store(false, std::memory_order_release);
+                    }
 
                     if (shutting_down_.load(std::memory_order_acquire) ||
                         end_of_utterance_ || cancelled_) {
@@ -254,7 +264,8 @@ public:
         maybe_complete();
         pw_thread_loop_unlock(loop_);
 
-        space_cv_.notify_all();
+        if (producer_waiting_.load(std::memory_order_acquire))
+            space_event_.release();
         return 0;
     }
 
@@ -309,7 +320,8 @@ public:
 
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
-        space_cv_.notify_all();
+        if (producer_waiting_.load(std::memory_order_acquire))
+            space_event_.release();
 
         if (loop_) {
             pw_thread_loop_lock(loop_);
@@ -460,7 +472,8 @@ private:
                 queue_error_callback(-5, last_error_);
             } else {
                 tail_index_ = next_index(tail_index_);
-                space_cv_.notify_one();
+                if (producer_waiting_.load(std::memory_order_acquire))
+                    space_event_.release();
             }
         }
 
@@ -593,8 +606,11 @@ private:
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
-    std::mutex space_mutex_;
-    std::condition_variable space_cv_;
+    // Binary event for producer back-pressure. The producer waits only
+    // when one buffer remains; PipeWire signals when a complete buffer is
+    // released.
+    std::binary_semaphore space_event_{0};
+    std::atomic<bool> producer_waiting_{false};
 
     std::thread completion_thread_;
     std::mutex completion_mutex_;
