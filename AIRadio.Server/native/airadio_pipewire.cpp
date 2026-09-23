@@ -138,7 +138,7 @@ public:
         }
 
         static const pw_stream_events events = {
-            PW_VERSION_STREAM_EVENTS,
+            .version = PW_VERSION_STREAM_EVENTS,
             .destroy = nullptr,
             .state_changed = &PipeWireBackend::on_state_changed,
             .control_info = nullptr,
