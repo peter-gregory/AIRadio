@@ -30,3 +30,16 @@ set_target_properties(airadio-pipewire PROPERTIES
     OUTPUT_NAME "airadio-pipewire"
     VERSION 1.0.0
     SOVERSION 1)
+
+add_executable(pw_wav_test
+    pw_wav_test.cpp)
+
+target_link_libraries(pw_wav_test
+    PRIVATE
+        PkgConfig::PIPEWIRE)
+
+target_compile_options(pw_wav_test PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -O2)
