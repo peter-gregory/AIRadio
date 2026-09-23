@@ -205,17 +205,24 @@ public:
                     return -16;
                 }
 
-                // The gate is normally set. It is reset exactly when
-                // advancing the producer head leaves only the final reserved
-                // buffer. A blocked producer is released when PipeWire advances
-                // the tail and sets the gate again.
-                if (head_fill_bytes_ == 0) {
+                // Never wait while holding ring_mutex_: PipeWire must be
+                // able to advance the tail and reopen the producer gate.
+                if (head_fill_bytes_ == 0)
                     producer_gate_.wait();
 
-                    if (shutting_down_.load(std::memory_order_acquire) ||
-                        end_of_utterance_ || cancelled_) {
-                        return -16;
-                    }
+                std::unique_lock<std::mutex> ring_lock(ring_mutex_);
+
+                // The gate may have been reset after the wait but before the
+                // producer acquired the mutex. Recheck the protected state.
+                if (head_fill_bytes_ == 0 && free_blocks() <= 1) {
+                    ring_lock.unlock();
+                    producer_gate_.wait();
+                    continue;
+                }
+
+                if (shutting_down_.load(std::memory_order_acquire) ||
+                    end_of_utterance_ || cancelled_) {
+                    return -16;
                 }
 
                 size_t space = block_bytes_ - head_fill_bytes_;
@@ -235,15 +242,12 @@ public:
                     write_index_.store(next, std::memory_order_release);
                     head_fill_bytes_ = 0;
 
-                    // Close the producer gate when the head reaches the
-                    // reserved boundary. Re-check after reset so a concurrent
-                    // tail advance cannot leave the gate closed after space
-                    // has already been created.
-                    if (free_blocks() <= 1) {
+                    // Head advancement and gate reset are one protected state
+                    // transition with respect to the PipeWire tail.
+                    if (free_blocks() <= 1)
                         producer_gate_.reset();
-                        if (free_blocks() > 1)
-                            producer_gate_.set();
-                    }
+                    else
+                        producer_gate_.set();
                 }
             }
         }
@@ -263,6 +267,7 @@ public:
             return 0;
         }
 
+        std::lock_guard<std::mutex> ring_lock(ring_mutex_);
         end_of_utterance_ = true;
         cancelled_ = cancel;
 
@@ -496,9 +501,9 @@ private:
                 last_error_ = "PipeWire completed an unexpected PCM block";
                 queue_error_callback(-5, last_error_);
             } else {
-                // Moving the tail releases a complete ring slot and
-                // opens the producer gate. The gate remains set until the
-                // producer later advances the head into the reserved boundary.
+                // Tail advancement and gate opening are one protected
+                // state transition with the producer's head operation.
+                std::lock_guard<std::mutex> ring_lock(ring_mutex_);
                 tail_index_ = next_index(tail_index_);
                 producer_gate_.set();
             }
@@ -632,6 +637,10 @@ private:
     std::atomic<uint64_t> outstanding_frames_{0};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
+
+    // Protects ring head/tail and gate state transitions shared by the
+    // producer and PipeWire consumer. The producer never waits while holding it.
+    std::mutex ring_mutex_;
 
     // Manual-reset atomic gate for producer back-pressure.
     // SET means the producer may proceed. RESET means the ring is at its
