@@ -35,7 +35,7 @@ constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kFifoSeconds = 60;
 
 // Target PipeWire queue depth. Individual PipeWire buffers are variable-sized
-// and follow pw_buffer::requested; there is no artificial buffer-count limit.
+// and are filled in application-sized chunks; there is no artificial buffer-count limit.
 constexpr size_t kPipeWireTargetMilliseconds = 200;
 constexpr size_t kPipeWireFillMilliseconds = 100;
 
@@ -61,11 +61,12 @@ public:
         try { fifo_.resize(fifo_capacity_frames_ * bytes_per_frame_); }
         catch (...) { last_error_ = "Unable to allocate AIRadio PCM FIFO"; return -12; }
 
-        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), PipeWire target=%llu frames (%.1fs)",
+        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), PipeWire target=%llu frames (%.1fs), fill=%zu frames (%.1fms)",
               sample_rate_, channels_, bits_, fifo_capacity_frames_,
               1.0 * fifo_capacity_frames_ / sample_rate_,
               static_cast<unsigned long long>(target_frames_),
-              1.0 * target_frames_ / sample_rate_);
+              1.0 * target_frames_ / sample_rate_,
+              fill_frames_, 1000.0 * fill_frames_ / sample_rate_);
 
         {
             std::lock_guard<std::mutex> lock(fifo_mutex_);
