@@ -31,12 +31,7 @@ constexpr size_t kPodBufferBytes = 1024;
 constexpr uint32_t kAIRadioSampleRate = 16000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
-
-// Application-owned PCM FIFO: 60 seconds at the AIRadio format.
 constexpr size_t kFifoSeconds = 60;
-
-// Target PipeWire queue depth. Individual PipeWire buffers are variable-sized
-// and are filled in application-sized chunks; there is no artificial buffer-count limit.
 constexpr size_t kPipeWireTargetMilliseconds = 200;
 constexpr size_t kPipeWireFillMilliseconds = 100;
 
@@ -369,7 +364,7 @@ private:
         const bool was_requested = worker_requested_.exchange(true, std::memory_order_acq_rel);
         debug("WORKER REQUEST source=%s coalesced=%d fifo=%zu queued=%llu active=%d",
               "signal", was_requested ? 1 : 0, queued_frames(),
-              static_cast<unsigned long long>(queued_frames_.load()), active_);
+              static_cast<unsigned long long>(queued_frames_.load()), active_debug_.load());
         worker_cv_.notify_one();
     }
 
@@ -396,29 +391,60 @@ private:
                 continue;
             }
 
-            // Do not activate an empty playback stream. With EARLY_PROCESS,
-            // an active stream can repeatedly hand us the same available buffer
-            // even though there is no PCM to queue, causing a tight worker loop.
-            {
-                std::lock_guard<std::mutex> fifo_lock(fifo_mutex_);
-                if (!fifo_available_locked()) {
-                    debug("WORKER NO_FIFO queued=%llu active=%d end=%d",
-                          static_cast<unsigned long long>(queued_frames_.load()), active_,
-                          end_of_utterance_.load());
-                    if (!queued_frames_.load() && active_) {
-                        pw_stream_set_active(stream_, false);
-                        active_ = false;
-                        active_debug_.store(false, std::memory_order_release);
-                        debug("IDLE stream deactivated; FIFO empty and no queued frames");
+            // A process callback means PipeWire may have returned a previously
+            // queued buffer. Retire that buffer before looking at FIFO state.
+            // This is essential when the FIFO is empty: queued playback must be
+            // allowed to drain to zero so completion can be detected.
+            bool dequeued_any = false;
+            while (true) {
+                pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
+                if (!buffer) {
+                    debug("DEQUEUE none fifo=%zu queued=%llu",
+                          queued_frames(),
+                          static_cast<unsigned long long>(queued_frames_.load()));
+                    break;
+                }
+
+                dequeued_any = true;
+                retire_buffer(buffer);
+
+                // If the application FIFO is empty, this buffer is still a
+                // valid PipeWire buffer, but there is no PCM to put in it.
+                // Return it immediately and let the next process callback
+                // retire the remaining queued buffer(s).
+                {
+                    std::lock_guard<std::mutex> fifo_lock(fifo_mutex_);
+                    if (!fifo_available_locked()) {
+                        debug("DEQUEUE no FIFO buffer=%p queued=%llu",
+                              static_cast<void *>(buffer),
+                              static_cast<unsigned long long>(queued_frames_.load()));
+                        pw_stream_return_buffer(stream_, buffer);
+                        break;
                     }
-                    pw_thread_loop_unlock(loop_);
-                    continue;
+                }
+
+                if (!fill_and_queue(buffer))
+                    break;
+
+                if (queued_frames_.load() >= target_frames_) {
+                    debug("WORKER TARGET reached queued=%llu target=%llu",
+                          static_cast<unsigned long long>(queued_frames_.load()),
+                          static_cast<unsigned long long>(target_frames_));
+                    break;
                 }
             }
 
-            if (!active_) {
+            // Only activate once there is PCM to queue. An active empty stream
+            // with EARLY_PROCESS can continuously generate process callbacks.
+            const bool fifo_has_data = [&] {
+                std::lock_guard<std::mutex> lock(fifo_mutex_);
+                return fifo_available_locked() != 0;
+            }();
+
+            if (fifo_has_data && !active_) {
                 debug("STREAM ACTIVE request=true fifo=%zu queued=%llu",
-                      queued_frames(), static_cast<unsigned long long>(queued_frames_.load()));
+                      queued_frames(),
+                      static_cast<unsigned long long>(queued_frames_.load()));
                 const int r = pw_stream_set_active(stream_, true);
                 if (r < 0) {
                     last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
@@ -431,29 +457,9 @@ private:
                 debug("STREAM ACTIVE=true");
             }
 
-            while (true) {
-                pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-                if (!buffer) {
-                    debug("DEQUEUE none fifo=%zu queued=%llu", queued_frames(),
-                          static_cast<unsigned long long>(queued_frames_.load()));
-                    break;
-                }
-
-                retire_buffer(buffer);
-
-                if (!fill_and_queue(buffer)) {
-                    pw_stream_return_buffer(stream_, buffer);
-                    break;
-                }
-
-                if (queued_frames_.load() >= target_frames_) {
-                    debug("WORKER TARGET reached queued=%llu target=%llu",
-                          static_cast<unsigned long long>(queued_frames_.load()),
-                          static_cast<unsigned long long>(target_frames_));
-                    break;
-                }
-            }
-
+            // If we retired a buffer and there is still FIFO data, immediately
+            // fill any newly available PipeWire buffer. Activation above will
+            // cause the graph to run; the next process callback will also wake us.
             maybe_complete_locked();
             debug("WORKER UNLOCK fifo=%zu queued=%llu active=%d end=%d pending=%d",
                   queued_frames(), static_cast<unsigned long long>(queued_frames_.load()),
@@ -493,9 +499,6 @@ private:
         if (!capacity) return false;
 
         std::lock_guard<std::mutex> lock(fifo_mutex_);
-        // pw_buffer::requested is a resampler demand/suggestion for the current
-        // graph quantum, not a maximum buffer size. AIRadio deliberately fills
-        // larger chunks so the application worker does not wake every quantum.
         const size_t frames =
             std::min({fill_frames_, capacity, fifo_available_locked()});
         if (!frames) {
@@ -541,11 +544,11 @@ private:
             return;
         }
 
-        // Avoid leaving an empty EARLY_PROCESS playback stream active.
         if (active_) {
             debug("STREAM ACTIVE request=false for completion");
             pw_stream_set_active(stream_, false);
             active_ = false;
+            active_debug_.store(false, std::memory_order_release);
         }
 
         const bool was_pending = completion_pending_.exchange(true);
@@ -606,7 +609,6 @@ private:
         }
     }
 
-    // Notification only. No dequeue/copy/queue work occurs here.
     static void on_process(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
         self->debug("CALLBACK process fifo=%zu queued=%llu active=%d end=%d",
@@ -619,7 +621,7 @@ private:
         auto *self = static_cast<PipeWireBackend *>(data);
         self->debug("CALLBACK drained fifo=%zu queued=%llu active=%d end=%d",
                     self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
-                    self->active_, self->end_of_utterance_.load());
+                    self->active_debug_.load(), self->end_of_utterance_.load());
     }
 
     void completion_worker() {
@@ -675,7 +677,7 @@ private:
         std::fprintf(stderr, "[AIRadioPipeWire #%llu tid=%llu] ",
                      static_cast<unsigned long long>(seq), thread_id());
         std::vfprintf(stderr, fmt, args);
-        std::fprintf(stderr, "\\n");
+        std::fprintf(stderr, "\n");
         va_end(args);
     }
 
@@ -707,7 +709,6 @@ private:
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
-    // Only accessed by the helper thread while holding the PipeWire loop lock.
     std::unordered_map<pw_buffer *, uint32_t> queued_buffers_;
 
     std::mutex worker_mutex_;
@@ -725,7 +726,8 @@ private:
     void *playback_user_data_ = nullptr;
     AIRadioErrorCallback error_callback_ = nullptr;
     void *error_user_data_ = nullptr;
-};}
+};
+}
 
 struct AIRadioPipeWire {
     PipeWireBackend backend;
@@ -734,8 +736,7 @@ struct AIRadioPipeWire {
 };
 
 extern "C" {
-AIRADIO_API AIRadioPipeWire *airadio_pw_create(
-    uint32_t r, uint32_t c, uint32_t b) {
+AIRADIO_API AIRadioPipeWire *airadio_pw_create(uint32_t r, uint32_t c, uint32_t b) {
     try { return new AIRadioPipeWire(r, c, b); }
     catch (...) { return nullptr; }
 }
@@ -746,17 +747,13 @@ AIRADIO_API int airadio_pw_start(AIRadioPipeWire *c) {
     catch (...) { return -5; }
 }
 
-AIRADIO_API int airadio_pw_enqueue(
-    AIRadioPipeWire *c,
-    const AIRadioPcmSegment *s,
-    size_t n) {
+AIRADIO_API int airadio_pw_enqueue(AIRadioPipeWire *c, const AIRadioPcmSegment *s, size_t n) {
     if (!c) return -22;
     try { return c->backend.enqueue(s, n); }
     catch (...) { return -5; }
 }
 
-AIRADIO_API int airadio_pw_end_utterance(
-    AIRadioPipeWire *c, int cancel) {
+AIRADIO_API int airadio_pw_end_utterance(AIRadioPipeWire *c, int cancel) {
     if (!c) return -22;
     try { return c->backend.end_utterance(cancel != 0); }
     catch (...) { return -5; }
@@ -768,8 +765,7 @@ AIRADIO_API int airadio_pw_clear(AIRadioPipeWire *c) {
     catch (...) { return -5; }
 }
 
-AIRADIO_API int airadio_pw_set_volume(
-    AIRadioPipeWire *c, float v) {
+AIRADIO_API int airadio_pw_set_volume(AIRadioPipeWire *c, float v) {
     if (!c) return -22;
     try { return c->backend.set_volume(v); }
     catch (...) { return -5; }
@@ -779,28 +775,23 @@ AIRADIO_API float airadio_pw_get_volume(AIRadioPipeWire *c) {
     return c ? c->backend.volume() : 0.0f;
 }
 
-AIRADIO_API uint64_t airadio_pw_queued_frames(
-    AIRadioPipeWire *c) {
+AIRADIO_API uint64_t airadio_pw_queued_frames(AIRadioPipeWire *c) {
     return c ? c->backend.queued_frames() : 0;
 }
 
-AIRADIO_API uint64_t airadio_pw_outstanding_frames(
-    AIRadioPipeWire *c) {
+AIRADIO_API uint64_t airadio_pw_outstanding_frames(AIRadioPipeWire *c) {
     return c ? c->backend.outstanding_frames() : 0;
 }
 
-AIRADIO_API void airadio_pw_set_playback_complete_callback(
-    AIRadioPipeWire *c, AIRadioPlaybackCallback cb, void *ud) {
+AIRADIO_API void airadio_pw_set_playback_complete_callback(AIRadioPipeWire *c, AIRadioPlaybackCallback cb, void *ud) {
     if (c) c->backend.set_playback_callback(cb, ud);
 }
 
-AIRADIO_API void airadio_pw_set_error_callback(
-    AIRadioPipeWire *c, AIRadioErrorCallback cb, void *ud) {
+AIRADIO_API void airadio_pw_set_error_callback(AIRadioPipeWire *c, AIRadioErrorCallback cb, void *ud) {
     if (c) c->backend.set_error_callback(cb, ud);
 }
 
-AIRADIO_API const char *airadio_pw_last_error(
-    AIRadioPipeWire *c) {
+AIRADIO_API const char *airadio_pw_last_error(AIRadioPipeWire *c) {
     return c ? c->backend.last_error() : "invalid context";
 }
 
