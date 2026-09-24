@@ -28,6 +28,9 @@ public static class TimeSpeechFormatter
     public static string Format(DateTime value) =>
         Format(value.TimeOfDay);
 
+    public static string Format(DateTimeOffset value) =>
+        Format(value.TimeOfDay);
+
     public static string Format(TimeSpan value)
     {
         var totalMinutes = (int)value.TotalMinutes;
