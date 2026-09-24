@@ -161,16 +161,14 @@ For a notably windy report:
             if (weather.Current is null)
                 return ToolResult.Failed(Name, "Current weather data was not returned.");
 
-            var today = weather.Forecast.Count > 0
-                ? weather.Forecast[0]
-                : null;
+            var report = WeatherReportFormatter.Format(weather);
 
             return ToolResult.Successful(
                 Name,
                 "Current weather retrieved successfully.",
-                new WeatherCurrentReport(weather.Location, weather.Current, today),
-                completionPrompt: $"And that's the current weather for {GetDisplayLocation(locationForWeather)}.");
-        }
+                data: null,
+                exactPrompt: report,
+                complete: true);
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
