@@ -617,7 +617,7 @@ private:
         // process() is a scheduling notification, not a buffer-completed
         // notification. Avoid waking the worker continuously when PipeWire
         // has no buffer available to dequeue.
-        const bool wake = time.avail_buffers != 0 || self->fifo_available() != 0;
+        const bool wake = time.avail_buffers != 0;
         self->debug("CALLBACK process queued=%llu queued_buffers=%u avail_buffers=%u wake=%d",
                     static_cast<unsigned long long>(time.queued),
                     time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
