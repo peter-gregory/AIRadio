@@ -8,15 +8,21 @@ public static class TimeSpeechFormatter
         "six", "seven", "eight", "nine", "ten", "eleven"
     ];
 
-    private static readonly string[] Tens =
+    private static readonly string[] Teens =
     [
-        "", "", "twenty", "thirty", "forty", "fifty"
+        "ten", "eleven", "twelve", "thirteen", "fourteen",
+        "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"
     ];
 
     private static readonly string[] Ones =
     [
         "zero", "one", "two", "three", "four", "five",
         "six", "seven", "eight", "nine"
+    ];
+
+    private static readonly string[] Tens =
+    [
+        "", "", "twenty", "thirty", "forty", "fifty"
     ];
 
     public static string Format(DateTime value) =>
@@ -28,36 +34,20 @@ public static class TimeSpeechFormatter
         var hour = (totalMinutes / 60) % 24;
         var minute = totalMinutes % 60;
 
-        var hour12 = hour % 12;
+        var hourText = Hours[hour % 12];
         var period = hour < 12 ? "AM" : "PM";
-        var hourText = Hours[hour12];
 
         if (minute == 0)
             return $"{hourText} {period}";
 
-        var minuteText = minute < 10
-            ? $"oh {Ones[minute]}"
-            : minute < 20
-                ? Ones[minute - 10] == "zero"
-                    ? "ten"
-                    : $"one {Ones[minute - 10]}"
-                : Tens[minute / 10] + (minute % 10 == 0 ? "" : $"-{Ones[minute % 10]}");
-
-        if (minute is >= 10 and < 20)
-            minuteText = minute switch
-            {
-                10 => "ten",
-                11 => "eleven",
-                12 => "twelve",
-                13 => "thirteen",
-                14 => "fourteen",
-                15 => "fifteen",
-                16 => "sixteen",
-                17 => "seventeen",
-                18 => "eighteen",
-                19 => "nineteen",
-                _ => minuteText
-            };
+        var minuteText = minute switch
+        {
+            < 10 => $"oh {Ones[minute]}",
+            >= 10 and < 20 => Teens[minute - 10],
+            _ => Tens[minute / 10] + (minute % 10 == 0
+                ? string.Empty
+                : $"-{Ones[minute % 10]}")
+        };
 
         return $"{hourText} {minuteText} {period}";
     }
