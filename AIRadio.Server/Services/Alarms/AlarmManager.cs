@@ -1,5 +1,6 @@
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Services.Radio;
+using AIRadio.Server.Services.Time;
 
 namespace AIRadio.Server.Services.Alarms
 {
@@ -74,6 +75,32 @@ namespace AIRadio.Server.Services.Alarms
 
                 try
                 {
+                    var alarmTime = alarm.When.DueAt ?? timestamp;
+                    var preamble = $"{{sound:alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
+
+                    _logger.LogInformation(
+                        "Playing alarm activation preamble for {Id}: {Preamble}",
+                        alarm.Id,
+                        preamble);
+
+                    _conversationCompletion = new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                    _activeConversationId = Guid.Empty;
+
+                    var preambleConversationId = await _radioManager.ProcessAlarmAsync(
+                        preamble,
+                        cancellationToken);
+
+                    _activeConversationId = preambleConversationId;
+
+                    if (_conversationService.State == ConversationState.Complete &&
+                        _conversationService.State != ConversationState.WaitingForInput)
+                    {
+                        _conversationCompletion.TrySetResult(true);
+                    }
+
+                    await _conversationCompletion.Task.WaitAsync(cancellationToken);
+
                     foreach (var action in alarm.Actions)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
