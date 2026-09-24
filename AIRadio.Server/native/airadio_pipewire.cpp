@@ -112,7 +112,9 @@ public:
             PW_KEY_MEDIA_ROLE, "Music",
             PW_KEY_NODE_LATENCY, latency.c_str(),
             PW_KEY_NODE_MAX_LATENCY, latency.c_str(),
-            PW_KEY_NODE_STREAM, "true", nullptr);
+            PW_KEY_NODE_STREAM, "true",
+            PW_KEY_TARGET_OBJECT, "radio-aec-sink",
+            nullptr);
         if (!props) {
             pw_thread_loop_unlock(loop_);
             return -12;
