@@ -169,6 +169,7 @@ For a notably windy report:
                 data: null,
                 exactPrompt: report,
                 complete: true);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
@@ -191,51 +192,5 @@ For a notably windy report:
             return location.PostalCode;
         return location.Raw;
     }
-    private sealed class WeatherCurrentReport
-    {
-        public string Location { get; }
-        public double Temperature { get; }
-        public double FeelsLike { get; }
-        public string Condition { get; }
-        public int Humidity { get; }
-        public double WindSpeed { get; }
-        public string WindDirection { get; }
-        public double WindGusts { get; }
-        public double Precipitation { get; }
-        public double? TodayHigh { get; }
-        public double? TonightLow { get; }
-        public int? TodayRainChance { get; }
 
-        public WeatherCurrentReport(
-            string location,
-            WeatherCurrent current,
-            WeatherDay? today)
-        {
-            Location = location;
-            Temperature = current.Temperature;
-            FeelsLike = current.FeelsLike;
-            Condition = current.Condition;
-            Humidity = current.Humidity;
-            WindSpeed = current.WindSpeed;
-            WindDirection = ToCompassDirection(current.WindDirection);
-            WindGusts = current.WindGusts;
-            Precipitation = current.Precipitation;
-            TodayHigh = today?.High;
-            TonightLow = today?.Low;
-            TodayRainChance = today?.RainChance;
-        }
-
-        private static string ToCompassDirection(double degrees)
-        {
-            var normalized = ((degrees % 360) + 360) % 360;
-            var index = (int)Math.Round(normalized / 22.5, MidpointRounding.AwayFromZero) % 16;
-            return new[]
-            {
-                "north", "north-northeast", "northeast", "east-northeast",
-                "east", "east-southeast", "southeast", "south-southeast",
-                "south", "south-southwest", "southwest", "west-southwest",
-                "west", "west-northwest", "northwest", "north-northwest"
-            }[index];
-        }
-    }
 }
