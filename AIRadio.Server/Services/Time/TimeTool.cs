@@ -1,5 +1,4 @@
 using AIRadio.Server.Models.Tools;
-using Newtonsoft.Json;
 
 namespace AIRadio.Server.Services.Time;
 
@@ -20,10 +19,16 @@ Example: "What time is it?" -> {tool:time}
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
+
         var now = TimeService.GetNow();
-        return Task.FromResult(ToolResult.Successful(
-            Name,
-            "Current local time retrieved.",
-            new { Time = now.ToString("h:mm tt") }));
+        var spokenTime = TimeSpeechFormatter.Format(now);
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                "Current local time retrieved.",
+                data: null,
+                exactPrompt: $"The current time is {spokenTime}.",
+                complete: true));
     }
 }
