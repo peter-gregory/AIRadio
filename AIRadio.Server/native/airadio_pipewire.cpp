@@ -282,6 +282,32 @@ public:
         return write_frame_ - read_frame_;
     }
 
+    bool update_completed_frames() {
+        pw_time time{};
+        const int r = pw_stream_get_time_n(stream_, &time, sizeof(time));
+        if (r < 0) {
+            debug("TIME failed error=%d", r);
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(fifo_mutex_);
+        const uint64_t queued = std::min<uint64_t>(time.queued, queue_frame_);
+        const uint64_t completed = queue_frame_ - queued;
+        if (completed > read_frame_) {
+            read_frame_ = completed;
+            fifo_space_cv_.notify_all();
+        }
+
+        debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
+              static_cast<unsigned long long>(time.queued),
+              time.queued_buffers,
+              time.avail_buffers,
+              static_cast<unsigned long long>(read_frame_),
+              static_cast<unsigned long long>(queue_frame_),
+              static_cast<unsigned long long>(write_frame_));
+        return true;
+    }
+
     float volume() const noexcept { return volume_.load(); }
 
     void set_playback_callback(AIRadioPlaybackCallback cb, void *ud) {
@@ -401,20 +427,18 @@ private:
                 read_frame_ = queue_frame_ = write_frame_;
             }
 
+            if (!cancel)
+                update_completed_frames();
+
             while (true) {
                 pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
                 if (!buffer) break;
 
-                // buffer->size is application-owned. We set it to the frame
-                // count when queuing and use it once when the buffer returns.
-                const uint64_t completed_frames = cancel ? 0 : buffer->size;
-                buffer->size = 0;
-
-                if (completed_frames) {
-                    std::lock_guard<std::mutex> lock(fifo_mutex_);
-                    read_frame_ += completed_frames;
-                }
-                fifo_space_cv_.notify_all();
+                // Dequeue means this buffer is available for reuse. It is
+                // not itself a completion notification. Refresh the playback
+                // tail from PipeWire's authoritative queued-frame count.
+                if (!cancel)
+                    update_completed_frames();
 
                 bool has_fifo;
                 {
@@ -583,11 +607,22 @@ private:
 
     static void on_process(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        self->debug("CALLBACK process fifo=%zu queued=%llu outstanding=%llu active=%d end=%d",
-                    self->fifo_available(), static_cast<unsigned long long>(self->queued_frames()),
-                    static_cast<unsigned long long>(self->outstanding_frames()),
-                    self->active_debug_.load(), self->end_of_utterance_.load());
-        self->request_worker();
+        pw_time time{};
+        const int r = pw_stream_get_time_n(self->stream_, &time, sizeof(time));
+        if (r < 0) {
+            self->request_worker();
+            return;
+        }
+
+        // process() is a scheduling notification, not a buffer-completed
+        // notification. Avoid waking the worker continuously when PipeWire
+        // has no buffer available to dequeue.
+        const bool wake = time.avail_buffers != 0 || self->fifo_available() != 0;
+        self->debug("CALLBACK process queued=%llu queued_buffers=%u avail_buffers=%u wake=%d",
+                    static_cast<unsigned long long>(time.queued),
+                    time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
+        if (wake)
+            self->request_worker();
     }
 
     static void on_drained(void *data) {
