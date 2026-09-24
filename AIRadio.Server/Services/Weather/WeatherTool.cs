@@ -55,6 +55,7 @@ WEATHER RESPONSE
 - Say wind speed in miles per hour.
 - Say WindDirection as a compass direction, not as a degree value.
 - Report humidity as a percent when it adds useful context.
+- For a weather report, include today's high, tonight's low, and today's chance of rain when those values are available.
 - Mention precipitation only when it is greater than zero and relevant to the report.
 - Use the Condition as provided; do not infer a different condition.
 - Use an available weather sound effect when it naturally reinforces a notable condition.
@@ -160,10 +161,14 @@ For a notably windy report:
             if (weather.Current is null)
                 return ToolResult.Failed(Name, "Current weather data was not returned.");
 
+            var today = weather.Forecast.Count > 0
+                ? weather.Forecast[0]
+                : null;
+
             return ToolResult.Successful(
                 Name,
                 "Current weather retrieved successfully.",
-                new WeatherCurrentReport(weather.Location, weather.Current),
+                new WeatherCurrentReport(weather.Location, weather.Current, today),
                 completionPrompt: $"And that's the current weather for {GetDisplayLocation(locationForWeather)}.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -199,8 +204,14 @@ For a notably windy report:
         public string WindDirection { get; }
         public double WindGusts { get; }
         public double Precipitation { get; }
+        public double? TodayHigh { get; }
+        public double? TonightLow { get; }
+        public int? TodayRainChance { get; }
 
-        public WeatherCurrentReport(string location, WeatherCurrent current)
+        public WeatherCurrentReport(
+            string location,
+            WeatherCurrent current,
+            WeatherDay? today)
         {
             Location = location;
             Temperature = current.Temperature;
@@ -211,6 +222,9 @@ For a notably windy report:
             WindDirection = ToCompassDirection(current.WindDirection);
             WindGusts = current.WindGusts;
             Precipitation = current.Precipitation;
+            TodayHigh = today?.High;
+            TonightLow = today?.Low;
+            TodayRainChance = today?.RainChance;
         }
 
         private static string ToCompassDirection(double degrees)
