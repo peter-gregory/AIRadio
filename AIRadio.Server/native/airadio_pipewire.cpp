@@ -531,10 +531,11 @@ private:
     static void on_state_changed(void *data, pw_stream_state old_state,
                                  pw_stream_state state, const char *error) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        self->debug("STATE %s -> %s error=%s active=%d fifo=%zu queued=%llu",
+        self->debug("STATE %s -> %s error=%s active=%d fifo=%zu queued=%llu outstanding=%llu",
                     stream_state_name(old_state), stream_state_name(state),
                     error ? error : "-", self->active_debug_.load(), self->queued_frames(),
-                    static_cast<unsigned long long>(self->queued_frames_.load()));
+                    static_cast<unsigned long long>(self->queued_frames()),
+                    static_cast<unsigned long long>(self->outstanding_frames()));
         if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
             self->connection_ready_ = true;
             pw_thread_loop_signal(self->loop_, false);
@@ -582,16 +583,18 @@ private:
 
     static void on_process(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        self->debug("CALLBACK process fifo=%zu queued=%llu active=%d end=%d",
-                    self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
+        self->debug("CALLBACK process fifo=%zu queued=%llu outstanding=%llu active=%d end=%d",
+                    self->fifo_available(), static_cast<unsigned long long>(self->queued_frames()),
+                    static_cast<unsigned long long>(self->outstanding_frames()),
                     self->active_debug_.load(), self->end_of_utterance_.load());
         self->request_worker();
     }
 
     static void on_drained(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        self->debug("CALLBACK drained fifo=%zu queued=%llu active=%d end=%d",
-                    self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
+        self->debug("CALLBACK drained fifo=%zu queued=%llu outstanding=%llu active=%d end=%d",
+                    self->fifo_available(), static_cast<unsigned long long>(self->queued_frames()),
+                    static_cast<unsigned long long>(self->outstanding_frames()),
                     self->active_debug_.load(), self->end_of_utterance_.load());
     }
 
@@ -608,9 +611,10 @@ private:
             }
             if (!completion_pending_.exchange(false)) continue;
 
-            debug("COMPLETION FIRE begin end=%d cancel=%d fifo=%zu queued=%llu",
-                  end_of_utterance_.load(), cancelled_.load(), queued_frames(),
-                  static_cast<unsigned long long>(queued_frames_.load()));
+            debug("COMPLETION FIRE begin end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
+                  end_of_utterance_.load(), cancelled_.load(), fifo_available(),
+                  static_cast<unsigned long long>(queued_frames()),
+                  static_cast<unsigned long long>(outstanding_frames()));
             end_of_utterance_.store(false);
             cancelled_.store(false);
             queue_playback_callback();
