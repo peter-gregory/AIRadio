@@ -19,10 +19,11 @@ Example: "What's the date and time?" -> {tool:datetime}
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
+
         var now = TimeService.GetNow();
         var date = TimeService.FormatDate(now);
-        var time = now.ToString("h:mm tt");
-        var speech = $"The current date and time is {date}, {time}.";
+        var time = TimeSpeechFormatter.Format(now);
+        var speech = $"Today is {date}, {now:yyyy} at {time}.";
 
         return Task.FromResult(ToolResult.Successful(
             Name,
@@ -30,8 +31,10 @@ Example: "What's the date and time?" -> {tool:datetime}
             new
             {
                 Date = date,
+                Year = now.Year,
                 Time = time
             },
-            speech));
+            exactPrompt: speech,
+            complete: true));
     }
 }
