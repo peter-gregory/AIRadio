@@ -56,16 +56,20 @@ public static class WeatherReportFormatter
         if (current.Precipitation > 0)
             sentences.Add($"There's currently {Precipitation(current.Precipitation)} of precipitation.");
 
-        var report = string.Join(" ", sentences);
-
         var conditionTag = GetConditionSoundTag(current.Condition);
         if (!string.IsNullOrWhiteSpace(conditionTag))
-            report += $" {conditionTag}";
+            sentences[1] += $" {conditionTag}";
 
         if (current.WindSpeed >= 15 || current.WindGusts >= 25)
-            report += " {sound:weather-wind}";
+        {
+            var windSentenceIndex = sentences.FindIndex(
+                sentence => sentence.StartsWith("Winds are from the ", StringComparison.Ordinal));
 
-        return report;
+            if (windSentenceIndex >= 0)
+                sentences[windSentenceIndex] += " {sound:weather-wind}";
+        }
+
+        return string.Join(" ", sentences);
     }
 
     private static string Temperature(double value) =>
