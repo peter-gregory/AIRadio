@@ -22,8 +22,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <semaphore>
-#include <sstream>
 #include <thread>
+#include <functional>
 
 namespace {
 
@@ -100,6 +100,7 @@ public:
         worker_requested_.store(false);
         completion_pending_.store(false);
         connection_ready_ = false;
+        active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
 
         pw_init(nullptr, nullptr);
@@ -198,7 +199,7 @@ public:
     int enqueue(const AIRadioPcmSegment *segments, size_t count) {
         debug("API enqueue BEGIN count=%zu end=%d cancel=%d fifo=%zu queued=%llu active=%d",
               count, end_of_utterance_.load(), cancelled_.load(),
-              queued_frames(), static_cast<unsigned long long>(queued_frames_.load()), active_);
+              queued_frames(), static_cast<unsigned long long>(queued_frames_.load()), active_debug_.load());
         if (!started_ || !stream_ || !loop_) return -107;
         if (count && !segments) return -22;
 
@@ -388,7 +389,7 @@ private:
             worker_requested_.store(false, std::memory_order_release);
             debug("WORKER WAKE fifo=%zu queued=%llu active=%d end=%d cancel=%d",
                   queued_frames(), static_cast<unsigned long long>(queued_frames_.load()),
-                  active_, end_of_utterance_.load(), cancelled_.load());
+                  active_debug_.load(), end_of_utterance_.load(), cancelled_.load());
             wait_lock.unlock();
 
             pw_thread_loop_lock(loop_);
@@ -409,6 +410,7 @@ private:
                     if (!queued_frames_.load() && active_) {
                         pw_stream_set_active(stream_, false);
                         active_ = false;
+                        active_debug_.store(false, std::memory_order_release);
                         debug("IDLE stream deactivated; FIFO empty and no queued frames");
                     }
                     pw_thread_loop_unlock(loop_);
@@ -427,6 +429,7 @@ private:
                     continue;
                 }
                 active_ = true;
+                active_debug_.store(true, std::memory_order_release);
                 debug("STREAM ACTIVE=true");
             }
 
@@ -558,7 +561,7 @@ private:
         auto *self = static_cast<PipeWireBackend *>(data);
         self->debug("STATE %s -> %s error=%s active=%d fifo=%zu queued=%llu",
                     stream_state_name(old_state), stream_state_name(state),
-                    error ? error : "-", self->active_, self->queued_frames(),
+                    error ? error : "-", self->active_debug_.load(), self->queued_frames(),
                     static_cast<unsigned long long>(self->queued_frames_.load()));
         if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
             self->connection_ready_ = true;
@@ -610,7 +613,7 @@ private:
         auto *self = static_cast<PipeWireBackend *>(data);
         self->debug("CALLBACK process fifo=%zu queued=%llu active=%d end=%d",
                     self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
-                    self->active_, self->end_of_utterance_.load());
+                    self->active_debug_.load(), self->end_of_utterance_.load());
         self->request_worker();
     }
 
@@ -691,6 +694,7 @@ private:
     pw_stream *stream_ = nullptr;
     bool started_ = false;
     bool active_ = false;
+    std::atomic<bool> active_debug_{false};
     bool connection_ready_ = false;
     int connection_error_ = 0;
     const bool debug_enabled_;
