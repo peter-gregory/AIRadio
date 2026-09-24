@@ -19,14 +19,16 @@ Example: "What date is it?" -> {tool:date}
     public override Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request, cancellationToken);
+
         var now = TimeService.GetNow();
         var date = TimeService.FormatDate(now);
-        var speech = $"Today's date is {date}.";
+        var speech = $"Today is {date}, {now:yyyy}.";
 
         return Task.FromResult(ToolResult.Successful(
             Name,
             "Current local date retrieved.",
-            new { Date = date },
-            speech));
+            new { Date = date, Year = now.Year },
+            exactPrompt: speech,
+            complete: true));
     }
 }
