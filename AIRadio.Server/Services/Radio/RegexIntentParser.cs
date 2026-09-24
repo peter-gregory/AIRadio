@@ -71,6 +71,27 @@ namespace AIRadio.Server.Services.Radio
 
             foreach (var rule in _rules)
             {
+                if (IsWakeUpRule(rule))
+                {
+                    var wakeUpMatch = rule.Regex.Match(text);
+                    if (!wakeUpMatch.Success)
+                        continue;
+
+                    var commandText = text[(wakeUpMatch.Index + wakeUpMatch.Length)..].Trim();
+
+                    _logger.LogDebug(
+                        "Speech intent matched wake-up rule {RuleName}: WakeUpText={WakeUpText}, CommandText={CommandText}.",
+                        rule.Name,
+                        wakeUpMatch.Value,
+                        commandText);
+
+                    return new SpeechIntentMatch(
+                        rule.Intent,
+                        rule.Name,
+                        rule.Expression,
+                        commandText);
+                }
+
                 if (!rule.Regex.IsMatch(text))
                     continue;
 
@@ -89,6 +110,9 @@ namespace AIRadio.Server.Services.Radio
 
             return null;
         }
+
+        private static bool IsWakeUpRule(CompiledRule rule) =>
+            string.Equals(rule.Intent, "WakeUp", StringComparison.OrdinalIgnoreCase);
 
         private static CompiledRule CompileRule(SpeechIntentRule rule)
         {
