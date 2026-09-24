@@ -28,7 +28,7 @@ Example: "What time is it?" -> {tool:time}
                 Name,
                 "Current local time retrieved.",
                 data: null,
-                exactPrompt: $"The current time {spokenTime}.",
+                exactPrompt: $"The time is {spokenTime}.",
                 complete: true));
     }
 }
