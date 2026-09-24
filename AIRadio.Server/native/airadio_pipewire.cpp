@@ -15,7 +15,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <string>
-#include <thread>
 #include <vector>
 #include <unordered_map>
 #include <array>
@@ -23,6 +22,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <semaphore>
+#include <sstream>
+#include <thread>
 
 namespace {
 
@@ -40,6 +41,24 @@ constexpr size_t kPipeWireTargetMilliseconds = 200;
 constexpr size_t kPipeWireFillMilliseconds = 100;
 
 class PipeWireBackend {
+    static const char *stream_state_name(pw_stream_state state) {
+        switch (state) {
+        case PW_STREAM_STATE_ERROR: return "ERROR";
+        case PW_STREAM_STATE_UNCONNECTED: return "UNCONNECTED";
+        case PW_STREAM_STATE_CONNECTING: return "CONNECTING";
+        case PW_STREAM_STATE_AUTHENTICATING: return "AUTHENTICATING";
+        case PW_STREAM_STATE_READY: return "READY";
+        case PW_STREAM_STATE_PAUSED: return "PAUSED";
+        case PW_STREAM_STATE_STREAMING: return "STREAMING";
+        default: return "UNKNOWN";
+        }
+    }
+
+    static unsigned long long thread_id() {
+        return static_cast<unsigned long long>(
+            std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    }
+
 public:
     PipeWireBackend(uint32_t rate, uint32_t channels, uint32_t bits)
         : sample_rate_(rate), channels_(channels), bits_(bits),
@@ -177,6 +196,9 @@ public:
     }
 
     int enqueue(const AIRadioPcmSegment *segments, size_t count) {
+        debug("API enqueue BEGIN count=%zu end=%d cancel=%d fifo=%zu queued=%llu active=%d",
+              count, end_of_utterance_.load(), cancelled_.load(),
+              queued_frames(), static_cast<unsigned long long>(queued_frames_.load()), active_);
         if (!started_ || !stream_ || !loop_) return -107;
         if (count && !segments) return -22;
 
@@ -208,25 +230,40 @@ public:
                 if (!frames) continue;
 
                 write_fifo_locked(src, frames);
+                debug("FIFO WRITE frames=%zu fifo=%zu read=%llu write=%llu",
+                      frames, fifo_available_locked(),
+                      static_cast<unsigned long long>(read_frame_),
+                      static_cast<unsigned long long>(write_frame_));
                 src += frames * bytes_per_frame_;
                 left -= frames * bytes_per_frame_;
                 lock.unlock();
                 request_worker();
             }
         }
+        debug("API enqueue END fifo=%zu queued=%llu active=%d",
+              queued_frames(), static_cast<unsigned long long>(queued_frames_.load()), active_);
         return 0;
     }
 
     int end_utterance(bool cancel) {
+        debug("API END_UTTERANCE BEGIN cancel=%d end=%d fifo=%zu queued=%llu active=%d",
+              cancel, end_of_utterance_.load(), queued_frames(),
+              static_cast<unsigned long long>(queued_frames_.load()), active_);
         if (!started_ || !stream_ || !loop_) return -107;
         {
             std::lock_guard<std::mutex> lock(fifo_mutex_);
             end_of_utterance_.store(true);
             cancelled_.store(cancel);
-            if (cancel) read_frame_ = write_frame_;
+            if (cancel) {
+                read_frame_ = write_frame_;
+                debug("FIFO CANCEL drained application FIFO");
+            }
         }
         fifo_space_cv_.notify_all();
         request_worker();
+        debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu",
+              end_of_utterance_.load(), cancelled_.load(), queued_frames(),
+              static_cast<unsigned long long>(queued_frames_.load()));
         return 0;
     }
 
@@ -330,18 +367,28 @@ private:
     }
 
     void request_worker() {
-        worker_requested_.store(true, std::memory_order_release);
+        const bool was_requested = worker_requested_.exchange(true, std::memory_order_acq_rel);
+        debug("WORKER REQUEST source=%s coalesced=%d fifo=%zu queued=%llu active=%d",
+              "signal", was_requested ? 1 : 0, queued_frames(),
+              static_cast<unsigned long long>(queued_frames_.load()), active_);
         worker_cv_.notify_one();
     }
 
     void pipewire_worker() {
+        debug("WORKER START tid=%llu", thread_id());
         for (;;) {
             std::unique_lock<std::mutex> wait_lock(worker_mutex_);
             worker_cv_.wait(wait_lock, [this] {
                 return stop_worker_.load() || worker_requested_.load();
             });
-            if (stop_worker_.load()) return;
-            worker_requested_.store(false);
+            if (stop_worker_.load()) {
+                debug("WORKER STOP requested");
+                return;
+            }
+            worker_requested_.store(false, std::memory_order_release);
+            debug("WORKER WAKE fifo=%zu queued=%llu active=%d end=%d cancel=%d",
+                  queued_frames(), static_cast<unsigned long long>(queued_frames_.load()),
+                  active_, end_of_utterance_.load(), cancelled_.load());
             wait_lock.unlock();
 
             pw_thread_loop_lock(loop_);
@@ -356,6 +403,9 @@ private:
             {
                 std::lock_guard<std::mutex> fifo_lock(fifo_mutex_);
                 if (!fifo_available_locked()) {
+                    debug("WORKER NO_FIFO queued=%llu active=%d end=%d",
+                          static_cast<unsigned long long>(queued_frames_.load()), active_,
+                          end_of_utterance_.load());
                     if (!queued_frames_.load() && active_) {
                         pw_stream_set_active(stream_, false);
                         active_ = false;
@@ -367,6 +417,8 @@ private:
             }
 
             if (!active_) {
+                debug("STREAM ACTIVE request=true fifo=%zu queued=%llu",
+                      queued_frames(), static_cast<unsigned long long>(queued_frames_.load()));
                 const int r = pw_stream_set_active(stream_, true);
                 if (r < 0) {
                     last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
@@ -375,11 +427,16 @@ private:
                     continue;
                 }
                 active_ = true;
+                debug("STREAM ACTIVE=true");
             }
 
             while (true) {
                 pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-                if (!buffer) break;
+                if (!buffer) {
+                    debug("DEQUEUE none fifo=%zu queued=%llu", queued_frames(),
+                          static_cast<unsigned long long>(queued_frames_.load()));
+                    break;
+                }
 
                 retire_buffer(buffer);
 
@@ -388,11 +445,18 @@ private:
                     break;
                 }
 
-                if (queued_frames_.load() >= target_frames_)
+                if (queued_frames_.load() >= target_frames_) {
+                    debug("WORKER TARGET reached queued=%llu target=%llu",
+                          static_cast<unsigned long long>(queued_frames_.load()),
+                          static_cast<unsigned long long>(target_frames_));
                     break;
+                }
             }
 
             maybe_complete_locked();
+            debug("WORKER UNLOCK fifo=%zu queued=%llu active=%d end=%d pending=%d",
+                  queued_frames(), static_cast<unsigned long long>(queued_frames_.load()),
+                  active_, end_of_utterance_.load(), completion_pending_.load());
             pw_thread_loop_unlock(loop_);
         }
     }
@@ -400,7 +464,7 @@ private:
     void retire_buffer(pw_buffer *buffer) {
         const auto it = queued_buffers_.find(buffer);
         if (it == queued_buffers_.end()) {
-            debug("DEQUEUE available buffer=%p", static_cast<void *>(buffer));
+            debug("DEQUEUE available buffer=%p (not previously queued)", static_cast<void *>(buffer));
             return;
         }
 
@@ -427,16 +491,18 @@ private:
         const size_t capacity = d->maxsize / bytes_per_frame_;
         if (!capacity) return false;
 
-        const size_t requested = buffer->requested
-            ? static_cast<size_t>(buffer->requested) : 0;
-
         std::lock_guard<std::mutex> lock(fifo_mutex_);
         // pw_buffer::requested is a resampler demand/suggestion for the current
         // graph quantum, not a maximum buffer size. AIRadio deliberately fills
         // larger chunks so the application worker does not wake every quantum.
         const size_t frames =
             std::min({fill_frames_, capacity, fifo_available_locked()});
-        if (!frames) return false;
+        if (!frames) {
+            debug("FILL EMPTY buffer=%p capacity=%zu fifo=%zu requested=%llu",
+                  static_cast<void *>(buffer), capacity, fifo_available_locked(),
+                  static_cast<unsigned long long>(buffer->requested));
+            return false;
+        }
 
         read_fifo_locked(static_cast<uint8_t *>(d->data), frames);
         d->chunk->offset = 0;
@@ -446,6 +512,8 @@ private:
 
         const int r = pw_stream_queue_buffer(stream_, buffer);
         if (r < 0) {
+            debug("QUEUE FAILED buffer=%p frames=%zu error=%d",
+                  static_cast<void *>(buffer), frames, r);
             queue_error_callback(r, "pw_stream_queue_buffer failed");
             return false;
         }
@@ -466,21 +534,32 @@ private:
     void maybe_complete_locked() {
         if (!end_of_utterance_.load()) return;
         std::lock_guard<std::mutex> lock(fifo_mutex_);
-        if (fifo_available_locked() || queued_frames_.load()) return;
+        if (fifo_available_locked() || queued_frames_.load()) {
+            debug("COMPLETE WAIT fifo=%zu queued=%llu", fifo_available_locked(),
+                  static_cast<unsigned long long>(queued_frames_.load()));
+            return;
+        }
 
         // Avoid leaving an empty EARLY_PROCESS playback stream active.
         if (active_) {
+            debug("STREAM ACTIVE request=false for completion");
             pw_stream_set_active(stream_, false);
             active_ = false;
         }
 
-        if (!completion_pending_.exchange(true))
+        const bool was_pending = completion_pending_.exchange(true);
+        debug("COMPLETE READY pending_was=%d", was_pending ? 1 : 0);
+        if (!was_pending)
             completion_cv_.notify_one();
     }
 
-    static void on_state_changed(void *data, pw_stream_state,
+    static void on_state_changed(void *data, pw_stream_state old_state,
                                  pw_stream_state state, const char *error) {
         auto *self = static_cast<PipeWireBackend *>(data);
+        self->debug("STATE %s -> %s error=%s active=%d fifo=%zu queued=%llu",
+                    stream_state_name(old_state), stream_state_name(state),
+                    error ? error : "-", self->active_, self->queued_frames(),
+                    static_cast<unsigned long long>(self->queued_frames_.load()));
         if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
             self->connection_ready_ = true;
             pw_thread_loop_signal(self->loop_, false);
@@ -528,25 +607,40 @@ private:
 
     // Notification only. No dequeue/copy/queue work occurs here.
     static void on_process(void *data) {
-        static_cast<PipeWireBackend *>(data)->request_worker();
+        auto *self = static_cast<PipeWireBackend *>(data);
+        self->debug("CALLBACK process fifo=%zu queued=%llu active=%d end=%d",
+                    self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
+                    self->active_, self->end_of_utterance_.load());
+        self->request_worker();
     }
 
     static void on_drained(void *data) {
-        static_cast<PipeWireBackend *>(data)->debug("DRAINED callback");
+        auto *self = static_cast<PipeWireBackend *>(data);
+        self->debug("CALLBACK drained fifo=%zu queued=%llu active=%d end=%d",
+                    self->queued_frames(), static_cast<unsigned long long>(self->queued_frames_.load()),
+                    self->active_, self->end_of_utterance_.load());
     }
 
     void completion_worker() {
+        debug("COMPLETION START tid=%llu", thread_id());
         std::unique_lock<std::mutex> lock(completion_mutex_);
         while (!stop_completion_.load()) {
             completion_cv_.wait(lock, [this] {
                 return stop_completion_.load() || completion_pending_.load();
             });
-            if (stop_completion_.load()) break;
+            if (stop_completion_.load()) {
+                debug("COMPLETION STOP requested");
+                break;
+            }
             if (!completion_pending_.exchange(false)) continue;
 
+            debug("COMPLETION FIRE begin end=%d cancel=%d fifo=%zu queued=%llu",
+                  end_of_utterance_.load(), cancelled_.load(), queued_frames(),
+                  static_cast<unsigned long long>(queued_frames_.load()));
             end_of_utterance_.store(false);
             cancelled_.store(false);
             queue_playback_callback();
+            debug("COMPLETION FIRE end");
         }
     }
 
@@ -576,7 +670,9 @@ private:
         if (!debug_enabled_) return;
         va_list args;
         va_start(args, fmt);
-        std::fprintf(stderr, "[AIRadioPipeWire] ");
+        const auto seq = debug_sequence_.fetch_add(1, std::memory_order_relaxed) + 1;
+        std::fprintf(stderr, "[AIRadioPipeWire #%llu tid=%llu] ",
+                     static_cast<unsigned long long>(seq), thread_id());
         std::vfprintf(stderr, fmt, args);
         std::fprintf(stderr, "\\n");
         va_end(args);
@@ -598,6 +694,7 @@ private:
     bool connection_ready_ = false;
     int connection_error_ = 0;
     const bool debug_enabled_;
+    mutable std::atomic<uint64_t> debug_sequence_{0};
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
