@@ -228,15 +228,17 @@ public:
                 request_worker();
             }
         }
-        debug("API enqueue END fifo=%zu queued=%llu active=%d",
-              queued_frames(), static_cast<unsigned long long>(queued_frames_.load()), active_);
+        debug("API enqueue END fifo=%zu queued=%llu outstanding=%llu active=%d",
+              fifo_available(), static_cast<unsigned long long>(queued_frames()),
+              static_cast<unsigned long long>(outstanding_frames()), active_);
         return 0;
     }
 
     int end_utterance(bool cancel) {
-        debug("API END_UTTERANCE BEGIN cancel=%d end=%d fifo=%zu queued=%llu active=%d",
-              cancel, end_of_utterance_.load(), queued_frames(),
-              static_cast<unsigned long long>(queued_frames_.load()), active_);
+        debug("API END_UTTERANCE BEGIN cancel=%d end=%d fifo=%zu queued=%llu outstanding=%llu active=%d",
+              cancel, end_of_utterance_.load(), fifo_available(),
+              static_cast<unsigned long long>(queued_frames()),
+              static_cast<unsigned long long>(outstanding_frames()), active_);
         if (!started_ || !stream_ || !loop_) return -107;
         {
             std::lock_guard<std::mutex> lock(fifo_mutex_);
@@ -249,9 +251,10 @@ public:
         }
         fifo_space_cv_.notify_all();
         request_worker();
-        debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu",
-              end_of_utterance_.load(), cancelled_.load(), queued_frames(),
-              static_cast<unsigned long long>(queued_frames_.load()));
+        debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
+              end_of_utterance_.load(), cancelled_.load(), fifo_available(),
+              static_cast<unsigned long long>(queued_frames()),
+              static_cast<unsigned long long>(outstanding_frames()));
         return 0;
     }
 
@@ -363,7 +366,7 @@ private:
         const bool was_requested = worker_requested_.exchange(true, std::memory_order_acq_rel);
         debug("WORKER REQUEST source=%s coalesced=%d fifo=%zu queued=%llu active=%d",
               "signal", was_requested ? 1 : 0, queued_frames(),
-              static_cast<unsigned long long>(queued_frames_.load()), active_debug_.load());
+              static_cast<unsigned long long>(queued_frames()), active_debug_.load());
         worker_cv_.notify_one();
     }
 
