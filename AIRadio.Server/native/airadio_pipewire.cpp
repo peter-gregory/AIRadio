@@ -533,7 +533,7 @@ private:
         auto *self = static_cast<PipeWireBackend *>(data);
         self->debug("STATE %s -> %s error=%s active=%d fifo=%zu queued=%llu outstanding=%llu",
                     stream_state_name(old_state), stream_state_name(state),
-                    error ? error : "-", self->active_debug_.load(), self->queued_frames(),
+                    error ? error : "-", self->active_debug_.load(), self->fifo_available(),
                     static_cast<unsigned long long>(self->queued_frames()),
                     static_cast<unsigned long long>(self->outstanding_frames()));
         if (state == PW_STREAM_STATE_PAUSED || state == PW_STREAM_STATE_STREAMING) {
