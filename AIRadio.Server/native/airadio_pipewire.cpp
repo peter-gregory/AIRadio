@@ -46,8 +46,6 @@ class PipeWireBackend {
         case PW_STREAM_STATE_ERROR: return "ERROR";
         case PW_STREAM_STATE_UNCONNECTED: return "UNCONNECTED";
         case PW_STREAM_STATE_CONNECTING: return "CONNECTING";
-        case PW_STREAM_STATE_AUTHENTICATING: return "AUTHENTICATING";
-        case PW_STREAM_STATE_READY: return "READY";
         case PW_STREAM_STATE_PAUSED: return "PAUSED";
         case PW_STREAM_STATE_STREAMING: return "STREAMING";
         default: return "UNKNOWN";
