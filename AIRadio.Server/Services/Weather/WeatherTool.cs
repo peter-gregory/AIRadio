@@ -1,6 +1,5 @@
 using AIRadio.Server.Models.Location;
 using AIRadio.Server.Models.Tools;
-using AIRadio.Server.Models.Weather;
 using AIRadio.Server.Services.Location;
 using Newtonsoft.Json.Linq;
 
@@ -43,34 +42,7 @@ Examples:
 "Give me a weather report" -> {tool:weather-current}
 """;
 
-    public string GetLlmResponseInstructions() => """
-WEATHER RESPONSE
-- Give a natural spoken weather summary rather than reciting the available fields.
-- Lead with the location and overall current conditions.
-- Include the temperature and, when useful, the feels-like temperature.
-- Do not feel obligated to mention every available value.
-- Combine related weather facts into natural conversational sentences.
-- Temperature and FeelsLike are Fahrenheit values. Say "degrees", never "°F" or "Fahrenheit".
-- Round temperatures to the nearest whole degree for speech.
-- Say wind speed in miles per hour.
-- Say WindDirection as a compass direction, not as a degree value.
-- Report humidity as a percent when it adds useful context.
-- For a weather report, include today's high, tonight's low, and today's chance of rain when those values are available.
-- Mention precipitation only when it is greater than zero and relevant to the report.
-- Use the Condition as provided; do not infer a different condition.
-- Use an available weather sound effect when it naturally reinforces a notable condition.
-- In particular, {sound:weather-wind} is appropriate for notably windy conditions or when strong wind is an important part of the report.
-- Do not use {sound:weather-wind} for an ordinary light breeze.
-- Never invent a sound effect that is not supplied in AVAILABLE SOUND EFFECTS.
-- Keep the response conversational, concise, and natural for speech.
-
-EXAMPLES
-For a calm report:
-"It's mostly clear in Palm City right now, around 83 degrees, although it feels closer to 92. There's a light northeast breeze."
-
-For a notably windy report:
-"It's mostly clear in Palm City, around 83 degrees, but it feels closer to 92. It's pretty windy out there, with strong winds from the northeast. {sound:weather-wind}"
-""";
+    public string GetLlmResponseInstructions() => string.Empty;
 
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
