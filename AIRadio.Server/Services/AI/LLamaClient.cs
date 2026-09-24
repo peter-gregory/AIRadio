@@ -104,7 +104,7 @@ namespace AIRadio.Server.Services.AI
                 try
                 {
                     var responseMaxTokens = isConversation
-                        ? 40
+                        ? 96
                         : _activeToolNames.Contains("news") ? 96 : 48;
 
                     return await CompleteAsync(
