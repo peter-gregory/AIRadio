@@ -107,13 +107,13 @@ Confirm only when the alarm will activate.
     private static string FormatConfirmation(RecurrenceTimeRange range)
     {
         var time = range.TimeOfDay.HasValue
-            ? DateTime.Today.Add(range.TimeOfDay.Value).ToString("h:mm tt")
+            ? TimeSpeechFormatter.Format(range.TimeOfDay.Value)
             : string.Empty;
 
         return range.Type switch
         {
             SchedulePatternType.Once when range.DueAt.HasValue =>
-                $"Okay, your alarm is set for {range.DueAt.Value:h:mm tt}.",
+                $"Okay, your alarm is set for {TimeSpeechFormatter.Format(range.DueAt.Value)}.",
 
             SchedulePatternType.Once when range.StartDate.HasValue &&
                                          range.StartDate.Value == DateOnly.FromDateTime(DateTime.Now) &&
