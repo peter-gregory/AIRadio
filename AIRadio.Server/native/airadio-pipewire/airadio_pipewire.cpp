@@ -390,12 +390,12 @@ private:
 
     void activate_stream() {
         if (shutting_down_.load(std::memory_order_acquire) ||
-            active_ || !stream_ || !loop_)
+            active_.load(std::memory_order_acquire) || !stream_ || !loop_)
             return;
 
         pw_thread_loop_lock(loop_);
         if (!shutting_down_.load(std::memory_order_acquire) &&
-            !active_ &&
+            !active_.load(std::memory_order_acquire) &&
             write_frame_.load(std::memory_order_acquire) !=
                 queue_frame_.load(std::memory_order_acquire)) {
             const int r = pw_stream_set_active(stream_, true);
