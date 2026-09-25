@@ -224,7 +224,7 @@ public:
         }
         debug("API enqueue END fifo=%zu queued=%llu outstanding=%llu active=%d",
               fifo_available(), static_cast<unsigned long long>(queued_frames()),
-              static_cast<unsigned long long>(outstanding_frames()), active_);
+              static_cast<unsigned long long>(outstanding_frames()), active_.load(std::memory_order_acquire));
         return 0;
     }
 
@@ -232,7 +232,7 @@ public:
         debug("API END_UTTERANCE BEGIN cancel=%d end=%d fifo=%zu queued=%llu outstanding=%llu active=%d",
               cancel, end_of_utterance_.load(), fifo_available(),
               static_cast<unsigned long long>(queued_frames()),
-              static_cast<unsigned long long>(outstanding_frames()), active_);
+              static_cast<unsigned long long>(outstanding_frames()), active_.load(std::memory_order_acquire));
         if (!started_ || !stream_ || !loop_) return -107;
         end_of_utterance_.store(true, std::memory_order_release);
         cancelled_.store(cancel, std::memory_order_release);
@@ -403,7 +403,7 @@ private:
                 last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
                 queue_error_callback(r, last_error_);
             } else {
-                active_ = true;
+                active_.store(true, std::memory_order_release);
                 active_debug_.store(true, std::memory_order_release);
                 debug("STREAM ACTIVATE fifo=%zu queued=%llu outstanding=%llu",
                       fifo_available(),
@@ -495,9 +495,9 @@ private:
             return;
 
         pw_thread_loop_lock(loop_);
-        if (active_) {
+        if (active_.load(std::memory_order_acquire)) {
             pw_stream_set_active(stream_, false);
-            active_ = false;
+            active_.store(false, std::memory_order_release);
             active_debug_.store(false, std::memory_order_release);
         }
         pw_thread_loop_unlock(loop_);
@@ -630,7 +630,7 @@ private:
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
     bool started_ = false;
-    bool active_ = false;
+    std::atomic<bool> active_{false};
     std::atomic<bool> active_debug_{false};
     bool connection_ready_ = false;
     int connection_error_ = 0;
