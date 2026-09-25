@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
-#include <condition_variable>
 #include <string>
 #include <vector>
 #include <cstdarg>
@@ -30,6 +29,7 @@ constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kFifoSeconds = 60;
 constexpr size_t kPipeWireFillMilliseconds = 100;
+constexpr size_t kInitialBufferCount = 2;
 
 class PipeWireBackend {
     static const char *stream_state_name(pw_stream_state state) {
@@ -76,6 +76,7 @@ public:
         read_frame_.store(0, std::memory_order_relaxed);
         queue_frame_.store(0, std::memory_order_relaxed);
         write_frame_.store(0, std::memory_order_relaxed);
+        primed_buffers_.store(0, std::memory_order_relaxed);
         shutting_down_.store(false);
         stop_worker_.store(false);
         stop_completion_.store(false);
@@ -96,9 +97,9 @@ public:
             return lr;
         }
 
-        const uint32_t preferred = sample_rate_ * 400 / 1000;
         const std::string latency =
-            std::to_string(preferred) + "/" + std::to_string(sample_rate_);
+            std::to_string(sample_rate_ * 400 / 1000) + "/" +
+            std::to_string(sample_rate_);
 
         pw_properties *props = pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio",
@@ -135,7 +136,7 @@ public:
             return -12;
         }
 
-        uint8_t pod[1024];
+        uint8_t pod[kPodBufferBytes];
         spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod, sizeof(pod));
         spa_audio_info_raw info = SPA_AUDIO_INFO_RAW_INIT(
             .format = SPA_AUDIO_FORMAT_S16,
@@ -201,8 +202,6 @@ public:
 
                 const size_t used = fifo_available_locked();
                 if (used >= fifo_capacity_frames_) {
-                    // This is the non-realtime producer. The RT callback will
-                    // advance queue_frame_ as soon as PipeWire accepts data.
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
@@ -237,9 +236,6 @@ public:
         end_of_utterance_.store(true, std::memory_order_release);
         cancelled_.store(cancel, std::memory_order_release);
         if (cancel) {
-            // The realtime callback never blocks on the FIFO. Flush the
-            // PipeWire queue from the control thread, then discard all
-            // application-side samples.
             pw_thread_loop_lock(loop_);
             const int r = pw_stream_flush(stream_, false);
             if (r < 0)
@@ -248,6 +244,7 @@ public:
             const uint64_t write = write_frame_.load(std::memory_order_acquire);
             read_frame_.store(write, std::memory_order_release);
             queue_frame_.store(write, std::memory_order_release);
+            primed_buffers_.store(0, std::memory_order_release);
             debug("FIFO CANCEL drained application FIFO");
         }
         debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
@@ -295,9 +292,8 @@ public:
         const uint64_t queued = std::min<uint64_t>(time.queued, queue);
         const uint64_t completed = queue - queued;
         const uint64_t old_read = read_frame_.load(std::memory_order_acquire);
-        if (completed > old_read) {
+        if (completed > old_read)
             read_frame_.store(completed, std::memory_order_release);
-        }
 
         debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
               static_cast<unsigned long long>(time.queued),
@@ -405,6 +401,7 @@ private:
             } else {
                 active_.store(true, std::memory_order_release);
                 active_debug_.store(true, std::memory_order_release);
+                primed_buffers_.store(0, std::memory_order_release);
                 debug("STREAM ACTIVATE fifo=%zu queued=%llu outstanding=%llu",
                       fifo_available(),
                       static_cast<unsigned long long>(queued_frames()),
@@ -414,80 +411,72 @@ private:
         pw_thread_loop_unlock(loop_);
     }
 
-    // Called only from PipeWire's realtime data thread. No locks, allocation,
-    // logging, condition-variable operations, or non-RT PipeWire calls.
+    // PipeWire invokes this on its realtime data thread. The callback
+    // normally refills exactly one returned buffer. At the beginning of a
+    // new playback run we prime two buffers so one can be consumed while the
+    // other is queued and ready.
     void process_rt() noexcept {
-        // get_time_n() is explicitly RT safe. Use the stream's queued-frame
-        // count to advance the playback tail without touching a mutex.
-        pw_time time{};
-        if (pw_stream_get_time_n(stream_, &time, sizeof(time)) >= 0) {
-            const uint64_t queue = queue_frame_.load(std::memory_order_acquire);
-            const uint64_t queued = std::min<uint64_t>(time.queued, queue);
-            const uint64_t completed = queue - queued;
-            const uint64_t old_read = read_frame_.load(std::memory_order_acquire);
-            if (completed > old_read)
-                read_frame_.store(completed, std::memory_order_release);
+        const bool priming = primed_buffers_.load(std::memory_order_acquire) < kInitialBufferCount;
+
+        pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
+        if (!buffer)
+            return;
+
+        if (cancelled_.load(std::memory_order_acquire)) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
         }
 
-        while (true) {
-            pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-            if (!buffer)
-                break;
-
-            if (cancelled_.load(std::memory_order_acquire)) {
-                pw_stream_return_buffer(stream_, buffer);
-                continue;
-            }
-
-            if (!buffer->buffer || !buffer->buffer->n_datas ||
-                !buffer->buffer->datas) {
-                pw_stream_return_buffer(stream_, buffer);
-                break;
-            }
-
-            spa_data *d = &buffer->buffer->datas[0];
-            if (!d->data || !d->chunk || !d->maxsize) {
-                pw_stream_return_buffer(stream_, buffer);
-                break;
-            }
-
-            const size_t capacity = d->maxsize / bytes_per_frame_;
-            if (!capacity) {
-                pw_stream_return_buffer(stream_, buffer);
-                break;
-            }
-
-            size_t requested = buffer->requested ?
-                static_cast<size_t>(buffer->requested) : fill_frames_;
-            const size_t frames = queue_fifo_rt(
-                static_cast<uint8_t *>(d->data),
-                std::min({fill_frames_, requested, capacity}));
-
-            if (!frames) {
-                pw_stream_return_buffer(stream_, buffer);
-                break;
-            }
-
-            d->chunk->offset = 0;
-            d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
-            d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
-            buffer->size = frames;
-
-            if (pw_stream_queue_buffer(stream_, buffer) < 0) {
-                // queue_frame_ was advanced before the queue operation. Roll
-                // it back so the samples remain available if PipeWire rejects
-                // the buffer.
-                const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
-                queue_frame_.store(queue - frames, std::memory_order_release);
-                pw_stream_return_buffer(stream_, buffer);
-                break;
-            }
+        if (!buffer->buffer || !buffer->buffer->n_datas ||
+            !buffer->buffer->datas) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
         }
+
+        spa_data *d = &buffer->buffer->datas[0];
+        if (!d->data || !d->chunk || !d->maxsize) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        const size_t capacity = d->maxsize / bytes_per_frame_;
+        if (!capacity) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        size_t requested = buffer->requested ?
+            static_cast<size_t>(buffer->requested) : fill_frames_;
+        const size_t frames = queue_fifo_rt(
+            static_cast<uint8_t *>(d->data),
+            std::min({fill_frames_, requested, capacity}));
+
+        if (!frames) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        d->chunk->offset = 0;
+        d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
+        d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
+        buffer->size = frames;
+
+        if (pw_stream_queue_buffer(stream_, buffer) < 0) {
+            const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
+            queue_frame_.store(queue - frames, std::memory_order_release);
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        if (priming)
+            primed_buffers_.fetch_add(1, std::memory_order_release);
     }
 
     void maybe_complete() {
         if (!end_of_utterance_.load(std::memory_order_acquire))
             return;
+
+        update_completed_frames();
 
         const uint64_t write = write_frame_.load(std::memory_order_acquire);
         const uint64_t read = read_frame_.load(std::memory_order_acquire);
@@ -499,6 +488,7 @@ private:
             pw_stream_set_active(stream_, false);
             active_.store(false, std::memory_order_release);
             active_debug_.store(false, std::memory_order_release);
+            primed_buffers_.store(0, std::memory_order_release);
         }
         pw_thread_loop_unlock(loop_);
 
@@ -627,6 +617,7 @@ private:
     std::atomic<uint64_t> read_frame_{0};
     std::atomic<uint64_t> queue_frame_{0};
     std::atomic<uint64_t> write_frame_{0};
+    std::atomic<size_t> primed_buffers_{0};
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
     bool started_ = false;
@@ -644,9 +635,6 @@ private:
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
-
-    std::mutex completion_mutex_;
-    std::condition_variable completion_cv_;
     std::thread completion_thread_;
     std::atomic<bool> stop_completion_{false};
 
