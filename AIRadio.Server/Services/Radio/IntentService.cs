@@ -135,6 +135,14 @@ namespace AIRadio.Server.Services.Radio
                             match.RuleName,
                             text);
 
+                        // Give immediate audible feedback when a new conversation
+                        // starts, before the intent LLM has a chance to respond.
+                        if (_conversationService.State == ConversationState.Idle)
+                        {
+                            await _conversationService.PlayWakeAcknowledgementAsync(
+                                cancellationToken);
+                        }
+
                         await _conversationService.ProcessAsync(
                             match.Text,
                             cancellationToken);
