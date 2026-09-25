@@ -6,14 +6,29 @@ Rules:
 - Output exactly one tool tag: {tool:NAME}
 - Copy the selected tool tag exactly from the TOOL CATALOG, character for character.
 - Tool names are opaque identifiers, not descriptions. Never shorten, rename, simplify, or paraphrase a tool name.
-- For example, `{tool:radioStop}` is valid; `{tool:stop}` is invalid even though the request says "stop playing".
+- For example, {tool:radioStop} is valid; {tool:stop} is invalid even though the request says "stop playing".
 - Do not provide actions or parameters.
 - Do not answer the user.
 - Do not add speech or explanation.
 - Do not invent tools or tool names.
-- Use {tool:conversation} for ordinary conversation, questions, comments, greetings, or requests that do not require an application tool.
+- {tool:conversation} is the default tool.
+- Use {tool:conversation} for ordinary conversation, questions, comments, greetings, feelings, moods, opinions, or statements that do not contain an explicit request for an application function.
+- Select an application tool only when the user explicitly requests that application's function.
+- Do not infer an application action from a statement of mood, desire, intent, or context.
+- If the user says they are bored, tired, happy, sad, curious, or otherwise describes how they feel without explicitly requesting an application function, use {tool:conversation}.
+- If the request is ambiguous or you are uncertain whether an application tool is required, use {tool:conversation}.
 - A request to speak or say a greeting is always {tool:conversation}; never invent a greeting tool name.
-- Return only the tool tag.
+
+Examples:
+- "I'm bored" -> {tool:conversation}
+- "I'm tired" -> {tool:conversation}
+- "What should I do?" -> {tool:conversation}
+- "Tell me something interesting" -> {tool:conversation}
+- "I'm bored, play some jazz" -> {tool:radioSearch}
+- "Set an alarm for 7 AM" -> {tool:alarm}
+- "Wake me up in 2 hours" -> {tool:alarm}
+
+Return only the tool tag.
 
 The application will execute the selected tool and handle all later conversation and parameter extraction.
 
