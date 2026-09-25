@@ -411,65 +411,73 @@ private:
         pw_thread_loop_unlock(loop_);
     }
 
-    // PipeWire invokes this on its realtime data thread. The callback
-    // normally refills exactly one returned buffer. At the beginning of a
-    // new playback run we prime two buffers so one can be consumed while the
-    // other is queued and ready.
+    // PipeWire invokes this on its realtime data thread. During the
+    // initial activation we queue up to two available buffers so playback
+    // starts with one buffer ready behind the buffer being consumed. Once
+    // primed, each process callback handles exactly one returned buffer.
     void process_rt() noexcept {
-        const bool priming = primed_buffers_.load(std::memory_order_acquire) < kInitialBufferCount;
+        size_t to_prime = 0;
+        if (primed_buffers_.load(std::memory_order_acquire) < kInitialBufferCount)
+            to_prime = kInitialBufferCount;
 
-        pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-        if (!buffer)
-            return;
+        do {
+            pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
+            if (!buffer)
+                return;
 
-        if (cancelled_.load(std::memory_order_acquire)) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            if (cancelled_.load(std::memory_order_acquire)) {
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        if (!buffer->buffer || !buffer->buffer->n_datas ||
-            !buffer->buffer->datas) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            if (!buffer->buffer || !buffer->buffer->n_datas ||
+                !buffer->buffer->datas) {
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        spa_data *d = &buffer->buffer->datas[0];
-        if (!d->data || !d->chunk || !d->maxsize) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            spa_data *d = &buffer->buffer->datas[0];
+            if (!d->data || !d->chunk || !d->maxsize) {
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        const size_t capacity = d->maxsize / bytes_per_frame_;
-        if (!capacity) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            const size_t capacity = d->maxsize / bytes_per_frame_;
+            if (!capacity) {
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        size_t requested = buffer->requested ?
-            static_cast<size_t>(buffer->requested) : fill_frames_;
-        const size_t frames = queue_fifo_rt(
-            static_cast<uint8_t *>(d->data),
-            std::min({fill_frames_, requested, capacity}));
+            size_t requested = buffer->requested ?
+                static_cast<size_t>(buffer->requested) : fill_frames_;
+            const size_t frames = queue_fifo_rt(
+                static_cast<uint8_t *>(d->data),
+                std::min({fill_frames_, requested, capacity}));
 
-        if (!frames) {
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            if (!frames) {
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        d->chunk->offset = 0;
-        d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
-        d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
-        buffer->size = frames;
+            d->chunk->offset = 0;
+            d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
+            d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
+            buffer->size = frames;
 
-        if (pw_stream_queue_buffer(stream_, buffer) < 0) {
-            const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
-            queue_frame_.store(queue - frames, std::memory_order_release);
-            pw_stream_return_buffer(stream_, buffer);
-            return;
-        }
+            if (pw_stream_queue_buffer(stream_, buffer) < 0) {
+                const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
+                queue_frame_.store(queue - frames, std::memory_order_release);
+                pw_stream_return_buffer(stream_, buffer);
+                return;
+            }
 
-        if (priming)
-            primed_buffers_.fetch_add(1, std::memory_order_release);
+            const size_t primed = primed_buffers_.fetch_add(1, std::memory_order_acq_rel) + 1;
+            if (primed >= kInitialBufferCount)
+                return;
+
+            if (!to_prime)
+                return;
+        } while (true);
     }
 
     void maybe_complete() {
