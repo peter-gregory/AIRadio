@@ -21,7 +21,6 @@
 #include <string>
 #include <thread>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -146,128 +145,262 @@ void SignalHandler(int) {
 
 class PcmFrameRing {
  public:
-  using Frame = std::array<float, kFrameSamples>;
+  static constexpr uint64_t kCapacitySamples =
+      204800;  // 12.8 seconds @ 16 kHz
 
-  void WriteSamplesS16(const int16_t* src, size_t sample_count) {
+  // The ring deliberately leaves one sample unused, just like a conventional
+  // circular buffer.  The producer never blocks.  If advancing head would
+  // reach the protected consumer position, incoming samples are dropped.
+  void WriteSamplesS16(
+      const int16_t* src,
+      size_t sample_count) {
+
     if (!src || sample_count == 0) {
       return;
     }
 
-    input_samples_.fetch_add(sample_count, std::memory_order_relaxed);
+    input_samples_.fetch_add(
+        sample_count,
+        std::memory_order_relaxed);
 
-    size_t i = 0;
-
-    while (i < sample_count) {
-      if (write_offset_ == 0) {
-        const size_t head =
-            head_.load(std::memory_order_relaxed);
-
-        const size_t tail =
-            tail_.load(std::memory_order_acquire);
-
-        const size_t next = Next(head);
-
-        if (next == tail) {
-          const size_t dropped = sample_count - i;
-
-          dropped_samples_.fetch_add(
-              dropped,
-              std::memory_order_relaxed);
-
-          Trace(
-              "RING full: dropping ",
-              dropped,
-              " samples");
-
-          return;
-        }
-      }
-
-      const size_t head =
+    for (size_t i = 0; i < sample_count; ++i) {
+      const uint64_t head =
           head_.load(std::memory_order_relaxed);
 
-      Frame& frame = frames_[head];
+      const int64_t recognizer =
+          recognizer_index_.load(
+              std::memory_order_acquire);
 
-      const size_t remaining_in_frame =
-          kFrameSamples - write_offset_;
+      const uint64_t tail =
+          tail_.load(std::memory_order_acquire);
 
-      const size_t remaining_input =
-          sample_count - i;
+      uint64_t protected_index = tail;
 
-      const size_t n =
-          std::min(
-              remaining_in_frame,
-              remaining_input);
-
-      for (size_t j = 0; j < n; ++j) {
-        frame[write_offset_ + j] =
-            static_cast<float>(
-                src[i + j]) /
-            32768.0f;
+      if (recognizer >= 0) {
+        protected_index =
+            std::min(
+                protected_index,
+                static_cast<uint64_t>(recognizer));
       }
 
-      write_offset_ += n;
-      i += n;
+      // Advancing head by one would make the ring full.
+      if (head - protected_index >=
+          kCapacitySamples - 1) {
 
-      if (write_offset_ == kFrameSamples) {
-        const size_t publish_head = head;
-        const size_t next = Next(head);
+        const size_t dropped =
+            sample_count - i;
 
-        head_.store(
-            next,
-            std::memory_order_release);
-
-        published_frames_.fetch_add(
-            1,
+        dropped_samples_.fetch_add(
+            dropped,
             std::memory_order_relaxed);
 
-        write_offset_ = 0;
-
         Trace(
-            "RING publish frame slot=",
-            publish_head,
-            " next_head=",
-            next);
+            "RING full: dropping ",
+            dropped,
+            " samples head=",
+            head,
+            " tail=",
+            tail,
+            " recognizer=",
+            recognizer);
 
-        cv_.notify_one();
+        return;
       }
+
+      samples_[head % kCapacitySamples] =
+          static_cast<float>(src[i]) / 32768.0f;
+
+      head_.store(
+          head + 1,
+          std::memory_order_release);
+
+      published_samples_.fetch_add(
+          1,
+          std::memory_order_relaxed);
     }
+
+    cv_.notify_all();
   }
 
-  const Frame* WaitAndAcquireReadable() {
+  // Copy the VAD window starting at the current tail without advancing tail.
+  // The caller advances tail only after it has processed the window.  This is
+  // important when speech starts: recognizer_index can be set while the
+  // detected audio is still protected by tail.
+  bool CopyVadWindow(
+      float* destination,
+      size_t sample_count,
+      uint64_t* start_sample) {
+
+    if (!destination ||
+        sample_count == 0 ||
+        !start_sample) {
+
+      return false;
+    }
+
     std::unique_lock<std::mutex> lock(mutex_);
 
     cv_.wait(lock, [&] {
       return
-          head_.load(std::memory_order_acquire) !=
-              tail_.load(std::memory_order_relaxed) ||
-          !g_running.load(std::memory_order_relaxed);
+          AvailableFromTail() >= sample_count ||
+          !g_running.load(
+              std::memory_order_relaxed);
     });
 
-    const size_t tail =
-        tail_.load(std::memory_order_relaxed);
-
-    const size_t head =
-        head_.load(std::memory_order_acquire);
-
-    if (tail == head) {
-      return nullptr;
+    if (AvailableFromTail() < sample_count) {
+      return false;
     }
 
-    return &frames_[tail];
+    const uint64_t start =
+        tail_.load(std::memory_order_relaxed);
+
+    CopySamples(
+        start,
+        destination,
+        sample_count);
+
+    *start_sample = start;
+
+    return true;
   }
 
-  void ReleaseReadable() {
-    const size_t tail =
+  void AdvanceTail(size_t sample_count) {
+    if (sample_count == 0) {
+      return;
+    }
+
+    const uint64_t tail =
         tail_.load(std::memory_order_relaxed);
 
     tail_.store(
-        Next(tail),
+        tail + sample_count,
         std::memory_order_release);
 
-    consumed_frames_.fetch_add(
-        1,
+    consumed_samples_.fetch_add(
+        sample_count,
         std::memory_order_relaxed);
+
+    cv_.notify_all();
+  }
+
+  int64_t RecognizerIndex() const {
+    return recognizer_index_.load(
+        std::memory_order_acquire);
+  }
+
+  void SetRecognizerIndex(
+      uint64_t sample_index) {
+
+    recognizer_index_.store(
+        static_cast<int64_t>(sample_index),
+        std::memory_order_release);
+
+    cv_.notify_all();
+  }
+
+  int64_t UtteranceEnd() const {
+    return utterance_end_.load(
+        std::memory_order_acquire);
+  }
+
+  void SetUtteranceEnd(
+      uint64_t sample_index) {
+
+    utterance_end_.store(
+        static_cast<int64_t>(sample_index),
+        std::memory_order_release);
+
+    cv_.notify_all();
+  }
+
+  void ClearRecognizerState() {
+    utterance_end_.store(
+        -1,
+        std::memory_order_release);
+
+    recognizer_index_.store(
+        -1,
+        std::memory_order_release);
+
+    cv_.notify_all();
+  }
+
+  // Wait until the requested sample is published, or shutdown occurs.
+  bool WaitForSample(uint64_t sample_index) {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    cv_.wait(lock, [&] {
+      return
+          head_.load(std::memory_order_acquire) >
+              sample_index ||
+          !g_running.load(
+              std::memory_order_relaxed);
+    });
+
+    return
+        head_.load(std::memory_order_acquire) >
+        sample_index;
+  }
+
+  // Copy already-published samples.  The recognizer index protects this
+  // region from being overwritten while the recognizer is using it.
+  bool CopySamples(
+      uint64_t sample_index,
+      float* destination,
+      size_t sample_count) const {
+
+    if (!destination ||
+        sample_count == 0) {
+
+      return false;
+    }
+
+    const uint64_t head =
+        head_.load(std::memory_order_acquire);
+
+    if (sample_index > head ||
+        sample_count > head - sample_index) {
+
+      return false;
+    }
+
+    const int64_t recognizer =
+        recognizer_index_.load(
+            std::memory_order_acquire);
+
+    const uint64_t tail =
+        tail_.load(std::memory_order_acquire);
+
+    const uint64_t oldest =
+        head > (kCapacitySamples - 1)
+            ? head - (kCapacitySamples - 1)
+            : 0;
+
+    // Once an utterance is active, recognizer_index is protected by the
+    // producer.  Outside an utterance, this is simply a normal retained
+    // history check.
+    const uint64_t protected_oldest =
+        recognizer >= 0
+            ? std::min(
+                  tail,
+                  static_cast<uint64_t>(recognizer))
+            : tail;
+
+    const uint64_t available_oldest =
+        std::max(oldest, protected_oldest);
+
+    if (sample_index < available_oldest) {
+      return false;
+    }
+
+    for (size_t i = 0; i < sample_count; ++i) {
+      destination[i] =
+          samples_[
+              (sample_index + i) %
+              kCapacitySamples];
+    }
+
+    return true;
   }
 
   void Wake() {
@@ -284,35 +417,61 @@ class PcmFrameRing {
         std::memory_order_relaxed);
   }
 
-  uint64_t PublishedFrames() const {
-    return published_frames_.load(
+  uint64_t PublishedSamples() const {
+    return published_samples_.load(
         std::memory_order_relaxed);
   }
 
-  uint64_t ConsumedFrames() const {
-    return consumed_frames_.load(
+  uint64_t ConsumedSamples() const {
+    return consumed_samples_.load(
         std::memory_order_relaxed);
   }
 
  private:
-  static size_t Next(size_t i) {
-    return (i + 1) % kRingFrameCount;
+  uint64_t AvailableFromTail() const {
+    const uint64_t head =
+        head_.load(std::memory_order_acquire);
+
+    const uint64_t tail =
+        tail_.load(std::memory_order_relaxed);
+
+    return head >= tail
+        ? head - tail
+        : 0;
   }
 
-  std::array<Frame, kRingFrameCount> frames_{};
+  void CopySamples(
+      uint64_t sample_index,
+      float* destination,
+      size_t sample_count) const {
 
-  std::atomic<size_t> head_{0};
-  std::atomic<size_t> tail_{0};
+    for (size_t i = 0; i < sample_count; ++i) {
+      destination[i] =
+          samples_[
+              (sample_index + i) %
+              kCapacitySamples];
+    }
+  }
 
-  size_t write_offset_ = 0;
+  std::array<float, kCapacitySamples> samples_{};
 
-  std::mutex mutex_;
+  // All three cursors are monotonically increasing sample indices.
+  std::atomic<uint64_t> head_{0};
+  std::atomic<uint64_t> tail_{0};
+
+  // -1 means there is no active recognizer utterance.
+  std::atomic<int64_t> recognizer_index_{-1};
+
+  // -1 means the VAD has not detected the end of the active utterance.
+  std::atomic<int64_t> utterance_end_{-1};
+
+  mutable std::mutex mutex_;
   std::condition_variable cv_;
 
   std::atomic<uint64_t> input_samples_{0};
   std::atomic<uint64_t> dropped_samples_{0};
-  std::atomic<uint64_t> published_frames_{0};
-  std::atomic<uint64_t> consumed_frames_{0};
+  std::atomic<uint64_t> published_samples_{0};
+  std::atomic<uint64_t> consumed_samples_{0};
 };
 
 // -----------------------------------------------------------------------------
@@ -969,190 +1128,7 @@ class PipeWireCapture {
       stream_ = nullptr;
     }
 
-    if (loop_) {
-      pw_main_loop_destroy(loop_);
-      loop_ = nullptr;
-      pw_loop_ = nullptr;
-    }
-
-    if (props_) {
-      pw_properties_free(props_);
-      props_ = nullptr;
-    }
-
-    if (pw_initialized_) {
-      pw_deinit();
-      pw_initialized_ = false;
-    }
-  }
-
-  PcmFrameRing* ring_ = nullptr;
-
-  pw_main_loop* loop_ = nullptr;
-  pw_loop* pw_loop_ = nullptr;
-  pw_stream* stream_ = nullptr;
-  pw_properties* props_ = nullptr;
-
-  pw_stream_events events_{};
-
-  uint8_t buffer_[4096]{};
-
-  std::vector<int16_t> temp_samples_;
-
-  std::thread loop_thread_;
-
-  bool pw_initialized_ = false;
-  bool started_ = false;
-};
-
-// -----------------------------------------------------------------------------
-// VAD.
-// -----------------------------------------------------------------------------
-
-sherpa_onnx::cxx::VoiceActivityDetector CreateVad() {
-  using namespace sherpa_onnx::cxx;
-
-  VadModelConfig config;
-
-  config.silero_vad.model =
-      ModelPath("silero_vad.onnx");
-
-  config.silero_vad.threshold =
-      g_config.vad_threshold;
-
-  config.silero_vad.min_silence_duration =
-      g_config.vad_min_silence_duration;
-
-  config.silero_vad.min_speech_duration =
-      g_config.vad_min_speech_duration;
-
-  config.silero_vad.max_speech_duration =
-      g_config.vad_max_speech_duration;
-
-  config.silero_vad.window_size =
-      static_cast<int32_t>(
-          kVadWindowSize);
-
-  config.sample_rate =
-      kRecognizerSampleRate;
-
-  config.debug = false;
-
-  std::cout
-      << "VAD model:          "
-      << config.silero_vad.model
-      << '\n'
-
-      << "VAD threshold:      "
-      << g_config.vad_threshold
-      << '\n'
-
-      << "VAD min silence:    "
-      << g_config.vad_min_silence_duration
-      << " sec\n"
-
-      << "VAD min speech:     "
-      << g_config.vad_min_speech_duration
-      << " sec\n"
-
-      << "VAD max speech:     "
-      << g_config.vad_max_speech_duration
-      << " sec\n"
-
-      << "Endpoint silence:   "
-      << g_config.end_silence_duration
-      << " sec\n";
-
-  auto vad =
-      VoiceActivityDetector::Create(
-          config,
-          20.0f);
-
-  if (!vad.Get()) {
-    std::cerr
-        << "Failed to create VAD\n";
-
-    std::exit(EXIT_FAILURE);
-  }
-
-  return vad;
-}
-
-// -----------------------------------------------------------------------------
-// Streaming Zipformer recognizer.
-// -----------------------------------------------------------------------------
-
-sherpa_onnx::cxx::OnlineRecognizer CreateRecognizer() {
-  using namespace sherpa_onnx::cxx;
-
-  OnlineRecognizerConfig config;
-
-  config.model_config.transducer.encoder =
-      ModelPath(g_config.encoder);
-
-  config.model_config.transducer.decoder =
-      ModelPath(g_config.decoder);
-
-  config.model_config.transducer.joiner =
-      ModelPath(g_config.joiner);
-
-  config.model_config.tokens =
-      ModelPath(g_config.tokens);
-
-  config.model_config.num_threads =
-      g_config.num_threads;
-
-  config.feat_config.sample_rate =
-      kRecognizerSampleRate;
-
-  // AIRadio owns endpoint detection.
-  // Do not enable Sherpa endpointing.
-  config.enable_endpoint = false;
-
-  std::cout
-      << "Loading streaming Zipformer...\n"
-
-      << "Encoder:            "
-      << config.model_config.transducer.encoder
-      << '\n'
-
-      << "Decoder:            "
-      << config.model_config.transducer.decoder
-      << '\n'
-
-      << "Joiner:             "
-      << config.model_config.transducer.joiner
-      << '\n'
-
-      << "Tokens:             "
-      << config.model_config.tokens
-      << '\n'
-
-      << "Threads:            "
-      << config.model_config.num_threads
-      << '\n';
-
-  auto recognizer =
-      OnlineRecognizer::Create(config);
-
-  if (!recognizer.Get()) {
-    std::cerr
-        << "Failed to create recognizer\n";
-
-    std::exit(EXIT_FAILURE);
-  }
-
-  std::cout
-      << "Loading model done\n";
-
-  return recognizer;
-}
-
-// -----------------------------------------------------------------------------
-// Speech processor.
-// -----------------------------------------------------------------------------
-
-class SpeechProcessor {
+    if (loop_) class SpeechProcessor {
  public:
   SpeechProcessor(
       PcmFrameRing* ring,
@@ -1163,41 +1139,167 @@ class SpeechProcessor {
       : ring_(ring),
         poster_(poster),
         recognizer_(std::move(recognizer)),
-        vad_(std::move(vad)) {
-
-    vad_pending_.reserve(
-        kFrameSamples +
-        kVadWindowSize);
-  }
+        vad_(std::move(vad)) {}
 
   void Start() {
-    worker_ = std::thread([this] {
-      Run();
+    vad_worker_ = std::thread([this] {
+      RunVad();
+    });
+
+    recognizer_worker_ = std::thread([this] {
+      RunRecognizer();
     });
   }
 
   void Stop() {
-    if (worker_.joinable()) {
-      worker_.join();
+    ring_->Wake();
+
+    if (vad_worker_.joinable()) {
+      vad_worker_.join();
+    }
+
+    if (recognizer_worker_.joinable()) {
+      recognizer_worker_.join();
     }
   }
 
  private:
-  uint64_t EndSilenceFrames() const {
-    const double frames =
+  uint64_t EndSilenceSamples() const {
+    const double samples =
         static_cast<double>(
             g_config.end_silence_duration) *
-        10.0;
+        static_cast<double>(
+            kRecognizerSampleRate);
 
     return std::max<uint64_t>(
         1,
         static_cast<uint64_t>(
-            std::ceil(frames)));
+            std::ceil(samples)));
+  }
+
+  void RunVad() {
+    std::array<float, kVadWindowSize> window{};
+
+    while (g_running.load(
+        std::memory_order_relaxed)) {
+
+      uint64_t window_start = 0;
+
+      if (!ring_->CopyVadWindow(
+              window.data(),
+              window.size(),
+              &window_start)) {
+
+        break;
+      }
+
+      vad_.AcceptWaveform(
+          window.data(),
+          static_cast<int32_t>(
+              window.size()));
+
+      const bool detected =
+          vad_.IsDetected();
+
+      Trace(
+          "VAD window start=",
+          window_start,
+          " end=",
+          window_start + kVadWindowSize,
+          " detected=",
+          detected ? "yes" : "no");
+
+      // Keep tail at the beginning of the VAD window while deciding whether
+      // this is speech.  If speech starts here, recognizer_index can safely
+      // point back into this retained audio.
+      if (detected &&
+          !utterance_active_ &&
+          ring_->RecognizerIndex() < 0) {
+
+        utterance_active_ = true;
+        ++utterance_id_;
+
+        const uint64_t pre_roll =
+            std::min<uint64_t>(
+                kRecognizerPreRollSamples,
+                window_start);
+
+        utterance_start_sample_ =
+            window_start - pre_roll;
+
+        ring_->SetRecognizerIndex(
+            utterance_start_sample_);
+
+        silence_samples_ = 0;
+
+        std::cout
+            << "[VAD] UTTERANCE START id="
+            << utterance_id_
+            << " start_sample="
+            << utterance_start_sample_
+            << " detected_sample="
+            << window_start
+            << '\n';
+      }
+
+      if (utterance_active_) {
+        if (detected) {
+          silence_samples_ = 0;
+
+          Trace(
+              "VAD speech resumed; "
+              "silence samples reset");
+
+        } else {
+          silence_samples_ +=
+              kVadWindowSize;
+
+          const uint64_t required_samples =
+              EndSilenceSamples();
+
+          Trace(
+              "VAD trailing silence samples=",
+              silence_samples_,
+              "/",
+              required_samples);
+
+          if (silence_samples_ >=
+              required_samples) {
+
+            const uint64_t end_sample =
+                window_start +
+                kVadWindowSize;
+
+            std::cout
+                << "[VAD] UTTERANCE END id="
+                << utterance_id_
+                << " start_sample="
+                << utterance_start_sample_
+                << " end_sample="
+                << end_sample
+                << " silence="
+                << g_config.end_silence_duration
+                << " sec\n";
+
+            ring_->SetUtteranceEnd(
+                end_sample);
+
+            utterance_active_ = false;
+            silence_samples_ = 0;
+          }
+        }
+      }
+
+      ring_->AdvanceTail(
+          kVadWindowSize);
+    }
   }
 
   void FinalizeUtterance(
       sherpa_onnx::cxx::OnlineStream* stream,
-      uint64_t end_frame) {
+      uint64_t utterance_id,
+      uint64_t start_sample,
+      uint64_t end_sample) {
 
     if (!stream) {
       return;
@@ -1205,9 +1307,11 @@ class SpeechProcessor {
 
     Trace(
         "ASR finalize utterance=",
-        utterance_id_,
-        " end_frame=",
-        end_frame);
+        utterance_id,
+        " start_sample=",
+        start_sample,
+        " end_sample=",
+        end_sample);
 
     stream->InputFinished();
 
@@ -1223,11 +1327,11 @@ class SpeechProcessor {
 
     std::cout
         << "[ASR] FINAL utterance="
-        << utterance_id_
-        << " start_frame="
-        << utterance_start_frame_
-        << " end_frame="
-        << end_frame
+        << utterance_id
+        << " start_sample="
+        << start_sample
+        << " end_sample="
+        << end_sample
         << " text="
         << text
         << '\n';
@@ -1237,37 +1341,218 @@ class SpeechProcessor {
         std::cerr
             << "[HTTP] queue full, dropping text "
                "for utterance="
-            << utterance_id_
+            << utterance_id
             << '\n';
       }
     }
-
-    recognizer_.Reset(stream);
-
-    utterance_active_ = false;
-    utterance_start_frame_ = UINT64_MAX;
-    silence_frames_ = 0;
   }
 
-  void Run() {
-    auto stream =
-        recognizer_.CreateStream();
-
-    uint64_t frame_index = 0;
-
+  void RunRecognizer() {
     while (g_running.load(
         std::memory_order_relaxed)) {
 
-      const PcmFrameRing::Frame* frame =
-          ring_->WaitAndAcquireReadable();
+      int64_t recognizer_index =
+          ring_->RecognizerIndex();
 
-      if (!frame) {
+      if (recognizer_index < 0) {
+        ring_->WaitForSample(
+            ring_->InputSamples());
+
+        continue;
+      }
+
+      const uint64_t start_sample =
+          static_cast<uint64_t>(
+              recognizer_index);
+
+      auto stream =
+          recognizer_.CreateStream();
+
+      uint64_t sample_index =
+          start_sample;
+
+      bool aborted = false;
+
+      std::array<float, kAsrChunkSamples> chunk{};
+
+      while (g_running.load(
+          std::memory_order_relaxed)) {
+
+        const int64_t current_start =
+            ring_->RecognizerIndex();
+
+        if (current_start < 0) {
+          aborted = true;
+          break;
+        }
+
+        int64_t end_value =
+            ring_->UtteranceEnd();
+
+        const uint64_t head =
+            GetHeadSample();
+
+        uint64_t target_end =
+            std::numeric_limits<uint64_t>::max();
+
+        if (end_value >= 0) {
+          target_end =
+              static_cast<uint64_t>(
+                  end_value);
+
+          if (sample_index >= target_end) {
+            break;
+          }
+        }
+
+        if (sample_index >= head) {
+          if (!ring_->WaitForSample(
+                  sample_index)) {
+
+            aborted = true;
+            break;
+          }
+
+          continue;
+        }
+
+        uint64_t available =
+            head - sample_index;
+
+        if (target_end !=
+            std::numeric_limits<uint64_t>::max()) {
+
+          available =
+              std::min(
+                  available,
+                  target_end - sample_index);
+        }
+
+        const size_t count =
+            std::min<uint64_t>(
+                available,
+                chunk.size());
+
+        if (count == 0) {
+          continue;
+        }
+
+        if (!ring_->CopySamples(
+                sample_index,
+                chunk.data(),
+                count)) {
+
+          std::cerr
+              << "[ASR] ring data was overwritten; "
+                 "dropping utterance="
+              << utterance_id_
+              << '\n';
+
+          aborted = true;
+          break;
+        }
+
+        stream.AcceptWaveform(
+            kRecognizerSampleRate,
+            chunk.data(),
+            static_cast<int32_t>(
+                count));
+
+        int decode_count = 0;
+
+        while (recognizer_.IsReady(
+            &stream)) {
+
+          recognizer_.Decode(&stream);
+          ++decode_count;
+        }
+
+        Trace(
+            "ASR samples=",
+            sample_index,
+            "..",
+            sample_index + count,
+            " decode_count=",
+            decode_count);
+
+        sample_index += count;
+      }
+
+      if (aborted ||
+          !g_running.load(
+              std::memory_order_relaxed)) {
+
         break;
       }
 
-      // -----------------------------------------------------------------------
-      // Feed the ASR recognizer.
-      // -----------------------------------------------------------------------
+      const int64_t end_value =
+          ring_->UtteranceEnd();
+
+      if (end_value < 0) {
+        continue;
+      }
+
+      const uint64_t end_sample =
+          static_cast<uint64_t>(
+              end_value);
+
+      if (sample_index < end_sample) {
+        continue;
+      }
+
+      const int64_t active_start =
+          ring_->RecognizerIndex();
+
+      if (active_start < 0) {
+        continue;
+      }
+
+      const uint64_t start =
+          static_cast<uint64_t>(
+              active_start);
+
+      // The ring state is no longer needed once every sample through the
+      // endpoint has been copied into the recognizer.
+      ring_->ClearRecognizerState();
+
+      FinalizeUtterance(
+          &stream,
+          utterance_id_,
+          start,
+          end_sample);
+    }
+  }
+
+  // The ring owns the authoritative sample cursors.  This helper avoids
+  // exposing another public cursor API just for the recognizer loop.
+  uint64_t GetHeadSample() const {
+    // InputSamples counts captured samples, including samples that may have
+    // been dropped.  It is therefore not the ring head.
+    return ring_->PublishedSamples();
+  }
+
+  static constexpr uint64_t kRecognizerPreRollSamples =
+      1600;  // 100 ms
+
+  static constexpr size_t kAsrChunkSamples =
+      1600;  // 100 ms
+
+  PcmFrameRing* ring_ = nullptr;
+  HttpPoster* poster_ = nullptr;
+
+  sherpa_onnx::cxx::OnlineRecognizer recognizer_;
+  sherpa_onnx::cxx::VoiceActivityDetector vad_;
+
+  std::thread vad_worker_;
+  std::thread recognizer_worker_;
+
+  bool utterance_active_ = false;
+  uint64_t utterance_id_ = 0;
+  uint64_t utterance_start_sample_ = 0;
+  uint64_t silence_samples_ = 0;
+};
+
+----------
 
       stream.AcceptWaveform(
           kRecognizerSampleRate,
@@ -1663,17 +1948,12 @@ int Run() {
       << "Recognizer format:  "
       << "Float32 mono\n"
 
-      << "Frame size:         "
-      << kFrameSamples
+      << "ASR chunk size:     "
+      << 1600
       << " samples / 100 ms\n"
 
-      << "Ring frames:        "
-      << kRingFrameCount
-      << '\n'
-
       << "Ring capacity:      "
-      << (kRingFrameCount *
-          kFrameSamples)
+      << PcmFrameRing::kCapacitySamples
       << " samples / 12.8 sec\n"
 
       << "VAD window:         "
@@ -1753,11 +2033,11 @@ int Run() {
         << "[AUDIO] input_samples="
         << ring.InputSamples()
 
-        << " published_frames="
-        << ring.PublishedFrames()
+        << " published_samples="
+        << ring.PublishedSamples()
 
-        << " consumed_frames="
-        << ring.ConsumedFrames()
+        << " consumed_samples="
+        << ring.ConsumedSamples()
 
         << " dropped_samples="
         << ring.DroppedSamples()
