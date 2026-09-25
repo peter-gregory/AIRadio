@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <thread>
 #include <functional>
+#include <chrono>
 
 namespace {
 
@@ -90,6 +91,8 @@ public:
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
+        startup_trace_active_.store(false, std::memory_order_release);
+        startup_trace_callbacks_.store(0, std::memory_order_release);
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -220,6 +223,13 @@ public:
                 if (!frames) continue;
 
                 write_fifo_locked(src, frames);
+                if (!active_debug_.load(std::memory_order_acquire) &&
+                    !startup_trace_active_.load(std::memory_order_acquire)) {
+                    startup_trace_start_ = std::chrono::steady_clock::now();
+                    startup_trace_callbacks_.store(0, std::memory_order_release);
+                    startup_trace_active_.store(true, std::memory_order_release);
+                    debug("STARTUP TRACE begin fifo=%zu", fifo_available_locked());
+                }
                 debug("FIFO WRITE frames=%zu fifo=%zu read=%llu write=%llu",
                       frames, fifo_available_locked(),
                       static_cast<unsigned long long>(read_frame_),
@@ -300,13 +310,28 @@ public:
             fifo_space_cv_.notify_all();
         }
 
-        debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
-              static_cast<unsigned long long>(time.queued),
-              time.queued_buffers,
-              time.avail_buffers,
-              static_cast<unsigned long long>(read_frame_),
-              static_cast<unsigned long long>(queue_frame_),
-              static_cast<unsigned long long>(write_frame_));
+        if (startup_trace_active_.load(std::memory_order_acquire)) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - startup_trace_start_).count();
+            debug("STARTUP TIME +%.3fms queued=%llu buffered=%llu delay=%lld queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
+                  elapsed / 1000.0,
+                  static_cast<unsigned long long>(time.queued),
+                  static_cast<unsigned long long>(time.buffered),
+                  static_cast<long long>(time.delay),
+                  time.queued_buffers,
+                  time.avail_buffers,
+                  static_cast<unsigned long long>(read_frame_),
+                  static_cast<unsigned long long>(queue_frame_),
+                  static_cast<unsigned long long>(write_frame_));
+        } else {
+            debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
+                  static_cast<unsigned long long>(time.queued),
+                  time.queued_buffers,
+                  time.avail_buffers,
+                  static_cast<unsigned long long>(read_frame_),
+                  static_cast<unsigned long long>(queue_frame_),
+                  static_cast<unsigned long long>(write_frame_));
+        }
         return true;
     }
 
@@ -475,6 +500,14 @@ private:
                 }
                 active_ = true;
                 active_debug_.store(true, std::memory_order_release);
+                if (startup_trace_active_.load(std::memory_order_acquire)) {
+                    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - startup_trace_start_).count();
+                    debug("STARTUP ACTIVATE +%.3fms fifo=%zu queued=%llu outstanding=%llu",
+                          elapsed / 1000.0, fifo_available(),
+                          static_cast<unsigned long long>(queued_frames()),
+                          static_cast<unsigned long long>(outstanding_frames()));
+                }
             }
 
             maybe_complete_locked();
@@ -620,9 +653,25 @@ private:
         // notification. Avoid waking the worker continuously when PipeWire
         // has no buffer available to dequeue.
         const bool wake = time.avail_buffers != 0;
-        self->debug("CALLBACK process queued=%llu queued_buffers=%u avail_buffers=%u wake=%d",
-                    static_cast<unsigned long long>(time.queued),
-                    time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
+        if (self->startup_trace_active_.load(std::memory_order_acquire)) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - self->startup_trace_start_).count();
+            const uint32_t callback = self->startup_trace_callbacks_.fetch_add(1, std::memory_order_acq_rel) + 1;
+            if (callback <= 50 && elapsed <= 500000) {
+                self->debug("STARTUP CALLBACK #%u +%.3fms queued=%llu buffered=%llu delay=%lld queued_buffers=%u avail_buffers=%u wake=%d",
+                            callback, elapsed / 1000.0,
+                            static_cast<unsigned long long>(time.queued),
+                            static_cast<unsigned long long>(time.buffered),
+                            static_cast<long long>(time.delay),
+                            time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
+            }
+            if (callback >= 50 || elapsed > 500000)
+                self->startup_trace_active_.store(false, std::memory_order_release);
+        } else {
+            self->debug("CALLBACK process queued=%llu queued_buffers=%u avail_buffers=%u wake=%d",
+                        static_cast<unsigned long long>(time.queued),
+                        time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
+        }
         if (wake)
             self->request_worker();
     }
@@ -707,6 +756,9 @@ private:
     bool started_ = false;
     bool active_ = false;
     std::atomic<bool> active_debug_{false};
+    std::atomic<bool> startup_trace_active_{false};
+    std::atomic<uint32_t> startup_trace_callbacks_{0};
+    std::chrono::steady_clock::time_point startup_trace_start_{};
     bool connection_ready_ = false;
     int connection_error_ = 0;
     const bool debug_enabled_;
