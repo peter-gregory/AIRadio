@@ -30,7 +30,9 @@ namespace {
 
 constexpr int kRecognizerSampleRate = 16000;
 
+constexpr size_t kFrameSamples = 1600;   // 100 ms @ 16 kHz
 constexpr size_t kVadWindowSize = 512;   // 32 ms @ 16 kHz
+constexpr size_t kRingFrameCount = 128;  // 12.8 seconds
 
 // -----------------------------------------------------------------------------
 // Default VAD configuration.
