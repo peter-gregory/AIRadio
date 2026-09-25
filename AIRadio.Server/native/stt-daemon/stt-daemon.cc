@@ -1145,7 +1145,68 @@ class PipeWireCapture {
       stream_ = nullptr;
     }
 
-    if (loop_) class SpeechProcessor {
+    if (props_) {
+      pw_properties_free(props_);
+      props_ = nullptr;
+    }
+
+    if (loop_) {
+      pw_main_loop_destroy(loop_);
+      loop_ = nullptr;
+      pw_loop_ = nullptr;
+    }
+
+    if (pw_initialized_) {
+      pw_deinit();
+      pw_initialized_ = false;
+    }
+  }
+
+ private:
+  static void OnStateChanged(
+      void* userdata,
+      enum pw_stream_state old_state,
+      enum pw_stream_state state,
+      const char* error) {
+    auto* self =
+        static_cast<PipeWireCapture*>(userdata);
+
+    self->HandleStateChanged(
+        old_state,
+        state,
+        error);
+  }
+
+  static void OnProcess(void* userdata) {
+    auto* self =
+        static_cast<PipeWireCapture*>(userdata);
+
+    self->Process();
+  }
+
+  void HandleStateChanged(
+      enum pw_stream_state old_state,
+      enum pw_stream_state state,
+      const char* error);
+
+  void Process();
+
+  pw_main_loop* loop_ = nullptr;
+  pw_loop* pw_loop_ = nullptr;
+  pw_properties* props_ = nullptr;
+  pw_stream* stream_ = nullptr;
+  pw_stream_events events_{};
+  std::array<uint8_t, 4096> buffer_{};
+  std::vector<float> temp_samples_;
+  std::thread loop_thread_;
+
+  PcmFrameRing* ring_ = nullptr;
+
+  bool pw_initialized_ = false;
+  bool started_ = false;
+};
+
+class SpeechProcessor {
  public:
   SpeechProcessor(
       PcmFrameRing* ring,
