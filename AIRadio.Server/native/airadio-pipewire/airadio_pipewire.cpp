@@ -448,11 +448,14 @@ private:
                 return;
             }
 
-            size_t requested = buffer->requested ?
-                static_cast<size_t>(buffer->requested) : fill_frames_;
+            // buffer->requested describes the amount PipeWire requested
+            // for this process cycle. It is not the size of the next audio
+            // block in our double-buffer pipeline. Once a buffer is returned,
+            // refill it with our fixed block size (subject only to the actual
+            // buffer capacity).
             const size_t frames = queue_fifo_rt(
                 static_cast<uint8_t *>(d->data),
-                std::min({fill_frames_, requested, capacity}));
+                std::min(fill_frames_, capacity));
 
             if (!frames) {
                 pw_stream_return_buffer(stream_, buffer);
