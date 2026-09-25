@@ -30,9 +30,7 @@ namespace {
 
 constexpr int kRecognizerSampleRate = 16000;
 
-constexpr size_t kFrameSamples = 1600;   // 100 ms @ 16 kHz
 constexpr size_t kVadWindowSize = 512;   // 32 ms @ 16 kHz
-constexpr size_t kRingFrameCount = 128;  // 12.8 seconds
 
 // -----------------------------------------------------------------------------
 // Default VAD configuration.
@@ -1368,7 +1366,7 @@ class PipeWireCapture {
     while (g_running.load(
         std::memory_order_relaxed)) {
 
-      int64_t recognizer_index =
+      const int64_t recognizer_index =
           ring_->RecognizerIndex();
 
       if (recognizer_index < 0) {
@@ -1404,11 +1402,8 @@ class PipeWireCapture {
           break;
         }
 
-        int64_t end_value =
+        const int64_t end_value =
             ring_->UtteranceEnd();
-
-        const uint64_t head =
-            GetHeadSample();
 
         uint64_t target_end =
             std::numeric_limits<uint64_t>::max();
@@ -1422,6 +1417,9 @@ class PipeWireCapture {
             break;
           }
         }
+
+        const uint64_t head =
+            ring_->PublishedSamples();
 
         if (sample_index >= head) {
           if (!ring_->WaitForSample(
@@ -1541,14 +1539,6 @@ class PipeWireCapture {
     }
   }
 
-  // The ring owns the authoritative sample cursors.  This helper avoids
-  // exposing another public cursor API just for the recognizer loop.
-  uint64_t GetHeadSample() const {
-    // InputSamples counts captured samples, including samples that may have
-    // been dropped.  It is therefore not the ring head.
-    return ring_->PublishedSamples();
-  }
-
   static constexpr uint64_t kRecognizerPreRollSamples =
       1600;  // 100 ms
 
@@ -1568,174 +1558,6 @@ class PipeWireCapture {
   uint64_t utterance_id_ = 0;
   uint64_t utterance_start_sample_ = 0;
   uint64_t silence_samples_ = 0;
-};
-
-----------
-
-      stream.AcceptWaveform(
-          kRecognizerSampleRate,
-          frame->data(),
-          static_cast<int32_t>(
-              frame->size()));
-
-      int decode_count = 0;
-
-      while (recognizer_.IsReady(&stream)) {
-        recognizer_.Decode(&stream);
-        ++decode_count;
-      }
-
-      Trace(
-          "ASR process frame=",
-          frame_index,
-          " decode_count=",
-          decode_count);
-
-      // -----------------------------------------------------------------------
-      // Feed VAD.
-      // -----------------------------------------------------------------------
-
-      vad_pending_.insert(
-          vad_pending_.end(),
-          frame->begin(),
-          frame->end());
-
-      bool speech_seen_in_frame = false;
-      size_t window_count = 0;
-
-      while (vad_pending_.size() >=
-             kVadWindowSize) {
-
-        vad_.AcceptWaveform(
-            vad_pending_.data(),
-            static_cast<int32_t>(
-                kVadWindowSize));
-
-        const bool detected =
-            vad_.IsDetected();
-
-        speech_seen_in_frame =
-            speech_seen_in_frame ||
-            detected;
-
-        ++window_count;
-
-        Trace(
-            "VAD frame=",
-            frame_index,
-            " window=",
-            window_count,
-            " detected=",
-            detected ? "yes" : "no");
-
-        vad_pending_.erase(
-            vad_pending_.begin(),
-            vad_pending_.begin() +
-                kVadWindowSize);
-      }
-
-      // -----------------------------------------------------------------------
-      // Start a new utterance.
-      // -----------------------------------------------------------------------
-
-      if (speech_seen_in_frame &&
-          !utterance_active_) {
-
-        utterance_active_ = true;
-
-        ++utterance_id_;
-
-        utterance_start_frame_ =
-            frame_index;
-
-        silence_frames_ = 0;
-
-        std::cout
-            << "[VAD] UTTERANCE START id="
-            << utterance_id_
-            << " frame="
-            << utterance_start_frame_
-            << '\n';
-      }
-
-      // -----------------------------------------------------------------------
-      // Paragraph-style endpoint detection.
-      //
-      // Speech resets the trailing-silence counter.
-      //
-      // Silence increments it once per 100 ms frame.
-      //
-      // The utterance is finalized only after the configured amount
-      // of continuous silence has elapsed.
-      // -----------------------------------------------------------------------
-
-      if (utterance_active_) {
-        if (speech_seen_in_frame) {
-          silence_frames_ = 0;
-
-          Trace(
-              "VAD speech resumed; "
-              "silence counter reset");
-
-        } else {
-          ++silence_frames_;
-
-          const uint64_t required_frames =
-              EndSilenceFrames();
-
-          Trace(
-              "VAD trailing silence frames=",
-              silence_frames_,
-              "/",
-              required_frames);
-
-          if (silence_frames_ >=
-              required_frames) {
-
-            std::cout
-                << "[VAD] UTTERANCE END id="
-                << utterance_id_
-                << " start_frame="
-                << utterance_start_frame_
-                << " end_frame="
-                << frame_index
-                << " silence="
-                << g_config.end_silence_duration
-                << " sec\n";
-
-            FinalizeUtterance(
-                &stream,
-                frame_index);
-
-            silence_frames_ = 0;
-          }
-        }
-      }
-
-      ring_->ReleaseReadable();
-
-      ++frame_index;
-    }
-  }
-
-  PcmFrameRing* ring_ = nullptr;
-  HttpPoster* poster_ = nullptr;
-
-  sherpa_onnx::cxx::OnlineRecognizer recognizer_;
-  sherpa_onnx::cxx::VoiceActivityDetector vad_;
-
-  std::thread worker_;
-
-  std::vector<float> vad_pending_;
-
-  bool utterance_active_ = false;
-
-  uint64_t utterance_id_ = 0;
-
-  uint64_t utterance_start_frame_ =
-      UINT64_MAX;
-
-  uint64_t silence_frames_ = 0;
 };
 
 // -----------------------------------------------------------------------------
