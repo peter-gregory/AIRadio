@@ -20,6 +20,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 #include <utility>
 
 namespace {
@@ -1183,13 +1184,6 @@ class PipeWireCapture {
 
     self->Process();
   }
-
-  void HandleStateChanged(
-      enum pw_stream_state old_state,
-      enum pw_stream_state state,
-      const char* error);
-
-  void Process();
 
   pw_main_loop* loop_ = nullptr;
   pw_loop* pw_loop_ = nullptr;
