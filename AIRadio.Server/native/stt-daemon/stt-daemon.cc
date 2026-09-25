@@ -254,7 +254,7 @@ class PcmFrameRing {
     const uint64_t start =
         tail_.load(std::memory_order_relaxed);
 
-    CopySamples(
+    CopySamplesUnchecked(
         start,
         destination,
         sample_count);
@@ -457,7 +457,7 @@ class PcmFrameRing {
         : 0;
   }
 
-  void CopySamples(
+  void CopySamplesUnchecked(
       uint64_t sample_index,
       float* destination,
       size_t sample_count) const {
