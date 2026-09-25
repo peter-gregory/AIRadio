@@ -1312,7 +1312,6 @@ class PipeWireCapture {
 
   void FinalizeUtterance(
       sherpa_onnx::cxx::OnlineStream* stream,
-      uint64_t utterance_id,
       uint64_t start_sample,
       uint64_t end_sample) {
 
@@ -1321,9 +1320,7 @@ class PipeWireCapture {
     }
 
     Trace(
-        "ASR finalize utterance=",
-        utterance_id,
-        " start_sample=",
+        "ASR finalize start_sample=",
         start_sample,
         " end_sample=",
         end_sample);
@@ -1341,9 +1338,7 @@ class PipeWireCapture {
         result.text;
 
     std::cout
-        << "[ASR] FINAL utterance="
-        << utterance_id
-        << " start_sample="
+        << "[ASR] FINAL start_sample="
         << start_sample
         << " end_sample="
         << end_sample
@@ -1354,9 +1349,7 @@ class PipeWireCapture {
     if (!text.empty()) {
       if (!poster_->Enqueue(text)) {
         std::cerr
-            << "[HTTP] queue full, dropping text "
-               "for utterance="
-            << utterance_id
+            << "[HTTP] queue full, dropping text"
             << '\n';
       }
     }
@@ -1460,8 +1453,7 @@ class PipeWireCapture {
 
           std::cerr
               << "[ASR] ring data was overwritten; "
-                 "dropping utterance="
-              << utterance_id_
+                 "dropping current utterance"
               << '\n';
 
           aborted = true;
@@ -1533,7 +1525,6 @@ class PipeWireCapture {
 
       FinalizeUtterance(
           &stream,
-          utterance_id_,
           start,
           end_sample);
     }
