@@ -342,6 +342,23 @@ class PcmFrameRing {
         sample_index;
   }
 
+  // Wait for VAD to announce a new utterance.
+  bool WaitForRecognizerStart() {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    cv_.wait(lock, [&] {
+      return
+          recognizer_index_.load(
+              std::memory_order_acquire) >= 0 ||
+          !g_running.load(
+              std::memory_order_relaxed);
+    });
+
+    return
+        recognizer_index_.load(
+            std::memory_order_acquire) >= 0;
+  }
+
   // Copy already-published samples.  The recognizer index protects this
   // region from being overwritten while the recognizer is using it.
   bool CopySamples(
@@ -1355,8 +1372,9 @@ class PipeWireCapture {
           ring_->RecognizerIndex();
 
       if (recognizer_index < 0) {
-        ring_->WaitForSample(
-            ring_->InputSamples());
+        if (!ring_->WaitForRecognizerStart()) {
+          break;
+        }
 
         continue;
       }
