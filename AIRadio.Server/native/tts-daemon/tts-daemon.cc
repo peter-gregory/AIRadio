@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -271,6 +272,85 @@ static void AppendLE32(std::vector<uint8_t> &out, uint32_t v) {
   out.push_back(static_cast<uint8_t>((v >> 24) & 0xff));
 }
 
+static std::vector<float> ResampleAudio(
+    const std::vector<float> &input,
+    int32_t input_rate,
+    int32_t output_rate) {
+  if (input.empty() || input_rate <= 0 || output_rate <= 0 ||
+      input_rate == output_rate) {
+    return input;
+  }
+
+  // Use a short windowed-sinc filter so Piper's native output is
+  // converted directly to AIRadio's 48 kHz playback format without
+  // introducing another sample-rate conversion in PipeWire.
+  constexpr int kHalfTaps = 16;
+  constexpr double kPi = 3.14159265358979323846;
+
+  const double ratio =
+      static_cast<double>(output_rate) /
+      static_cast<double>(input_rate);
+  const double cutoff =
+      0.5 * std::min(1.0, ratio);
+
+  const size_t output_size = static_cast<size_t>(std::ceil(
+      static_cast<double>(input.size()) * ratio));
+
+  std::vector<float> output(output_size);
+
+  for (size_t out_index = 0; out_index < output_size; ++out_index) {
+    const double source_position =
+        static_cast<double>(out_index) / ratio;
+    const int source_center =
+        static_cast<int>(std::floor(source_position));
+
+    double sum = 0.0;
+    double weight_sum = 0.0;
+
+    for (int tap = -kHalfTaps + 1; tap <= kHalfTaps; ++tap) {
+      const int source_index = source_center + tap;
+
+      if (source_index < 0 ||
+          source_index >= static_cast<int>(input.size())) {
+        continue;
+      }
+
+      const double distance =
+          source_position - static_cast<double>(source_index);
+      const double x = 2.0 * cutoff * distance;
+
+      double sinc = 1.0;
+      if (std::abs(x) > 1e-12) {
+        sinc = std::sin(kPi * x) / (kPi * x);
+      }
+
+      const double window_position =
+          static_cast<double>(tap + kHalfTaps - 1) /
+          static_cast<double>(2 * kHalfTaps - 1);
+      const double window =
+          0.5 - 0.5 * std::cos(2.0 * kPi * window_position);
+
+      const double weight = 2.0 * cutoff * sinc * window;
+      sum += static_cast<double>(input[source_index]) * weight;
+      weight_sum += weight;
+    }
+
+    if (std::abs(weight_sum) > 1e-12) {
+      sum /= weight_sum;
+    }
+
+    if (sum > 1.0) {
+      sum = 1.0;
+    } else if (sum < -1.0) {
+      sum = -1.0;
+    }
+
+    output[out_index] = static_cast<float>(sum);
+  }
+
+  return output;
+}
+
 static std::vector<uint8_t> FloatSamplesToWav(
     const std::vector<float> &samples,
     int32_t sample_rate) {
@@ -443,10 +523,17 @@ int main(int argc, char *argv[]) {
             return;
           }
 
+          constexpr int32_t kOutputSampleRate = 48000;
+
+          std::vector<float> samples = ResampleAudio(
+              audio.samples,
+              audio.sample_rate,
+              kOutputSampleRate);
+
           std::vector<uint8_t> wav =
               FloatSamplesToWav(
-                  audio.samples,
-                  audio.sample_rate);
+                  samples,
+                  kOutputSampleRate);
 
           res.status = 200;
           res.set_header(
