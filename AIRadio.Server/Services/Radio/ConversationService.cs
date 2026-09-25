@@ -13,6 +13,7 @@ namespace AIRadio.Server.Services.Radio
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
+        Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default);
         Task<Guid> StartAlarmAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
@@ -52,6 +53,12 @@ namespace AIRadio.Server.Services.Radio
             if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, false)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
             return Task.CompletedTask;
+        }
+
+        public Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _audioManager.PlaySpeechAsync(GetRandomPhrase(WakeAcknowledgements), cancellationToken);
         }
 
         public Task<Guid> StartAlarmAsync(
@@ -114,6 +121,51 @@ namespace AIRadio.Server.Services.Radio
             _queue.Resume();
         }
 
+        private static readonly string[] WakeAcknowledgements =
+        [
+            "Got it",
+            "Okay",
+            "Sure",
+            "Yes"
+        ];
+
+        private static readonly IReadOnlyDictionary<string, string[]> IntentPreambles =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["news"] =
+                [
+                    "Getting the latest news headlines",
+                    "Let me check the latest news",
+                    "Checking for the latest headlines"
+                ],
+                ["weather"] =
+                [
+                    "Checking the current weather conditions",
+                    "Let me check the weather for you",
+                    "Getting the current weather conditions"
+                ],
+                ["alarm"] =
+                [
+                    "Let's set up a new alarm",
+                    "I'll set up that alarm for you",
+                    "Let's get your alarm set up"
+                ],
+                ["conversation"] =
+                [
+                    "Give me a second",
+                    "Just a moment",
+                    "Let me think about that"
+                ]
+            };
+
+        private static string GetRandomPhrase(IReadOnlyList<string> phrases) =>
+            phrases[Random.Shared.Next(phrases.Count)];
+
+        private static string? GetIntentPreamble(string intent) =>
+            IntentPreambles.TryGetValue(intent, out var preambles)
+                ? GetRandomPhrase(preambles)
+                : null;
+
         private async Task ProcessRequestAsync(ConversationRequest request, CancellationToken cancellationToken)
         {
             var conversationComplete = false;
@@ -155,6 +207,16 @@ namespace AIRadio.Server.Services.Radio
                     {
                         var selected = response.ToolRequests[0];
 
+                        // Intent is now known. Queue a short, deterministic-purpose
+                        // preamble before starting any additional LLM/tool work.
+                        var intentPreamble = GetIntentPreamble(selected.Name);
+                        if (!string.IsNullOrWhiteSpace(intentPreamble))
+                        {
+                            await _audioManager.PlaySpeechAsync(
+                                intentPreamble,
+                                cancellationToken);
+                        }
+
                         if (_tools.TryGetValue(selected.Name, out var selectedTool) && selectedTool.HasParameters)
                         {
                             // radioPlay has only optional arguments. For the saved-list
@@ -180,13 +242,6 @@ namespace AIRadio.Server.Services.Radio
                                 _logger.LogInformation(
                                     "Tool {ToolName} requires argument parsing from the original utterance.",
                                     selected.Name);
-
-                                if (string.Equals(selected.Name, "alarm", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    await _audioManager.QueueSpeechAsync(
-                                        "Sure, let me set a new alarm for you now.",
-                                        cancellationToken);
-                                }
 
                                 response = await _llama.ContinueToolAsync(cancellationToken);
 
