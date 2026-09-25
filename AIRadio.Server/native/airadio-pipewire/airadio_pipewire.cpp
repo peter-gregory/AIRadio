@@ -29,7 +29,6 @@ constexpr uint32_t kAIRadioSampleRate = 16000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kFifoSeconds = 60;
-constexpr size_t kPipeWireTargetMilliseconds = 200;
 constexpr size_t kPipeWireFillMilliseconds = 100;
 
 class PipeWireBackend {
@@ -65,34 +64,27 @@ public:
         }
 
         fifo_capacity_frames_ = static_cast<size_t>(sample_rate_) * 60;
-        target_frames_ = static_cast<uint64_t>(sample_rate_) * kPipeWireTargetMilliseconds / 1000;
         fill_frames_ = static_cast<size_t>(sample_rate_) * kPipeWireFillMilliseconds / 1000;
         try { fifo_.resize(fifo_capacity_frames_ * bytes_per_frame_); }
         catch (...) { last_error_ = "Unable to allocate AIRadio PCM FIFO"; return -12; }
 
-        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), PipeWire target=%llu frames (%.1fs), fill=%zu frames (%.1fms)",
+        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), fill=%zu frames (%.1fms), RT process enabled",
               sample_rate_, channels_, bits_, fifo_capacity_frames_,
               1.0 * fifo_capacity_frames_ / sample_rate_,
-              static_cast<unsigned long long>(target_frames_),
-              1.0 * target_frames_ / sample_rate_,
               fill_frames_, 1000.0 * fill_frames_ / sample_rate_);
 
-        {
-            std::lock_guard<std::mutex> lock(fifo_mutex_);
-            read_frame_ = queue_frame_ = write_frame_ = 0;
-        }
+        read_frame_.store(0, std::memory_order_relaxed);
+        queue_frame_.store(0, std::memory_order_relaxed);
+        write_frame_.store(0, std::memory_order_relaxed);
         shutting_down_.store(false);
         stop_worker_.store(false);
         stop_completion_.store(false);
         end_of_utterance_.store(false);
         cancelled_.store(false);
-        worker_requested_.store(false);
         completion_pending_.store(false);
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
-        startup_trace_active_.store(false, std::memory_order_release);
-        startup_trace_callbacks_.store(0, std::memory_order_release);
 
         pw_init(nullptr, nullptr);
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
@@ -161,7 +153,7 @@ public:
             PW_STREAM_FLAG_AUTOCONNECT |
             PW_STREAM_FLAG_MAP_BUFFERS |
             PW_STREAM_FLAG_INACTIVE |
-            PW_STREAM_FLAG_ASYNC);
+            PW_STREAM_FLAG_RT_PROCESS);
 
         const int r = pw_stream_connect(
             stream_, PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1);
@@ -182,7 +174,6 @@ public:
 
         pw_thread_loop_unlock(loop_);
 
-        pipewire_thread_ = std::thread([this] { pipewire_worker(); });
         completion_thread_ = std::thread([this] { completion_worker(); });
         started_ = true;
         return 0;
@@ -223,21 +214,14 @@ public:
                 if (!frames) continue;
 
                 write_fifo_locked(src, frames);
-                if (!active_debug_.load(std::memory_order_acquire) &&
-                    !startup_trace_active_.load(std::memory_order_acquire)) {
-                    startup_trace_start_ = std::chrono::steady_clock::now();
-                    startup_trace_callbacks_.store(0, std::memory_order_release);
-                    startup_trace_active_.store(true, std::memory_order_release);
-                    debug("STARTUP TRACE begin fifo=%zu", fifo_available_locked());
-                }
                 debug("FIFO WRITE frames=%zu fifo=%zu read=%llu write=%llu",
                       frames, fifo_available_locked(),
-                      static_cast<unsigned long long>(read_frame_),
-                      static_cast<unsigned long long>(write_frame_));
+                      static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
+                      static_cast<unsigned long long>(write_frame_.load(std::memory_order_acquire)));
                 src += frames * bytes_per_frame_;
                 left -= frames * bytes_per_frame_;
                 lock.unlock();
-                request_worker();
+                activate_stream();
             }
         }
         debug("API enqueue END fifo=%zu queued=%llu outstanding=%llu active=%d",
@@ -252,17 +236,23 @@ public:
               static_cast<unsigned long long>(queued_frames()),
               static_cast<unsigned long long>(outstanding_frames()), active_);
         if (!started_ || !stream_ || !loop_) return -107;
-        {
-            std::lock_guard<std::mutex> lock(fifo_mutex_);
-            end_of_utterance_.store(true);
-            cancelled_.store(cancel);
-            if (cancel) {
-                read_frame_ = write_frame_;
-                debug("FIFO CANCEL drained application FIFO");
-            }
+        end_of_utterance_.store(true, std::memory_order_release);
+        cancelled_.store(cancel, std::memory_order_release);
+        if (cancel) {
+            // The realtime callback never blocks on the FIFO. Flush the
+            // PipeWire queue from the control thread, then discard all
+            // application-side samples.
+            pw_thread_loop_lock(loop_);
+            const int r = pw_stream_flush(stream_, false);
+            if (r < 0)
+                debug("CANCEL flush failed error=%d", r);
+            pw_thread_loop_unlock(loop_);
+            const uint64_t write = write_frame_.load(std::memory_order_acquire);
+            read_frame_.store(write, std::memory_order_release);
+            queue_frame_.store(write, std::memory_order_release);
+            debug("FIFO CANCEL drained application FIFO");
         }
         fifo_space_cv_.notify_all();
-        request_worker();
         debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
               end_of_utterance_.load(), cancelled_.load(), fifo_available(),
               static_cast<unsigned long long>(queued_frames()),
@@ -285,13 +275,15 @@ public:
     }
 
     uint64_t queued_frames() const noexcept {
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
-        return queue_frame_ - read_frame_;
+        const uint64_t queue = queue_frame_.load(std::memory_order_acquire);
+        const uint64_t read = read_frame_.load(std::memory_order_acquire);
+        return queue - read;
     }
 
     uint64_t outstanding_frames() const noexcept {
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
-        return write_frame_ - read_frame_;
+        const uint64_t write = write_frame_.load(std::memory_order_acquire);
+        const uint64_t read = read_frame_.load(std::memory_order_acquire);
+        return write - read;
     }
 
     bool update_completed_frames() {
@@ -302,36 +294,22 @@ public:
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
-        const uint64_t queued = std::min<uint64_t>(time.queued, queue_frame_);
-        const uint64_t completed = queue_frame_ - queued;
-        if (completed > read_frame_) {
-            read_frame_ = completed;
+        const uint64_t queue = queue_frame_.load(std::memory_order_acquire);
+        const uint64_t queued = std::min<uint64_t>(time.queued, queue);
+        const uint64_t completed = queue - queued;
+        const uint64_t old_read = read_frame_.load(std::memory_order_acquire);
+        if (completed > old_read) {
+            read_frame_.store(completed, std::memory_order_release);
             fifo_space_cv_.notify_all();
         }
 
-        if (startup_trace_active_.load(std::memory_order_acquire)) {
-            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - startup_trace_start_).count();
-            debug("STARTUP TIME +%.3fms queued=%llu buffered=%llu delay=%lld queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
-                  elapsed / 1000.0,
-                  static_cast<unsigned long long>(time.queued),
-                  static_cast<unsigned long long>(time.buffered),
-                  static_cast<long long>(time.delay),
-                  time.queued_buffers,
-                  time.avail_buffers,
-                  static_cast<unsigned long long>(read_frame_),
-                  static_cast<unsigned long long>(queue_frame_),
-                  static_cast<unsigned long long>(write_frame_));
-        } else {
-            debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
-                  static_cast<unsigned long long>(time.queued),
-                  time.queued_buffers,
-                  time.avail_buffers,
-                  static_cast<unsigned long long>(read_frame_),
-                  static_cast<unsigned long long>(queue_frame_),
-                  static_cast<unsigned long long>(write_frame_));
-        }
+        debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
+              static_cast<unsigned long long>(time.queued),
+              time.queued_buffers,
+              time.avail_buffers,
+              static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
+              static_cast<unsigned long long>(queue_frame_.load(std::memory_order_acquire)),
+              static_cast<unsigned long long>(write_frame_.load(std::memory_order_acquire)));
         return true;
     }
 
@@ -350,16 +328,9 @@ public:
     const char *last_error() const noexcept { return last_error_.c_str(); }
 
     void destroy() {
-        shutting_down_.store(true);
-        stop_worker_.store(true);
-        stop_completion_.store(true);
-        worker_requested_.store(true);
-        completion_pending_.store(true);
-        fifo_space_cv_.notify_all();
-        worker_cv_.notify_all();
-        completion_cv_.notify_all();
+        shutting_down_.store(true, std::memory_order_release);
+        stop_completion_.store(true, std::memory_order_release);
 
-        if (pipewire_thread_.joinable()) pipewire_thread_.join();
         if (completion_thread_.joinable()) completion_thread_.join();
 
         if (loop_) {
@@ -382,209 +353,132 @@ public:
 
 private:
     size_t fifo_available_locked() const noexcept {
-        return static_cast<size_t>(write_frame_ - queue_frame_);
+        const uint64_t write = write_frame_.load(std::memory_order_acquire);
+        const uint64_t queue = queue_frame_.load(std::memory_order_acquire);
+        return static_cast<size_t>(write - queue);
     }
 
     size_t fifo_available() const noexcept {
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
         return fifo_available_locked();
     }
 
     void write_fifo_locked(const uint8_t *src, size_t frames) {
-        const size_t pos = static_cast<size_t>(write_frame_ % fifo_capacity_frames_);
+        const uint64_t write = write_frame_.load(std::memory_order_relaxed);
+        const size_t pos = static_cast<size_t>(write % fifo_capacity_frames_);
         const size_t first = std::min(frames, fifo_capacity_frames_ - pos);
         std::memcpy(fifo_.data() + pos * bytes_per_frame_,
                     src, first * bytes_per_frame_);
         if (first < frames)
             std::memcpy(fifo_.data(), src + first * bytes_per_frame_,
                         (frames - first) * bytes_per_frame_);
-        write_frame_ += frames;
+        write_frame_.store(write + frames, std::memory_order_release);
     }
 
-    size_t queue_fifo_locked(uint8_t *dst, size_t frames) {
-        frames = std::min(frames, fifo_available_locked());
+    size_t queue_fifo_rt(uint8_t *dst, size_t frames) noexcept {
+        const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
+        const uint64_t write = write_frame_.load(std::memory_order_acquire);
+        const size_t available = static_cast<size_t>(write - queue);
+        frames = std::min(frames, available);
         if (!frames) return 0;
-        const size_t pos = static_cast<size_t>(queue_frame_ % fifo_capacity_frames_);
+
+        const size_t pos = static_cast<size_t>(queue % fifo_capacity_frames_);
         const size_t first = std::min(frames, fifo_capacity_frames_ - pos);
         std::memcpy(dst, fifo_.data() + pos * bytes_per_frame_,
                     first * bytes_per_frame_);
         if (first < frames)
             std::memcpy(dst + first * bytes_per_frame_, fifo_.data(),
                         (frames - first) * bytes_per_frame_);
-        queue_frame_ += frames;
+        queue_frame_.store(queue + frames, std::memory_order_release);
         return frames;
     }
 
-    void request_worker() {
-        const bool was_requested = worker_requested_.exchange(true, std::memory_order_acq_rel);
-        debug("WORKER REQUEST source=%s coalesced=%d fifo=%zu queued=%llu active=%d",
-              "signal", was_requested ? 1 : 0, queued_frames(),
-              static_cast<unsigned long long>(queued_frames()), active_debug_.load());
-        worker_cv_.notify_one();
-    }
+    void activate_stream() {
+        if (shutting_down_.load(std::memory_order_acquire) ||
+            active_ || !stream_ || !loop_)
+            return;
 
-    void pipewire_worker() {
-        debug("WORKER START tid=%llu", thread_id());
-        for (;;) {
-            std::unique_lock<std::mutex> wait_lock(worker_mutex_);
-            worker_cv_.wait(wait_lock, [this] {
-                return stop_worker_.load() || worker_requested_.load();
-            });
-            if (stop_worker_.load()) {
-                debug("WORKER STOP requested");
-                return;
-            }
-            worker_requested_.store(false, std::memory_order_release);
-            wait_lock.unlock();
-
-            pw_thread_loop_lock(loop_);
-            if (shutting_down_.load()) {
-                pw_thread_loop_unlock(loop_);
-                continue;
-            }
-
-            const bool cancel = cancelled_.load();
-            if (cancel) {
-                const int r = pw_stream_flush(stream_, false);
-                if (r < 0) {
-                    debug("CANCEL flush failed error=%d", r);
-                    queue_error_callback(r, "pw_stream_flush failed");
-                }
-                std::lock_guard<std::mutex> lock(fifo_mutex_);
-                read_frame_ = queue_frame_ = write_frame_;
-            }
-
-            if (!cancel)
-                update_completed_frames();
-
-            while (true) {
-                pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-                if (!buffer) break;
-
-                // Dequeue means this buffer is available for reuse. It is
-                // not itself a completion notification. Refresh the playback
-                // tail from PipeWire's authoritative queued-frame count.
-                if (!cancel)
-                    update_completed_frames();
-
-                bool has_fifo;
-                {
-                    std::lock_guard<std::mutex> lock(fifo_mutex_);
-                    has_fifo = fifo_available_locked() != 0;
-                }
-
-                if (!has_fifo) {
-                    pw_stream_return_buffer(stream_, buffer);
-                    break;
-                }
-
-                if (!fill_and_queue(buffer))
-                    break;
-
-                if (queued_frames() >= target_frames_)
-                    break;
-            }
-
-            const bool fifo_has_data = [&] {
-                std::lock_guard<std::mutex> lock(fifo_mutex_);
-                return fifo_available_locked() != 0;
-            }();
-
-            if (fifo_has_data && !active_) {
-                const int r = pw_stream_set_active(stream_, true);
-                if (r < 0) {
-                    last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
-                    queue_error_callback(r, last_error_);
-                    pw_thread_loop_unlock(loop_);
-                    continue;
-                }
+        pw_thread_loop_lock(loop_);
+        if (!shutting_down_.load(std::memory_order_acquire) &&
+            !active_ &&
+            write_frame_.load(std::memory_order_acquire) !=
+                queue_frame_.load(std::memory_order_acquire)) {
+            const int r = pw_stream_set_active(stream_, true);
+            if (r < 0) {
+                last_error_ = "pw_stream_set_active failed: " + std::to_string(r);
+                queue_error_callback(r, last_error_);
+            } else {
                 active_ = true;
                 active_debug_.store(true, std::memory_order_release);
-                if (startup_trace_active_.load(std::memory_order_acquire)) {
-                    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now() - startup_trace_start_).count();
-                    debug("STARTUP ACTIVATE +%.3fms fifo=%zu queued=%llu outstanding=%llu",
-                          elapsed / 1000.0, fifo_available(),
-                          static_cast<unsigned long long>(queued_frames()),
-                          static_cast<unsigned long long>(outstanding_frames()));
-                }
+                debug("STREAM ACTIVATE fifo=%zu queued=%llu outstanding=%llu",
+                      fifo_available(),
+                      static_cast<unsigned long long>(queued_frames()),
+                      static_cast<unsigned long long>(outstanding_frames()));
+            }
+        }
+        pw_thread_loop_unlock(loop_);
+    }
+
+    // Called only from PipeWire's realtime data thread. No locks, allocation,
+    // logging, condition-variable operations, or non-RT PipeWire calls.
+    void process_rt() noexcept {
+        while (true) {
+            pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
+            if (!buffer)
+                break;
+
+            if (!buffer->buffer || !buffer->buffer->n_datas ||
+                !buffer->buffer->datas)
+                return;
+
+            spa_data *d = &buffer->buffer->datas[0];
+            if (!d->data || !d->chunk || !d->maxsize)
+                return;
+
+            const size_t capacity = d->maxsize / bytes_per_frame_;
+            if (!capacity)
+                return;
+
+            const size_t frames = queue_fifo_rt(
+                static_cast<uint8_t *>(d->data),
+                std::min(fill_frames_, capacity));
+
+            if (!frames) {
+                pw_stream_return_buffer(stream_, buffer);
+                break;
             }
 
-            maybe_complete_locked();
-            pw_thread_loop_unlock(loop_);
+            d->chunk->offset = 0;
+            d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
+            d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
+            buffer->size = frames;
+
+            if (pw_stream_queue_buffer(stream_, buffer) < 0)
+                break;
         }
     }
 
-    bool fill_and_queue(pw_buffer *buffer) {
-        if (!buffer || !buffer->buffer || !buffer->buffer->n_datas ||
-            !buffer->buffer->datas)
-            return false;
-
-        spa_data *d = &buffer->buffer->datas[0];
-        if (!d->data || !d->chunk || !d->maxsize) return false;
-
-        const size_t capacity = d->maxsize / bytes_per_frame_;
-        if (!capacity) return false;
-
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
-        const size_t frames =
-            std::min({fill_frames_, capacity, fifo_available_locked()});
-        if (!frames) {
-            debug("FILL EMPTY buffer=%p capacity=%zu fifo=%zu requested=%llu",
-                  static_cast<void *>(buffer), capacity, fifo_available_locked(),
-                  static_cast<unsigned long long>(buffer->requested));
-            return false;
-        }
-
-        const uint64_t queue_start = queue_frame_;
-        queue_fifo_locked(static_cast<uint8_t *>(d->data), frames);
-        d->chunk->offset = 0;
-        d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
-        d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
-        buffer->size = frames;
-
-        const int r = pw_stream_queue_buffer(stream_, buffer);
-        if (r < 0) {
-            queue_frame_ = queue_start;
-            debug("QUEUE FAILED buffer=%p frames=%zu error=%d",
-                  static_cast<void *>(buffer), frames, r);
-            queue_error_callback(r, "pw_stream_queue_buffer failed");
-            return false;
-        }
-
-        debug("FILL buffer=%p requested=%llu capacity=%zu frames=%zu read=%llu queue=%llu write=%llu fifo=%zu",
-              static_cast<void *>(buffer),
-              static_cast<unsigned long long>(buffer->requested),
-              capacity, frames,
-              static_cast<unsigned long long>(read_frame_),
-              static_cast<unsigned long long>(queue_frame_),
-              static_cast<unsigned long long>(write_frame_),
-              fifo_available_locked());
-        return true;
-    }
-
-    void maybe_complete_locked() {
-        if (!end_of_utterance_.load()) return;
-        std::lock_guard<std::mutex> lock(fifo_mutex_);
-        if (write_frame_ != read_frame_) {
-            debug("COMPLETE WAIT fifo=%zu queued=%llu outstanding=%llu",
-                  fifo_available_locked(),
-                  static_cast<unsigned long long>(queue_frame_ - read_frame_),
-                  static_cast<unsigned long long>(write_frame_ - read_frame_));
+    void maybe_complete() {
+        if (!end_of_utterance_.load(std::memory_order_acquire))
             return;
-        }
 
+        const uint64_t write = write_frame_.load(std::memory_order_acquire);
+        const uint64_t read = read_frame_.load(std::memory_order_acquire);
+        if (write != read)
+            return;
+
+        pw_thread_loop_lock(loop_);
         if (active_) {
-            debug("STREAM ACTIVE request=false for completion");
             pw_stream_set_active(stream_, false);
             active_ = false;
             active_debug_.store(false, std::memory_order_release);
         }
+        pw_thread_loop_unlock(loop_);
 
-        const bool was_pending = completion_pending_.exchange(true);
-        debug("COMPLETE READY pending_was=%d", was_pending ? 1 : 0);
-        if (!was_pending)
-            completion_cv_.notify_one();
+        if (!end_of_utterance_.exchange(false, std::memory_order_acq_rel))
+            return;
+
+        cancelled_.store(false, std::memory_order_release);
+        queue_playback_callback();
     }
 
     static void on_state_changed(void *data, pw_stream_state old_state,
@@ -642,38 +536,7 @@ private:
 
     static void on_process(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        pw_time time{};
-        const int r = pw_stream_get_time_n(self->stream_, &time, sizeof(time));
-        if (r < 0) {
-            self->request_worker();
-            return;
-        }
-
-        // process() is a scheduling notification, not a buffer-completed
-        // notification. Avoid waking the worker continuously when PipeWire
-        // has no buffer available to dequeue.
-        const bool wake = time.avail_buffers != 0;
-        if (self->startup_trace_active_.load(std::memory_order_acquire)) {
-            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - self->startup_trace_start_).count();
-            const uint32_t callback = self->startup_trace_callbacks_.fetch_add(1, std::memory_order_acq_rel) + 1;
-            if (callback <= 50 && elapsed <= 500000) {
-                self->debug("STARTUP CALLBACK #%u +%.3fms queued=%llu buffered=%llu delay=%lld queued_buffers=%u avail_buffers=%u wake=%d",
-                            callback, elapsed / 1000.0,
-                            static_cast<unsigned long long>(time.queued),
-                            static_cast<unsigned long long>(time.buffered),
-                            static_cast<long long>(time.delay),
-                            time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
-            }
-            if (callback >= 50 || elapsed > 500000)
-                self->startup_trace_active_.store(false, std::memory_order_release);
-        } else {
-            self->debug("CALLBACK process queued=%llu queued_buffers=%u avail_buffers=%u wake=%d",
-                        static_cast<unsigned long long>(time.queued),
-                        time.queued_buffers, time.avail_buffers, wake ? 1 : 0);
-        }
-        if (wake)
-            self->request_worker();
+        self->process_rt();
     }
 
     static void on_drained(void *data) {
@@ -686,26 +549,13 @@ private:
 
     void completion_worker() {
         debug("COMPLETION START tid=%llu", thread_id());
-        std::unique_lock<std::mutex> lock(completion_mutex_);
-        while (!stop_completion_.load()) {
-            completion_cv_.wait(lock, [this] {
-                return stop_completion_.load() || completion_pending_.load();
-            });
-            if (stop_completion_.load()) {
-                debug("COMPLETION STOP requested");
+        while (!stop_completion_.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            if (stop_completion_.load(std::memory_order_acquire))
                 break;
-            }
-            if (!completion_pending_.exchange(false)) continue;
-
-            debug("COMPLETION FIRE begin end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
-                  end_of_utterance_.load(), cancelled_.load(), fifo_available(),
-                  static_cast<unsigned long long>(queued_frames()),
-                  static_cast<unsigned long long>(outstanding_frames()));
-            end_of_utterance_.store(false);
-            cancelled_.store(false);
-            queue_playback_callback();
-            debug("COMPLETION FIRE end");
+            maybe_complete();
         }
+        debug("COMPLETION STOP requested");
     }
 
     void queue_playback_callback() {
@@ -744,10 +594,11 @@ private:
 
     uint32_t sample_rate_, channels_, bits_, bytes_per_frame_;
     size_t fifo_capacity_frames_ = 0;
-    uint64_t target_frames_ = 0;
     size_t fill_frames_ = 0;
     std::vector<uint8_t> fifo_;
-    uint64_t read_frame_ = 0, queue_frame_ = 0, write_frame_ = 0;
+    std::atomic<uint64_t> read_frame_{0};
+    std::atomic<uint64_t> queue_frame_{0};
+    std::atomic<uint64_t> write_frame_{0};
     mutable std::mutex fifo_mutex_;
     std::condition_variable fifo_space_cv_;
 
@@ -756,9 +607,6 @@ private:
     bool started_ = false;
     bool active_ = false;
     std::atomic<bool> active_debug_{false};
-    std::atomic<bool> startup_trace_active_{false};
-    std::atomic<uint32_t> startup_trace_callbacks_{0};
-    std::chrono::steady_clock::time_point startup_trace_start_{};
     bool connection_ready_ = false;
     int connection_error_ = 0;
     const bool debug_enabled_;
@@ -766,22 +614,16 @@ private:
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
-    std::atomic<bool> worker_requested_{false};
     std::atomic<bool> end_of_utterance_{false};
     std::atomic<bool> cancelled_{false};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
 
-    std::mutex worker_mutex_;
-    std::condition_variable worker_cv_;
-    std::thread pipewire_thread_;
-
     std::mutex completion_mutex_;
     std::condition_variable completion_cv_;
     std::thread completion_thread_;
     std::atomic<bool> stop_completion_{false};
-    std::atomic<bool> completion_pending_{false};
 
     std::mutex callback_mutex_;
     AIRadioPlaybackCallback playback_callback_ = nullptr;
