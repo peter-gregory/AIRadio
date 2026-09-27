@@ -1,6 +1,6 @@
 # event-new-year
 
-Use when the holiday new year or january first is the condition being reported.
+Use when New Year's Day is the holiday being reported.
 
 Example:
 {sound:event-new-year}
