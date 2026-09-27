@@ -14,6 +14,7 @@ public interface IAlarmService
     bool DisableEvent(Guid id);
     bool AddExclusion(Guid alarmId, RecurrenceTimeRange exclusion);
     int RemoveExpiredAlarms(DateTime? timestamp = null);
+    int RemoveExpiredEvents(DateTime? timestamp = null);
 }
 
 public sealed class AlarmService : IAlarmService
@@ -145,6 +146,26 @@ public sealed class AlarmService : IAlarmService
         {
             Save();
             _logger.LogInformation("Removed {Count} expired alarm(s).", removed);
+        }
+
+        return removed;
+    }
+
+    public int RemoveExpiredEvents(DateTime? timestamp = null)
+    {
+        var now = timestamp ?? DateTime.Now;
+        int removed;
+
+        lock (_sync)
+        {
+            removed = _events.RemoveAll(
+                x => x.Enabled && IsExpired(x, now));
+        }
+
+        if (removed > 0)
+        {
+            Save();
+            _logger.LogInformation("Removed {Count} expired event(s).", removed);
         }
 
         return removed;
