@@ -4,6 +4,8 @@ namespace AIRadio.Server.Services.Weather;
 
 public static class WeatherReportFormatter
 {
+    private const int LowRainChanceThreshold = 20;
+
     public static string Format(WeatherResult weather)
     {
         ArgumentNullException.ThrowIfNull(weather);
@@ -17,22 +19,28 @@ public static class WeatherReportFormatter
         var sentences = new List<string>
         {
             $"Here's the weather for {weather.Location}.",
-            $"It's {current.Condition.ToLowerInvariant()} and {Temperature(current.Temperature)} right now"
+            $"It's {Temperature(current.Temperature)} out right now"
         };
 
-        if (Math.Abs(current.FeelsLike - current.Temperature) >= 3)
-            sentences[^1] += $", feeling like {Temperature(current.FeelsLike)}";
+        if (today is not null)
+            sentences[^1] += $" with a low of {Temperature(today.Low)} tonight.";
 
-        sentences[^1] += ".";
+        else
+            sentences[^1] += ".";
+
+        if (Math.Abs(current.FeelsLike - current.Temperature) >= 3)
+            sentences.Add(
+                $"It feels like {Temperature(current.FeelsLike)}.");
 
         if (today is not null)
         {
             sentences.Add(
-                $"Today's high will be {Temperature(today.High)}, with a low of {Temperature(today.Low)} tonight.");
+                $"Today's high will be {Temperature(today.High)}.");
 
-            if (today.RainChance > 0)
-                sentences.Add(
-                    today.RainChance == 100
+            sentences.Add(
+                today.RainChance <= LowRainChanceThreshold
+                    ? "There is no chance of rain today in the forecast."
+                    : today.RainChance == 100
                         ? "Rain is expected today."
                         : $"There's a {today.RainChance} percent chance of rain today.");
         }
@@ -42,7 +50,7 @@ public static class WeatherReportFormatter
             var wind = $"Winds are from the {ToCompassDirection(current.WindDirection)} at {Speed(current.WindSpeed)}";
             if (current.WindGusts > current.WindSpeed + 5)
                 wind += $", with gusts up to {Speed(current.WindGusts)}";
-            sentences.Add(wind + ".");
+            sentences.Add(wind + " {sound:weather-wind}.");
         }
         else if (current.WindSpeed >= 5)
         {
@@ -60,20 +68,11 @@ public static class WeatherReportFormatter
         if (!string.IsNullOrWhiteSpace(conditionTag))
             sentences[1] += $" {conditionTag}";
 
-        if (current.WindSpeed >= 15 || current.WindGusts >= 25)
-        {
-            var windSentenceIndex = sentences.FindIndex(
-                sentence => sentence.StartsWith("Winds are from the ", StringComparison.Ordinal));
-
-            if (windSentenceIndex >= 0)
-                sentences[windSentenceIndex] += " {sound:weather-wind}";
-        }
-
         return string.Join(" ", sentences);
     }
 
     private static string Temperature(double value) =>
-        $"{Math.Round(value, MidpointRounding.AwayFromZero):0} degrees";
+        $"{Math.Round(value, MidpointRounding.AwayFromZero):0}";
 
     private static string Speed(double value) =>
         $"{Math.Round(value, MidpointRounding.AwayFromZero):0} miles per hour";
@@ -90,24 +89,44 @@ public static class WeatherReportFormatter
 
         if (normalized.Contains("thunderstorm"))
             return "{sound:weather-thunderstorm}";
+
         if (normalized.Contains("freezing rain"))
             return "{sound:weather-freezing-rain}";
+
         if (normalized.Contains("freezing drizzle"))
             return "{sound:weather-freezing-drizzle}";
+
         if (normalized.Contains("snow shower"))
             return "{sound:weather-snow-shower}";
+
         if (normalized == "snow")
             return "{sound:weather-snow}";
+
         if (normalized.Contains("rain shower"))
             return "{sound:weather-rain-shower}";
+
         if (normalized == "rain")
             return "{sound:weather-rain}";
+
         if (normalized == "drizzle")
             return "{sound:weather-drizzle}";
+
         if (normalized == "foggy")
             return "{sound:weather-fog}";
 
-        return null;
+        if (normalized == "overcast")
+            return "{sound:weather-overcast}";
+
+        if (normalized == "partly cloudy")
+            return "{sound:weather-partly-cloudy}";
+
+        if (normalized == "mostly clear")
+            return "{sound:weather-mostly-clear}";
+
+        if (normalized == "clear")
+            return "{sound:weather-nice}";
+
+        return "{sound:weather-nice}";
     }
 
     private static string ToCompassDirection(double degrees)
