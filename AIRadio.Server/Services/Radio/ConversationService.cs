@@ -153,7 +153,7 @@ namespace AIRadio.Server.Services.Radio
                 ],
                 ["events"] =
                 [
-                    "Getting your events for the day {sound:events-intro}"
+                    "Getting your events for the day {sound:event-intro}"
                 ],
                 ["conversation"] =
                 [
