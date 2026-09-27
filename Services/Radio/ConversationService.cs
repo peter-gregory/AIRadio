@@ -30,6 +30,8 @@ namespace AIRadio.Server.Services.Radio
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
         private Guid _conversationId;
+        private bool _conversationEnded;
+        private bool _speechPlaybackCompleted;
 
         public ConversationState State => _state;
         public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
@@ -42,6 +44,7 @@ namespace AIRadio.Server.Services.Radio
             _audioManager = audioManager;
             ArgumentNullException.ThrowIfNull(tools);
             _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
+            _audioManager.PlaybackCompleted += OnPlaybackCompleted;
             _queue = new AsyncWorkQueue<ConversationRequest>();
             _queue.Start(ProcessRequestAsync);
         }
@@ -55,10 +58,11 @@ namespace AIRadio.Server.Services.Radio
             return Task.CompletedTask;
         }
 
-        public Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default)
+        public async Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return _audioManager.PlaySpeechAsync(GetRandomPhrase(WakeAcknowledgements), cancellationToken);
+            await _audioManager.DuckAsync(cancellationToken);
+            await _audioManager.PlaySpeechAsync(GetRandomPhrase(WakeAcknowledgements), cancellationToken);
         }
 
         public Task<Guid> StartAlarmAsync(
@@ -192,6 +196,12 @@ namespace AIRadio.Server.Services.Radio
                 }
 
                 SetState(ConversationState.Processing, conversationId);
+                _conversationEnded = false;
+                _speechPlaybackCompleted = false;
+
+                // Duck once when the conversation begins. AudioManager no longer
+                // ducks/unducks around individual speech segments.
+                await _audioManager.DuckAsync(cancellationToken);
 
                 if (_pendingToolRequest is not null)
                 {
@@ -282,6 +292,8 @@ namespace AIRadio.Server.Services.Radio
                 {
                     SetState(ConversationState.Complete, conversationId);
                     SetState(ConversationState.Idle, conversationId);
+                    _conversationEnded = true;
+                    await TryResumeRadioAsync();
                 }
                 else
                 {
@@ -311,6 +323,9 @@ namespace AIRadio.Server.Services.Radio
 
                     if (_state == ConversationState.Complete)
                         SetState(ConversationState.Idle, conversationId);
+
+                    _conversationEnded = true;
+                    await TryResumeRadioAsync();
 
                     _pendingToolRequest = null;
                     try
@@ -569,7 +584,39 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
-        public ValueTask DisposeAsync() => _queue.DisposeAsync();
+        private void OnPlaybackCompleted(object? sender, EventArgs e)
+        {
+            _speechPlaybackCompleted = true;
+            _logger.LogDebug(
+                "Conversation audio playback completed; conversationEnded={ConversationEnded}.",
+                _conversationEnded);
+
+            _ = TryResumeRadioAsync();
+        }
+
+        private async Task TryResumeRadioAsync()
+        {
+            if (!_conversationEnded || !_speechPlaybackCompleted)
+                return;
+
+            try
+            {
+                _logger.LogDebug("Conversation and audio playback are both complete; resuming radio.");
+                await _audioManager.UnduckAsync(CancellationToken.None);
+                _conversationEnded = false;
+                _speechPlaybackCompleted = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resume radio after conversation completion.");
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _audioManager.PlaybackCompleted -= OnPlaybackCompleted;
+            return _queue.DisposeAsync();
+        }
 
         private void SetState(ConversationState state, Guid conversationId)
         {
