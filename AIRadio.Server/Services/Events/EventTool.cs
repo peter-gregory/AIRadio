@@ -61,6 +61,7 @@ EVENTS REPORT RESPONSE
         var includeAlarms = request.GetBoolean("includeAlarms") ?? true;
         var includeReminders = request.GetBoolean("includeReminders") ?? true;
         var reportDate = (timestamp ?? DateTime.Now).Date;
+        _alarmService.RemoveExpiredEvents();
         var events = _alarmService.GetEvents(timestamp);
 
         var result = new EventReportData
