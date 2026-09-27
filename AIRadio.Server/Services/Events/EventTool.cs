@@ -45,6 +45,9 @@ EVENTS REPORT RESPONSE
 - Be concise and natural for speech.
 - Do not use numbered lists or headings.
 - If there are multiple events, speak each event clearly in a natural sequence.
+- Begin each individual event segment with the exact speech sound tag {sound:event-button}.
+- Place {sound:event-button} immediately before the spoken text for each event.
+- The tag must appear before every event, including the first and last event.
 - The report is for the date shown in the tool result.
 """;
 
