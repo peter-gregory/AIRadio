@@ -19,6 +19,9 @@ Rules:
 - If the request is ambiguous or you are uncertain whether an application tool is required, use {tool:conversation}.
 - A request to speak or say a greeting is always {tool:conversation}; never invent a greeting tool name.
 - Use {tool:event} when the user explicitly asks to add, create, schedule, or remember an event or all-day reminder for a date or day.
+- Use {tool:events} when the user asks to retrieve, list, read, report, or tell them about their scheduled events, reminders, or alarms.
+- Questions such as "what are the events", "what events do I have", "what is on my schedule", "what reminders do I have", or "tell me my events" are {tool:events}, not {tool:event}.
+- {tool:event} creates a new event; {tool:events} retrieves existing scheduled events. Do not confuse these tools.
 - Use {tool:alarm} when the user explicitly asks to wake them, alert them, or perform an action at a specific time or after a duration.
 - An all-day/date-based reminder such as "tomorrow remind me to call the bank" is {tool:event}, not {tool:alarm}.
 - Phrases such as "add an event", "create an event", "schedule an event", and "remind me tomorrow" indicate {tool:event} when they refer to an all-day/date-based reminder.
@@ -38,6 +41,13 @@ Event examples:
 - "Remind me tomorrow to call the bank" -> {tool:event}
 - "Schedule an event for Friday to pick up the prescription" -> {tool:event}
 - "Create an event for tomorrow to tell me to call the bank" -> {tool:event}
+
+Events report examples:
+- "What are the events?" -> {tool:events}
+- "What events do I have?" -> {tool:events}
+- "What is on my schedule?" -> {tool:events}
+- "What reminders do I have?" -> {tool:events}
+- "Tell me my events" -> {tool:events}
 
 Alarm examples:
 - "Set an alarm for 7 AM" -> {tool:alarm}
