@@ -117,11 +117,17 @@ namespace AIRadio.Server.Services.Radio
         public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            _conversationEnded = true;
+            _speechPlaybackCompleted = false;
+
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
+
             _pendingToolRequest = null;
             SetState(ConversationState.Complete, _conversationId);
             SetState(ConversationState.Idle, _conversationId);
+            await TryResumeRadioAsync();
             _queue.Resume();
         }
 
