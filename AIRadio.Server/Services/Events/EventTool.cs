@@ -60,16 +60,19 @@ EVENTS REPORT RESPONSE
         var timestamp = request.GetArgument<DateTime?>("timestamp");
         var includeAlarms = request.GetBoolean("includeAlarms") ?? true;
         var includeReminders = request.GetBoolean("includeReminders") ?? true;
+        var reportDate = (timestamp ?? DateTime.Now).Date;
         var events = _alarmService.GetEvents(timestamp);
 
         var result = new EventReportData
         {
-            Date = timestamp ?? DateTime.Now,
+            Date = reportDate,
             Events = events.Where(x =>
                 (includeAlarms && x.Type == ScheduledEventType.Alarm) ||
                 (includeReminders && x.Type == ScheduledEventType.Reminder)).Select(MapEvent).ToList()
         };
 
+        AddHolidayEvent(result, DateTime.Now.Date);
+        
         if (result.Events.Count == 0)
         {
             var noEventsPrompt = timestamp?.Date == DateTime.Now.Date
@@ -93,8 +96,16 @@ EVENTS REPORT RESPONSE
                     ? $" at {DateTime.Today.Add(eventItem.Time.Value):h:mm tt}"
                     : string.Empty;
 
-                return $"{{sound:event-button}}{eventItem.Type}{timeText}: {eventItem.Content}";
+                var specialSound = eventItem.SpecialSound is null
+                    ? string.Empty
+                    : $"{{sound:{eventItem.SpecialSound}}}";
+
+                return $"{{sound:event-button}}{specialSound}{eventItem.Type}{timeText}: {eventItem.Content}";
             }));
+
+        var completionPrompt = result.Date == DateTime.Now.Date
+            ? "And that's all the events for today"
+            : $"And that's all the events for {result.Date:MMMM d}";
 
         return Task.FromResult(
             ToolResult.Successful(
@@ -103,16 +114,76 @@ EVENTS REPORT RESPONSE
                 data: result,
                 exactPrompt: eventSpeech,
                 complete: true,
-                completionPrompt: "And that's all the events for today"));
+                completionPrompt: completionPrompt));
     }
 
-    private static EventReportItem MapEvent(ScheduledEvent scheduledEvent) => new()
+    private static EventReportItem MapEvent(ScheduledEvent scheduledEvent)
     {
-        Id = scheduledEvent.Id,
-        Type = scheduledEvent.Type.ToString(),
-        Content = scheduledEvent.Content,
-        Time = scheduledEvent.When.TimeOfDay
-    };
+        var content = scheduledEvent.Content;
+        var specialSound = scheduledEvent.Type == ScheduledEventType.Reminder &&
+            content.Contains("birthday", StringComparison.OrdinalIgnoreCase)
+                ? "event-birthday"
+                : null;
+
+        return new EventReportItem
+        {
+            Id = scheduledEvent.Id,
+            Type = scheduledEvent.Type.ToString(),
+            Content = content,
+            Time = scheduledEvent.When.TimeOfDay,
+            SpecialSound = specialSound
+        };
+    }
+
+    private static void AddHolidayEvent(EventReportData result, DateTime currentDate)
+    {
+        if (result.Date != currentDate.Date)
+            return;
+
+        var holiday = HolidayDefinitions.FirstOrDefault(x => x.IsMatch(currentDate));
+        if (holiday is null)
+            return;
+
+        result.Events.Insert(0, new EventReportItem
+        {
+            Type = "Holiday",
+            Content = holiday.Text,
+            SpecialSound = holiday.SoundTag
+        });
+    }
+
+    private sealed record HolidayDefinition(
+        string Text,
+        string SoundTag,
+        Func<DateTime, bool> IsMatch);
+
+    private static readonly HolidayDefinition[] HolidayDefinitions =
+    [
+        new("New Year's Day", "event-new-year", date => date.Month == 1 && date.Day == 1),
+        new("Martin Luther King Jr. Day", "event-special", date => IsNthWeekday(date, 1, DayOfWeek.Monday, 3)),
+        new("Presidents' Day", "event-special", date => IsNthWeekday(date, 2, DayOfWeek.Monday, 3)),
+        new("Memorial Day", "event-special", date => IsLastWeekday(date, 5, DayOfWeek.Monday)),
+        new("Juneteenth", "event-special", date => date.Month == 6 && date.Day == 19),
+        new("Independence Day", "event-fourth-july", date => date.Month == 7 && date.Day == 4),
+        new("Labor Day", "event-special", date => IsNthWeekday(date, 9, DayOfWeek.Monday, 1)),
+        new("Columbus Day", "event-special", date => IsNthWeekday(date, 10, DayOfWeek.Monday, 2)),
+        new("Veterans Day", "event-special", date => date.Month == 11 && date.Day == 11),
+        new("Thanksgiving Day", "event-special", date => IsNthWeekday(date, 11, DayOfWeek.Thursday, 4)),
+        new("Christmas Day", "event-christmas", date => date.Month == 12 && date.Day == 25)
+    ];
+
+    private static bool IsNthWeekday(DateTime date, int month, DayOfWeek day, int occurrence) =>
+        date.Month == month &&
+        date.DayOfWeek == day &&
+        ((date.Day - 1) / 7) + 1 == occurrence;
+
+    private static bool IsLastWeekday(DateTime date, int month, DayOfWeek day)
+    {
+        if (date.Month != month || date.DayOfWeek != day)
+            return false;
+
+        return date.AddDays(7).Month != month;
+    }
 }
 
 public sealed class EventReportData
@@ -127,4 +198,5 @@ public sealed class EventReportItem
     public string Type { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     public TimeSpan? Time { get; init; }
+    public string? SpecialSound { get; init; }
 }
