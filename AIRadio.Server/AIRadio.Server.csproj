@@ -56,10 +56,4 @@
     </None>
   </ItemGroup>
 
-
-
-  <ItemGroup>
-    <Folder Include="Data\Sounds\weather\weather-intro\" />
-  </ItemGroup>
-
 </Project>
