@@ -194,7 +194,27 @@ namespace AIRadio.Server.Services.Radio
 
                 SetState(ConversationState.Processing, conversationId);
 
-                if (_pendingToolRequest is not null)
+                // Alarm activation preambles are already fully rendered speech.
+                // Do not send them through intent classification or argument
+                // parsing; that would turn the preamble into a new alarm request.
+                if (request.IsAlarm &&
+                    request.Text.StartsWith("{sound:alarm-alarm}", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation(
+                        "Playing alarm activation preamble directly: {Text}",
+                        request.Text);
+
+                    await _audioManager.PlaySpeechAsync(
+                        request.Text,
+                        cancellationToken);
+
+                    await _audioManager.EndUtteranceAsync(
+                        cancel: false,
+                        cancellationToken);
+
+                    conversationComplete = true;
+                }
+                else if (_pendingToolRequest is not null)
                 {
                     var pendingRequest = ApplyPendingToolInput(request.Text);
                     _pendingToolRequest = null;
