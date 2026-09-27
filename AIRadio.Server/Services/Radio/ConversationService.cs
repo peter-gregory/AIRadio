@@ -223,12 +223,56 @@ namespace AIRadio.Server.Services.Radio
 
                         if (_tools.TryGetValue(selected.Name, out var selectedTool) && selectedTool.HasParameters)
                         {
+                            // Events have a deterministic parser. The request contains
+                            // only a date/category selection, so there is no reason to
+                            // spend another LLM round extracting arguments.
+                            if (string.Equals(selected.Name, "events", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parsed = EventsParser.Parse(request.Text);
+
+                                if (parsed is not null)
+                                {
+                                    _logger.LogInformation(
+                                        "Tool {ToolName} parsed deterministically: Date={Date}, IncludeAlarms={IncludeAlarms}, IncludeReminders={IncludeReminders}.",
+                                        selected.Name,
+                                        parsed.Date,
+                                        parsed.IncludeAlarms,
+                                        parsed.IncludeReminders);
+
+                                    response.ToolRequests.Clear();
+                                    response.ToolRequests.Add(new ToolRequest
+                                    {
+                                        Name = selected.Name,
+                                        Arguments = new JObject
+                                        {
+                                            ["timestamp"] = parsed.Date,
+                                            ["includeAlarms"] = parsed.IncludeAlarms,
+                                            ["includeReminders"] = parsed.IncludeReminders
+                                        }
+                                    });
+                                }
+                                else
+                                {
+                                    _logger.LogInformation(
+                                        "Tool {ToolName} deterministic parser could not parse the request; falling back to LLM argument parsing.",
+                                        selected.Name);
+
+                                    response = await _llama.ContinueToolAsync(cancellationToken);
+
+                                    var parsedRequests = response.ToolRequests
+                                        .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
+                                        .ToList();
+
+                                    response.ToolRequests.Clear();
+                                    response.ToolRequests.AddRange(parsedRequests);
+                                }
+                            }
                             // radioPlay has only optional arguments. For the saved-list
                             // phrases, there is nothing to extract, so avoid a second
                             // LLM round that can incorrectly turn command wording into
                             // a station name.
-                            if (string.Equals(selected.Name, "radioPlay", StringComparison.OrdinalIgnoreCase) &&
-                                IsSavedRadioPlaybackRequest(request.Text))
+                            else if (string.Equals(selected.Name, "radioPlay", StringComparison.OrdinalIgnoreCase) &&
+                                     IsSavedRadioPlaybackRequest(request.Text))
                             {
                                 _logger.LogInformation(
                                     "Tool {ToolName} selected saved-station playback; skipping argument parsing.",
