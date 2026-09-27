@@ -24,7 +24,6 @@ public static class WeatherReportFormatter
 
         if (today is not null)
             sentences[^1] += $" with a low of {Temperature(today.Low)} tonight.";
-
         else
             sentences[^1] += ".";
 
@@ -67,6 +66,8 @@ public static class WeatherReportFormatter
         var conditionTag = GetConditionSoundTag(current.Condition);
         if (!string.IsNullOrWhiteSpace(conditionTag))
             sentences[1] += $" {conditionTag}";
+
+        sentences.Add($"And that's the local weather for {weather.Location}.");
 
         return string.Join(" ", sentences);
     }
