@@ -53,15 +53,6 @@ EVENTS REPORT RESPONSE
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (request.State == ToolRequestState.Initial)
-        {
-            return Task.FromResult(
-                ToolResult.Preamble(
-                    Name,
-                    "Getting your events for the day {sound:events-intro}",
-                    request.WithState(ToolRequestState.PreambleComplete)));
-        }
-
         var timestamp = request.GetArgument<DateTime?>("timestamp");
         var includeAlarms = request.GetBoolean("includeAlarms") ?? true;
         var includeReminders = request.GetBoolean("includeReminders") ?? true;
