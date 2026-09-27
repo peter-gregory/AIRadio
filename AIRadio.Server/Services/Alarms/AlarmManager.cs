@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Time;
@@ -105,17 +106,19 @@ namespace AIRadio.Server.Services.Alarms
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
+                        var alarmAction = AppendWakeUpSound(action);
+
                         _logger.LogInformation(
                             "Executing alarm {Id} action: {Action}",
                             alarm.Id,
-                            action);
+                            alarmAction);
 
                         _conversationCompletion = new TaskCompletionSource<bool>(
                             TaskCreationOptions.RunContinuationsAsynchronously);
                         _activeConversationId = Guid.Empty;
 
                         var conversationId = await _radioManager.ProcessAlarmAsync(
-                            action,
+                            alarmAction,
                             cancellationToken);
 
                         _activeConversationId = conversationId;
@@ -144,6 +147,17 @@ namespace AIRadio.Server.Services.Alarms
                         _alarmService.DisableEvent(alarm.Id);
                 }
             }
+        }
+
+        private static string AppendWakeUpSound(string action)
+        {
+            if (!Regex.IsMatch(action, @"\bwake\s+up\b", RegexOptions.IgnoreCase) ||
+                Regex.IsMatch(action, @"\{sound:wake-up\}", RegexOptions.IgnoreCase))
+            {
+                return action;
+            }
+
+            return $"{action.Trim()} {{sound:wake-up}}";
         }
 
         private void OnConversationStateChanged(
