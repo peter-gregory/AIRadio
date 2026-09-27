@@ -1,6 +1,6 @@
-# event-forth-july
+# event-fourth-july
 
-Use when the holiday independence day or fourth of july is the condition being reported.
+Use when Independence Day or the Fourth of July is the holiday being reported.
 
 Example:
-{sound:event-forth-july}
+{sound:event-fourth-july}
