@@ -2,6 +2,7 @@ using AIRadio.Server.Models.LLama;
 using AIRadio.Server.Models.Tools;
 using AIRadio.Server.Services.AI;
 using AIRadio.Server.Services.Audio;
+using AIRadio.Server.Services.Events;
 using Newtonsoft.Json.Linq;
 
 namespace AIRadio.Server.Services.Radio
