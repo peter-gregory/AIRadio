@@ -48,6 +48,7 @@ EVENTS REPORT RESPONSE
 - Begin each individual event segment with the exact speech sound tag {sound:event-button}.
 - Place {sound:event-button} immediately before the spoken text for each event.
 - The tag must appear before every event, including the first and last event.
+- Never invent sound tags such as {sound:event-reminder}; only use {sound:event-button}.
 - The report is for the date shown in the tool result.
 """;
 
@@ -84,11 +85,24 @@ EVENTS REPORT RESPONSE
                     complete: true));
         }
 
+        var eventSpeech = string.Join(
+            " ",
+            result.Events.Select(eventItem =>
+            {
+                var timeText = eventItem.Time.HasValue
+                    ? $" at {DateTime.Today.Add(eventItem.Time.Value):h:mm tt}"
+                    : string.Empty;
+
+                return $"{{sound:event-button}}{eventItem.Type}{timeText}: {eventItem.Content}";
+            }));
+
         return Task.FromResult(
             ToolResult.Successful(
                 Name,
                 $"Found {result.Events.Count} scheduled event(s).",
-                result,
+                data: result,
+                exactPrompt: eventSpeech,
+                complete: true,
                 completionPrompt: "And that's all the events for today"));
     }
 
