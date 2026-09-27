@@ -17,22 +17,56 @@ public sealed class EventTool : ITool
     public string GetLlmInstructions() => """
 EVENTS
 Retrieve scheduled alarms and reminders.
+
 Parameters:
 - timestamp: optional date/time to inspect.
 - includeAlarms: optional; defaults to true.
 - includeReminders: optional; defaults to true.
-Use for scheduled events and requests such as "what's happening today" when the user means scheduled events.
+
+IMPORTANT:
+- Only provide timestamp when the user explicitly specifies a date or time.
+- If the user says "what are the events", "what events do I have", "tell me my events", or otherwise asks for the events without specifying a date, leave timestamp omitted. Do not invent a date.
+- When timestamp is omitted, the tool reports today's events.
+- Use for scheduled events and requests such as "what's happening today" when the user means scheduled events.
 "Events report" means this tool; report is not a separate tool.
+
+Examples:
+"What are the events?" -> {tool:events}
+"What events do I have?" -> {tool:events}
+"What are my events tomorrow?" -> {tool:events,timestamp="tomorrow"}
+"What is on my schedule Friday?" -> {tool:events,timestamp="Friday"}
+""";
+
+    public string GetLlmResponseInstructions() => """
+EVENTS REPORT RESPONSE
+- Report only scheduled alarms and reminders contained in the tool result.
+- Do not invent events, dates, holidays, or other information.
+- Do not reinterpret the date in the tool result.
+- Be concise and natural for speech.
+- Do not use numbered lists or headings.
+- If there are multiple events, speak each event clearly in a natural sequence.
+- The report is for the date shown in the tool result.
 """;
 
     public Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (request.State == ToolRequestState.Initial)
+        {
+            return Task.FromResult(
+                ToolResult.Preamble(
+                    Name,
+                    "Getting your events for the day {sound:events-intro}",
+                    request.WithState(ToolRequestState.PreambleComplete)));
+        }
+
         var timestamp = request.GetArgument<DateTime?>("timestamp");
         var includeAlarms = request.GetBoolean("includeAlarms") ?? true;
         var includeReminders = request.GetBoolean("includeReminders") ?? true;
         var events = _alarmService.GetEvents(timestamp);
+
         var result = new EventReportData
         {
             Date = timestamp ?? DateTime.Now,
@@ -40,7 +74,28 @@ Use for scheduled events and requests such as "what's happening today" when the 
                 (includeAlarms && x.Type == ScheduledEventType.Alarm) ||
                 (includeReminders && x.Type == ScheduledEventType.Reminder)).Select(MapEvent).ToList()
         };
-        return Task.FromResult(ToolResult.Successful(Name, $"Found {result.Events.Count} scheduled event(s).", result));
+
+        if (result.Events.Count == 0)
+        {
+            var noEventsPrompt = timestamp?.Date == DateTime.Now.Date
+                ? "There are no events for today"
+                : $"There are no events for {result.Date:MMMM d}";
+
+            return Task.FromResult(
+                ToolResult.Successful(
+                    Name,
+                    $"Found 0 scheduled event(s).",
+                    data: result,
+                    exactPrompt: noEventsPrompt,
+                    complete: true));
+        }
+
+        return Task.FromResult(
+            ToolResult.Successful(
+                Name,
+                $"Found {result.Events.Count} scheduled event(s).",
+                result,
+                completionPrompt: "And that's all the events for today"));
     }
 
     private static EventReportItem MapEvent(ScheduledEvent scheduledEvent) => new()
