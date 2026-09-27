@@ -150,6 +150,10 @@ namespace AIRadio.Server.Services.Radio
                     "I'll set up that alarm for you",
                     "Let's get your alarm set up"
                 ],
+                ["events"] =
+                [
+                    "Getting your events for the day {sound:events-intro}"
+                ],
                 ["conversation"] =
                 [
                     "Give me a second",
