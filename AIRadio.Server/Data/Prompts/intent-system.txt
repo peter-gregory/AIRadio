@@ -18,6 +18,11 @@ Rules:
 - If the user says they are bored, tired, happy, sad, curious, or otherwise describes how they feel without explicitly requesting an application function, use {tool:conversation}.
 - If the request is ambiguous or you are uncertain whether an application tool is required, use {tool:conversation}.
 - A request to speak or say a greeting is always {tool:conversation}; never invent a greeting tool name.
+- Use {tool:event} when the user explicitly asks to add, create, schedule, or remember an event or all-day reminder for a date or day.
+- Use {tool:alarm} when the user explicitly asks to wake them, alert them, or perform an action at a specific time or after a duration.
+- An all-day/date-based reminder such as "tomorrow remind me to call the bank" is {tool:event}, not {tool:alarm}.
+- Phrases such as "add an event", "create an event", "schedule an event", and "remind me tomorrow" indicate {tool:event} when they refer to an all-day/date-based reminder.
+- If speech recognition produces "at an event" where the surrounding request clearly means "add an event", treat the intended request as "add an event". Do not select {tool:alarm} merely because the transcript contains the words "an event".
 
 Examples:
 - "I'm bored" -> {tool:conversation}
@@ -27,6 +32,17 @@ Examples:
 - "I'm bored, play some jazz" -> {tool:radioSearch}
 - "Set an alarm for 7 AM" -> {tool:alarm}
 - "Wake me up in 2 hours" -> {tool:alarm}
+
+Event examples:
+- "Add an event for tomorrow to call the bank" -> {tool:event}
+- "Remind me tomorrow to call the bank" -> {tool:event}
+- "Schedule an event for Friday to pick up the prescription" -> {tool:event}
+- "Create an event for tomorrow to tell me to call the bank" -> {tool:event}
+
+Alarm examples:
+- "Set an alarm for 7 AM" -> {tool:alarm}
+- "Wake me up tomorrow at 7 AM" -> {tool:alarm}
+- "Remind me in 5 minutes" -> {tool:alarm}
 
 Return only the tool tag.
 
