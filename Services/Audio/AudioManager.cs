@@ -10,6 +10,7 @@ namespace AIRadio.Server.Services.Audio
     public interface IAudioManager
     {
         bool IsDucked { get; }
+        event EventHandler? PlaybackCompleted;
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
         Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default);
@@ -54,6 +55,7 @@ namespace AIRadio.Server.Services.Audio
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
+        public event EventHandler? PlaybackCompleted;
 
         public Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
         {
@@ -101,6 +103,12 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.WaitForIdleAsync(cancellationToken);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
+
+            if (!cancel)
+            {
+                _logger.LogDebug("Audio playback completed for the current utterance.");
+                PlaybackCompleted?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -194,16 +202,8 @@ namespace AIRadio.Server.Services.Audio
                 return;
             }
 
-            await DuckMpvAsync(cancellationToken);
-            try
-            {
-                await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
-                await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
-            }
-            finally
-            {
-                await UnduckMpvAsync(CancellationToken.None);
-            }
+            await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
+            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
         }
 
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
