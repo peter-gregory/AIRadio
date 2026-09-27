@@ -46,8 +46,15 @@ public static class EventsParser
 
         try
         {
-            var expression = NormalizeDateExpression(dateExpression);
-            var range = RecurrenceTimeRangeParser.Parse(expression, reference);
+            if (TryParseWeekday(dateExpression, reference, out var weekdayDate))
+            {
+                return new EventsQuery(
+                    weekdayDate,
+                    includeAlarms,
+                    includeReminders);
+            }
+
+            var range = RecurrenceTimeRangeParser.Parse(dateExpression, reference);
 
             if (range.StartDate is null)
                 return null;
@@ -97,19 +104,40 @@ public static class EventsParser
         return monthDay.Success ? monthDay.Value : null;
     }
 
-    private static string NormalizeDateExpression(string expression)
+    private static bool TryParseWeekday(
+        string expression,
+        DateTime reference,
+        out DateTime date)
     {
-        // RecurrenceTimeRangeParser requires a recurrence qualifier for a
-        // bare weekday. Treat "Friday" as the next occurrence of Friday.
-        if (Regex.IsMatch(
-                expression,
-                @"^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
-                RegexOptions.IgnoreCase))
+        var match = Regex.Match(
+            expression,
+            @"^(?:(?<qualifier>this|next)\s+)?(?<day>monday|tuesday|wednesday|thursday|friday|saturday|sunday)$",
+            RegexOptions.IgnoreCase);
+
+        if (!match.Success)
         {
-            return $"next {expression}";
+            date = default;
+            return false;
         }
 
-        return expression;
+        if (!Enum.TryParse<DayOfWeek>(
+                match.Groups["day"].Value,
+                ignoreCase: true,
+                out var target))
+        {
+            date = default;
+            return false;
+        }
+
+        var delta = ((int)target - (int)reference.DayOfWeek + 7) % 7;
+        if (match.Groups["qualifier"].Value.Equals("next", StringComparison.OrdinalIgnoreCase) ||
+            (match.Groups["qualifier"].Value.Equals("this", StringComparison.OrdinalIgnoreCase) && delta == 0))
+        {
+            delta = delta == 0 ? 7 : delta;
+        }
+
+        date = reference.Date.AddDays(delta);
+        return true;
     }
 
     private static string Normalize(string value) =>
