@@ -444,6 +444,20 @@ int main(int argc, char *argv[]) {
   config.model.num_threads = opts.num_threads;
   config.model.debug = opts.debug;
 
+  //
+  // Piper/VITS uses these two noise inputs to add variation to the
+  // generated waveform. AIRadio generates speech one sentence at a
+  // time, so leaving them at their normal non-zero values can make
+  // adjacent sentences sound like they came from different takes.
+  //
+  // Keep the model's learned voice/prosody intact, but remove the
+  // stochastic noise so every sentence uses the same stable voice
+  // character. This is preferable to changing the speaker model or
+  // synthesizing an entire response as one request.
+  //
+  config.model.vits.noise_scale = 0.0f;
+  config.model.vits.noise_scale_w = 0.0f;
+
   TtsEngine engine(OfflineTts::Create(config));
 
   //
