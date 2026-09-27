@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(stt-daemon LANGUAGES CXX)
+project(tts-daemon LANGUAGES CXX)
 
 # ============================================================================
 # C++ configuration
@@ -206,19 +206,19 @@ endforeach()
 # Executable
 # ============================================================================
 
-add_executable(stt-daemon
-    stt-daemon.cc
+add_executable(tts-daemon
+    tts-daemon.cc
 )
 
 # ============================================================================
 # Compiler configuration
 # ============================================================================
 
-target_compile_features(stt-daemon PRIVATE
+target_compile_features(tts-daemon PRIVATE
     cxx_std_17
 )
 
-target_compile_options(stt-daemon PRIVATE
+target_compile_options(tts-daemon PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -228,7 +228,7 @@ target_compile_options(stt-daemon PRIVATE
 # Include directories
 # ============================================================================
 
-target_include_directories(stt-daemon PRIVATE
+target_include_directories(tts-daemon PRIVATE
     "${SHERPA_ONNX_ROOT}"
     "${SHERPA_ONNX_ROOT}/sherpa-onnx/cxx-api"
     "${SHERPA_ONNX_ROOT}/sherpa-onnx/c-api"
@@ -244,7 +244,7 @@ target_include_directories(stt-daemon PRIVATE
 # Library directories
 # ============================================================================
 
-target_link_directories(stt-daemon PRIVATE
+target_link_directories(tts-daemon PRIVATE
     "${SHERPA_ONNX_LIB_DIR}"
     "${SHERPA_ONNX_INSTALL_LIB_DIR}"
 )
@@ -253,7 +253,7 @@ target_link_directories(stt-daemon PRIVATE
 # Link libraries
 # ============================================================================
 
-target_link_libraries(stt-daemon PRIVATE
+target_link_libraries(tts-daemon PRIVATE
     PkgConfig::PIPEWIRE
     CURL::libcurl
 
@@ -288,7 +288,7 @@ target_link_libraries(stt-daemon PRIVATE
 # Output
 # ============================================================================
 
-set_target_properties(stt-daemon PROPERTIES
+set_target_properties(tts-daemon PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
@@ -296,7 +296,7 @@ set_target_properties(stt-daemon PROPERTIES
 # Build RPATH
 # ============================================================================
 
-set_target_properties(stt-daemon PROPERTIES
+set_target_properties(tts-daemon PROPERTIES
     BUILD_RPATH "${SHERPA_ONNX_LIB_DIR};${SHERPA_ONNX_INSTALL_LIB_DIR}"
 )
 
@@ -306,7 +306,7 @@ set_target_properties(stt-daemon PROPERTIES
 
 message(STATUS "")
 message(STATUS "==========================================")
-message(STATUS "        stt-daemon configuration")
+message(STATUS "        tts-daemon configuration")
 message(STATUS "==========================================")
 message(STATUS "")
 message(STATUS "C++ standard       : C++17")
