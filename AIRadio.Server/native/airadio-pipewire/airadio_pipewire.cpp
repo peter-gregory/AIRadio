@@ -24,7 +24,7 @@
 namespace {
 
 constexpr size_t kPodBufferBytes = 1024;
-constexpr uint32_t kAIRadioSampleRate = 16000;
+constexpr uint32_t kAIRadioSampleRate = 48000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kFifoSeconds = 60;
@@ -58,8 +58,8 @@ public:
 
     int start() {
         if (started_) return 0;
-        if (sample_rate_ != 16000 || channels_ != 1 || bits_ != 16 || !bytes_per_frame_) {
-            last_error_ = "AIRadio PipeWire audio must be 16 kHz, 16-bit, mono";
+        if (sample_rate_ != kAIRadioSampleRate || channels_ != kAIRadioChannels || bits_ != kAIRadioBits || !bytes_per_frame_) {
+            last_error_ = "AIRadio PipeWire audio must be 48 kHz, 16-bit, mono";
             return -22;
         }
 
