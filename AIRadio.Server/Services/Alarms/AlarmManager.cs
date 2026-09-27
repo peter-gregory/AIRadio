@@ -76,7 +76,7 @@ namespace AIRadio.Server.Services.Alarms
                 try
                 {
                     var alarmTime = alarm.When.DueAt ?? timestamp;
-                    var preamble = $"{{sound:alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
+                    var preamble = $"{{sound:alarm-alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
 
                     _logger.LogInformation(
                         "Playing alarm activation preamble for {Id}: {Preamble}",
