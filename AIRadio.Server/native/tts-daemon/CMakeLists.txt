@@ -2,17 +2,9 @@ cmake_minimum_required(VERSION 3.18)
 
 project(tts-daemon LANGUAGES CXX)
 
-# ============================================================================
-# C++ configuration
-# ============================================================================
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# ============================================================================
-# Sherpa-ONNX paths
-# ============================================================================
 
 set(SHERPA_ONNX_ROOT
     "/mnt/linux-data/sherpa-onnx"
@@ -31,10 +23,6 @@ set(SHERPA_ONNX_LIB_DIR
 set(SHERPA_ONNX_INSTALL_LIB_DIR
     "${SHERPA_ONNX_BUILD}/install/lib"
 )
-
-# ============================================================================
-# Confirmed Sherpa-ONNX dependency include paths
-# ============================================================================
 
 set(ONNXRUNTIME_INCLUDE_DIR
     "${SHERPA_ONNX_BUILD}/_deps/onnxruntime-src/include"
@@ -56,29 +44,18 @@ set(EIGEN_INCLUDE_DIR
     "${SHERPA_ONNX_BUILD}/_deps/eigen-src"
 )
 
-# ============================================================================
-# ONNX Runtime library
-# ============================================================================
-
 set(ONNX_RUNTIME_LIB
     "${SHERPA_ONNX_INSTALL_LIB_DIR}/libonnxruntime.a"
 )
 
-# ============================================================================
-# Dependencies
-# ============================================================================
-
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 set(ENV{PKG_CONFIG_PATH}
     "/usr/lib/aarch64-linux-gnu/pkgconfig:$ENV{PKG_CONFIG_PATH}"
 )
-
-# ============================================================================
-# PipeWire
-# ============================================================================
 
 pkg_check_modules(
     PIPEWIRE
@@ -87,9 +64,12 @@ pkg_check_modules(
     libpipewire-0.3
 )
 
-# ============================================================================
-# Verify Sherpa-ONNX directories
-# ============================================================================
+pkg_check_modules(
+    CPPHTTPLIB
+    REQUIRED
+    IMPORTED_TARGET
+    cpp-httplib
+)
 
 if(NOT EXISTS "${SHERPA_ONNX_ROOT}")
     message(FATAL_ERROR
@@ -105,10 +85,6 @@ if(NOT EXISTS "${SHERPA_ONNX_BUILD}")
     )
 endif()
 
-# ============================================================================
-# Verify ONNX Runtime headers
-# ============================================================================
-
 if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h")
     message(FATAL_ERROR
         "ONNX Runtime C++ header not found:\n"
@@ -123,10 +99,6 @@ if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_c_api.h")
     )
 endif()
 
-# ============================================================================
-# Verify Kaldi decoder
-# ============================================================================
-
 if(NOT EXISTS
     "${KALDI_DECODER_INCLUDE_DIR}/kaldi-decoder/csrc/faster-decoder.h"
 )
@@ -136,20 +108,12 @@ if(NOT EXISTS
     )
 endif()
 
-# ============================================================================
-# Verify OpenFST
-# ============================================================================
-
 if(NOT EXISTS "${OPENFST_INCLUDE_DIR}/fst/fst.h")
     message(FATAL_ERROR
         "OpenFST header not found:\n"
         "  ${OPENFST_INCLUDE_DIR}/fst/fst.h"
     )
 endif()
-
-# ============================================================================
-# Verify kaldifst
-# ============================================================================
 
 if(NOT EXISTS
     "${KALDIFST_INCLUDE_DIR}/kaldifst/csrc/lattice-weight.h"
@@ -160,20 +124,12 @@ if(NOT EXISTS
     )
 endif()
 
-# ============================================================================
-# Verify Eigen
-# ============================================================================
-
 if(NOT EXISTS "${EIGEN_INCLUDE_DIR}/Eigen/Dense")
     message(FATAL_ERROR
         "Eigen header not found:\n"
         "  ${EIGEN_INCLUDE_DIR}/Eigen/Dense"
     )
 endif()
-
-# ============================================================================
-# Verify Sherpa-ONNX libraries
-# ============================================================================
 
 set(SHERPA_REQUIRED_LIBRARIES
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.a"
@@ -202,17 +158,9 @@ foreach(LIBRARY ${SHERPA_REQUIRED_LIBRARIES})
     endif()
 endforeach()
 
-# ============================================================================
-# Executable
-# ============================================================================
-
 add_executable(tts-daemon
     tts-daemon.cc
 )
-
-# ============================================================================
-# Compiler configuration
-# ============================================================================
 
 target_compile_features(tts-daemon PRIVATE
     cxx_std_17
@@ -223,10 +171,6 @@ target_compile_options(tts-daemon PRIVATE
     -Wextra
     -Wpedantic
 )
-
-# ============================================================================
-# Include directories
-# ============================================================================
 
 target_include_directories(tts-daemon PRIVATE
     "${SHERPA_ONNX_ROOT}"
@@ -240,42 +184,31 @@ target_include_directories(tts-daemon PRIVATE
     "${EIGEN_INCLUDE_DIR}"
 )
 
-# ============================================================================
-# Library directories
-# ============================================================================
-
 target_link_directories(tts-daemon PRIVATE
     "${SHERPA_ONNX_LIB_DIR}"
     "${SHERPA_ONNX_INSTALL_LIB_DIR}"
 )
 
-# ============================================================================
-# Link libraries
-# ============================================================================
-
 target_link_libraries(tts-daemon PRIVATE
     PkgConfig::PIPEWIRE
+    PkgConfig::CPPHTTPLIB
     CURL::libcurl
+    nlohmann_json::nlohmann_json
 
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.a"
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-c-api.a"
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-core.a"
-
     "${ONNX_RUNTIME_LIB}"
 
     "${SHERPA_ONNX_LIB_DIR}/libpiper_phonemize.a"
     "${SHERPA_ONNX_LIB_DIR}/libespeak-ng.a"
-
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-kaldifst-core.a"
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-fstfar.a"
     "${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-fst.a"
-
     "${SHERPA_ONNX_LIB_DIR}/libkaldi-decoder-core.a"
     "${SHERPA_ONNX_LIB_DIR}/libkaldi-native-fbank-core.a"
-
     "${SHERPA_ONNX_LIB_DIR}/libssentencepiece_core.a"
     "${SHERPA_ONNX_LIB_DIR}/libkissfft-float.a"
-
     "${SHERPA_ONNX_LIB_DIR}/libcargs.a"
     "${SHERPA_ONNX_LIB_DIR}/libucd.a"
 
@@ -284,25 +217,13 @@ target_link_libraries(tts-daemon PRIVATE
     m
 )
 
-# ============================================================================
-# Output
-# ============================================================================
-
 set_target_properties(tts-daemon PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# ============================================================================
-# Build RPATH
-# ============================================================================
-
 set_target_properties(tts-daemon PROPERTIES
     BUILD_RPATH "${SHERPA_ONNX_LIB_DIR};${SHERPA_ONNX_INSTALL_LIB_DIR}"
 )
-
-# ============================================================================
-# Diagnostics
-# ============================================================================
 
 message(STATUS "")
 message(STATUS "==========================================")
@@ -329,6 +250,7 @@ message(STATUS "PipeWire version   : ${PIPEWIRE_VERSION}")
 message(STATUS "PipeWire includes  : ${PIPEWIRE_INCLUDE_DIRS}")
 message(STATUS "CURL includes      : ${CURL_INCLUDE_DIRS}")
 message(STATUS "CURL libraries     : ${CURL_LIBRARIES}")
+message(STATUS "cpp-httplib        : ${CPPHTTPLIB_VERSION}")
 message(STATUS "")
 message(STATUS "Sherpa _deps directories:")
 
