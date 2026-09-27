@@ -116,12 +116,8 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel: true, CancellationToken.None);
-
-            if (IsDucked)
-            {
-                try { await UnduckMpvAsync(CancellationToken.None); }
-                catch (Exception ex) { _logger.LogDebug(ex, "Unable to restore MPV volume after audio cancellation."); }
-            }
+            _logger.LogDebug("Audio playback cancelled and completed.");
+            PlaybackCompleted?.Invoke(this, EventArgs.Empty);
             _queue.Resume();
         }
 
@@ -240,7 +236,6 @@ namespace AIRadio.Server.Services.Audio
                     }
                     catch
                     {
-                        await UnduckMpvAsync(CancellationToken.None);
                         throw;
                     }
                     break;
