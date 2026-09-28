@@ -244,6 +244,32 @@ namespace AIRadio.Server.Services.Radio
 
                         if (_tools.TryGetValue(selected.Name, out var selectedTool) && selectedTool.HasParameters)
                         {
+                            // radioPlay owns its tuning transition and preamble. Run
+                            // that initial tool state before the slow argument-parsing
+                            // LLM so the user gets immediate feedback and the old
+                            // station is stopped/muted while the new station is resolved.
+                            var radioPreamblePrepared =
+                                string.Equals(selected.Name, "radioPlay", StringComparison.OrdinalIgnoreCase);
+
+                            if (radioPreamblePrepared)
+                            {
+                                var preambleRequest = new ToolRequest
+                                {
+                                    Name = selected.Name,
+                                    Arguments = new JObject(),
+                                    State = ToolRequestState.Initial
+                                };
+
+                                var preambleResult = await selectedTool.ExecuteAsync(
+                                    preambleRequest,
+                                    cancellationToken);
+
+                                if (preambleResult.Status != ToolResultStatus.Preamble)
+                                {
+                                    throw new InvalidOperationException(
+                                        $"Tool '{selected.Name}' did not return its expected preamble state.");
+                                }
+                            }
                             // Events have a deterministic parser. The request contains
                             // only a date/category selection, so there is no reason to
                             // spend another LLM round extracting arguments.
@@ -303,7 +329,8 @@ namespace AIRadio.Server.Services.Radio
                                 response.ToolRequests.Add(new ToolRequest
                                 {
                                     Name = selected.Name,
-                                    Arguments = new JObject()
+                                    Arguments = new JObject(),
+                                    State = ToolRequestState.PreambleComplete
                                 });
                             }
                             else
@@ -315,7 +342,10 @@ namespace AIRadio.Server.Services.Radio
                                 response = await _llama.ContinueToolAsync(cancellationToken);
 
                                 var parsedRequests = response.ToolRequests
-                                    .Select(toolRequest => toolRequest.WithState(ToolRequestState.ArgumentParsing))
+                                    .Select(toolRequest => toolRequest.WithState(
+                                        string.Equals(selected.Name, "radioPlay", StringComparison.OrdinalIgnoreCase)
+                                            ? ToolRequestState.PreambleComplete
+                                            : ToolRequestState.ArgumentParsing))
                                     .ToList();
 
                                 response.ToolRequests.Clear();
