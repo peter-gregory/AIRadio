@@ -79,9 +79,7 @@ public:
         primed_buffers_.store(0, std::memory_order_relaxed);
         shutting_down_.store(false);
         stop_worker_.store(false);
-        stop_completion_.store(false);
         cancelled_.store(false);
-        playback_pending_.store(false);
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
@@ -174,15 +172,14 @@ public:
 
         pw_thread_loop_unlock(loop_);
 
-        completion_thread_ = std::thread([this] { completion_worker(); });
         started_ = true;
         return 0;
     }
 
     int enqueue(const AIRadioPcmSegment *segments, size_t count) {
-        debug("API enqueue BEGIN count=%zu end=%d cancel=%d fifo=%zu queued=%llu active=%d",
-              count, end_of_utterance_.load(), cancelled_.load(),
-              queued_frames(), static_cast<unsigned long long>(queued_frames()), active_debug_.load());
+        debug("API enqueue BEGIN count=%zu cancel=%d fifo=%zu queued=%llu active=%d",
+              count, cancelled_.load(),
+              fifo_available(), static_cast<unsigned long long>(queued_frames()), active_debug_.load());
         if (!started_ || !stream_ || !loop_) return -107;
         if (count && !segments) return -22;
 
@@ -211,7 +208,6 @@ public:
                 if (!frames) continue;
 
                 write_fifo_locked(src, frames);
-                playback_pending_.store(true, std::memory_order_release);
                 debug("FIFO WRITE frames=%zu fifo=%zu read=%llu write=%llu",
                       frames, fifo_available_locked(),
                       static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
@@ -233,9 +229,9 @@ public:
               static_cast<unsigned long long>(queued_frames()),
               static_cast<unsigned long long>(outstanding_frames()), active_.load(std::memory_order_acquire));
         if (!started_ || !stream_ || !loop_) return -107;
-        // End-of-utterance is no longer required to complete normal playback.
-        // The sample/frame counters determine when the final queued buffer has
-        // actually finished playing. Keep this API for cancellation only.
+        // Normal playback completion is determined entirely by the
+        // ring-buffer read/write transition. This API is retained only for
+        // explicit cancellation.
         if (cancel) {
             cancelled_.store(true, std::memory_order_release);
             pw_thread_loop_lock(loop_);
@@ -247,11 +243,10 @@ public:
             read_frame_.store(write, std::memory_order_release);
             queue_frame_.store(write, std::memory_order_release);
             primed_buffers_.store(0, std::memory_order_release);
-            playback_pending_.store(false, std::memory_order_release);
             debug("FIFO CANCEL drained application FIFO");
         }
-        debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
-              end_of_utterance_.load(), cancelled_.load(), fifo_available(),
+        debug("API END_UTTERANCE END cancel=%d fifo=%zu queued=%llu outstanding=%llu",
+              cancelled_.load(), fifo_available(),
               static_cast<unsigned long long>(queued_frames()),
               static_cast<unsigned long long>(outstanding_frames()));
         return 0;
@@ -295,7 +290,9 @@ public:
         const uint64_t queued = std::min<uint64_t>(time.queued, queue);
         const uint64_t completed = queue - queued;
         const uint64_t old_read = read_frame_.load(std::memory_order_acquire);
-        if (completed > old_read)
+        const bool advanced = completed > old_read;
+
+        if (advanced)
             read_frame_.store(completed, std::memory_order_release);
 
         debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
@@ -305,6 +302,32 @@ public:
               static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
               static_cast<unsigned long long>(queue_frame_.load(std::memory_order_acquire)),
               static_cast<unsigned long long>(write_frame_.load(std::memory_order_acquire)));
+
+        // The ring buffer itself defines playback state. If read advances from
+        // behind the tail to exactly the current write position, the final
+        // queued samples have finished playing. No separate completion flag
+        // or end-of-utterance signal is required.
+        const uint64_t write = write_frame_.load(std::memory_order_acquire);
+        if (!advanced || completed != write)
+            return true;
+
+        pw_thread_loop_lock(loop_);
+        if (write_frame_.load(std::memory_order_acquire) !=
+            read_frame_.load(std::memory_order_acquire)) {
+            pw_thread_loop_unlock(loop_);
+            return true;
+        }
+
+        if (active_.load(std::memory_order_acquire)) {
+            pw_stream_set_active(stream_, false);
+            active_.store(false, std::memory_order_release);
+            active_debug_.store(false, std::memory_order_release);
+            primed_buffers_.store(0, std::memory_order_release);
+        }
+        pw_thread_loop_unlock(loop_);
+
+        cancelled_.store(false, std::memory_order_release);
+        queue_playback_callback();
         return true;
     }
 
@@ -324,10 +347,6 @@ public:
 
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
-        stop_completion_.store(true, std::memory_order_release);
-
-        if (completion_thread_.joinable()) completion_thread_.join();
-
         if (loop_) {
             pw_thread_loop_lock(loop_);
             if (stream_) {
@@ -486,39 +505,6 @@ private:
         } while (true);
     }
 
-    void maybe_complete() {
-        // Completion is based solely on sample/frame accounting. Once all
-        // written samples have been reported as played, the final buffer has
-        // completed and playback is done. An end-of-utterance signal is not
-        // required to flush or submit the final partial buffer.
-        if (!playback_pending_.load(std::memory_order_acquire))
-            return;
-
-        update_completed_frames();
-
-        const uint64_t write = write_frame_.load(std::memory_order_acquire);
-        const uint64_t read = read_frame_.load(std::memory_order_acquire);
-        if (write != read)
-            return;
-
-        pw_thread_loop_lock(loop_);
-        if (active_.load(std::memory_order_acquire)) {
-            pw_stream_set_active(stream_, false);
-            active_.store(false, std::memory_order_release);
-            active_debug_.store(false, std::memory_order_release);
-            primed_buffers_.store(0, std::memory_order_release);
-        }
-        pw_thread_loop_unlock(loop_);
-
-        // Consume the completion exactly once. A new enqueue can start a new
-        // playback cycle by setting playback_pending_ again.
-        if (!playback_pending_.exchange(false, std::memory_order_acq_rel))
-            return;
-
-        cancelled_.store(false, std::memory_order_release);
-        queue_playback_callback();
-    }
-
     static void on_state_changed(void *data, pw_stream_state old_state,
                                  pw_stream_state state, const char *error) {
         auto *self = static_cast<PipeWireBackend *>(data);
@@ -582,18 +568,7 @@ private:
         self->debug("CALLBACK drained fifo=%zu queued=%llu outstanding=%llu active=%d end=%d",
                     self->fifo_available(), static_cast<unsigned long long>(self->queued_frames()),
                     static_cast<unsigned long long>(self->outstanding_frames()),
-                    self->active_debug_.load(), self->end_of_utterance_.load());
-    }
-
-    void completion_worker() {
-        debug("COMPLETION START tid=%llu", thread_id());
-        while (!stop_completion_.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            if (stop_completion_.load(std::memory_order_acquire))
-                break;
-            maybe_complete();
-        }
-        debug("COMPLETION STOP requested");
+                    self->active_debug_.load());
     }
 
     void queue_playback_callback() {
@@ -654,9 +629,6 @@ private:
     std::atomic<bool> playback_pending_{false};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
-
-    std::thread completion_thread_;
-    std::atomic<bool> stop_completion_{false};
 
     std::mutex callback_mutex_;
     AIRadioPlaybackCallback playback_callback_ = nullptr;
