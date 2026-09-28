@@ -224,8 +224,8 @@ public:
     }
 
     int end_utterance(bool cancel) {
-        debug("API END_UTTERANCE BEGIN cancel=%d end=%d fifo=%zu queued=%llu outstanding=%llu active=%d",
-              cancel, end_of_utterance_.load(), fifo_available(),
+        debug("API END_UTTERANCE BEGIN cancel=%d fifo=%zu queued=%llu outstanding=%llu active=%d",
+              cancel, fifo_available(),
               static_cast<unsigned long long>(queued_frames()),
               static_cast<unsigned long long>(outstanding_frames()), active_.load(std::memory_order_acquire));
         if (!started_ || !stream_ || !loop_) return -107;
