@@ -115,11 +115,10 @@ namespace AIRadio.Server.Services.Radio
                             match.RuleName,
                             text);
 
+                        // CANCEL/STOP is a control command, not a new
+                        // conversation request. Cancel the active work and do
+                        // not send the command through the LLM.
                         await _conversationService.CancelAsync(
-                            cancellationToken);
-
-                        await _conversationService.ProcessAsync(
-                            text,
                             cancellationToken);
 
                         return;
