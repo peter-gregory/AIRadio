@@ -460,6 +460,20 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
+                    // Speech and sound effects are queued asynchronously. Signal
+                    // utterance completion so AudioManager can wait for the queued
+                    // PipeWire audio and restore MPV duck/station-change mute.
+                    try
+                    {
+                        await _audioManager.EndUtteranceAsync(
+                            cancel: false,
+                            CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to complete the audio utterance.");
+                    }
+
                     if (_state != ConversationState.Complete)
                         SetState(ConversationState.Complete, conversationId);
 
