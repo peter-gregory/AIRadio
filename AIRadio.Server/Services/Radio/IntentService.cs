@@ -135,8 +135,20 @@ namespace AIRadio.Server.Services.Radio
                             match.RuleName,
                             text);
 
-                        // Give immediate audible feedback when a new conversation
-                        // starts, before the intent LLM has a chance to respond.
+                        // A wake-up while a conversation is already executing is
+                        // an intentional barge-in. Cancel the current request
+                        // completely before starting the new one.
+                        if (_conversationService.State == ConversationState.Processing)
+                        {
+                            _logger.LogInformation(
+                                "Wake-up detected during active conversation; cancelling the current request before processing the new request.");
+
+                            await _conversationService.CancelAsync(
+                                cancellationToken);
+                        }
+
+                        // Give immediate audible feedback only when starting from
+                        // idle. A barge-in should go directly to the new request.
                         if (_conversationService.State == ConversationState.Idle)
                         {
                             await _conversationService.PlayWakeAcknowledgementAsync(
