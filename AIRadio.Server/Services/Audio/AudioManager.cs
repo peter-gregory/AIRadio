@@ -250,7 +250,18 @@ namespace AIRadio.Server.Services.Audio
                 while (!_disposed)
                 {
                     await _queue.WaitForIdleAsync(CancellationToken.None);
-                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(CancellationToken.None);
+
+                    // Normal playback completion must not depend on
+                    // EndUtteranceAsync. The native PipeWire completion callback
+                    // is intentionally reserved for utterance cancellation/end
+                    // signaling. Here we simply observe the actual frame counts
+                    // until the queued and outstanding audio have drained.
+                    while (!_disposed &&
+                           (_pipeWireAudioClient.QueuedFrameCount != 0 ||
+                            _pipeWireAudioClient.OutstandingFrameCount != 0))
+                    {
+                        await Task.Delay(20, CancellationToken.None);
+                    }
 
                     if (!IsPlaybackComplete)
                         continue;
@@ -359,13 +370,20 @@ namespace AIRadio.Server.Services.Audio
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
         {
-            if (IsDucked || !_mpvClient.IsPlaying)
+            if (IsDucked)
                 return;
 
+            // Capture the user's normal MPV volume at conversation start even
+            // when a station is not currently playing. A radio-change tool may
+            // start a new station later in the same conversation, and its
+            // temporary volume=0 must not become the saved restore volume.
             _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
             await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
             Volatile.Write(ref _isDucked, true);
-            _logger.LogDebug("Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.", _normalVolume, _duckVolume);
+            _logger.LogDebug(
+                "Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.",
+                _normalVolume,
+                _duckVolume);
         }
 
         private async Task UnduckMpvAsync(CancellationToken cancellationToken)
