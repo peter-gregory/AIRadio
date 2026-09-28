@@ -96,7 +96,9 @@ Examples:
 
                     return ToolResult.Failed(
                         Name,
-                        $"Unable to determine the location '{cityName}'.");
+                        $"Unable to determine the location '{cityName}'.",
+                        $"{{sound:weather-static}} I'm sorry, I couldn't determine the weather location for {cityName}.",
+                        complete: true);
                 }
 
                 locationForWeather =
@@ -115,7 +117,9 @@ Examples:
             if (locationForWeather is null)
                 return ToolResult.Failed(
                     Name,
-                    $"Unable to determine the location '{cityName}'.");
+                    $"Unable to determine the location '{cityName}'.",
+                    $"{{sound:weather-static}} I'm sorry, I couldn't determine the weather location for {cityName}.",
+                    complete: true);
         }
 
         if (request.State is ToolRequestState.Initial or ToolRequestState.AwaitingCurrentLocation)
@@ -131,7 +135,11 @@ Examples:
         {
             var weather = await _weatherService.GetWeatherAsync(locationForWeather, cancellationToken);
             if (weather.Current is null)
-                return ToolResult.Failed(Name, "Current weather data was not returned.");
+                return ToolResult.Failed(
+                    Name,
+                    "Current weather data was not returned.",
+                    "{sound:weather-static} I'm sorry, I couldn't retrieve the current weather right now.",
+                    complete: true);
 
             var report = WeatherReportFormatter.Format(weather);
 
@@ -148,7 +156,16 @@ Examples:
         }
         catch (Exception ex)
         {
-            return ToolResult.Failed(Name, ex.Message);
+            _logger.LogWarning(
+                ex,
+                "Weather request failed for {Location}.",
+                GetDisplayLocation(locationForWeather));
+
+            return ToolResult.Failed(
+                Name,
+                "Unable to retrieve current weather.",
+                "{sound:weather-static} I'm sorry, I couldn't retrieve the current weather right now.",
+                complete: true);
         }
     }
 
