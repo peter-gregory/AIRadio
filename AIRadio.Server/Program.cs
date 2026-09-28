@@ -29,6 +29,7 @@ builder.Services.AddSingleton<IRadioSearchClient, RadioSearchClient>();
 builder.Services.AddSingleton<IRadioStationStore, RadioStationStore>();
 builder.Services.AddSingleton<IConversationLlamaClient, ConversationLlamaClient>();
 builder.Services.AddSingleton<IRegexIntentParser, RegexIntentParser>();
+builder.Services.AddSingleton<IPreLlmIntentParser, PreLlmIntentParser>();
 builder.Services.AddSingleton<IConversationService, ConversationService>();
 builder.Services.AddSingleton<IIntentService, IntentService>();
 builder.Services.AddSingleton<IRadioManagerService, RadioManagerService>();
