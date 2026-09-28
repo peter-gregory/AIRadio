@@ -232,6 +232,6 @@ public static partial class SpokenNumberNormalizer
         return true;
     }
 
-    [GeneratedRegex(@"^\\d+$")]
+    [GeneratedRegex(@"^\d+$")]
     private static partial Regex DigitsRegex();
 }
