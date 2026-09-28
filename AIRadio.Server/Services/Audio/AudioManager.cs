@@ -41,11 +41,11 @@ namespace AIRadio.Server.Services.Audio
         private readonly int _duckVolume;
         private readonly AsyncWorkQueue<AudioRequest> _queue;
         private bool _isDucked;
-        private bool _stationChangeMute;
         private int _normalVolume;
         private bool _disposed;
         private int _completionMonitorRunning;
-        private int _playbackCompletionPending;
+        private int _playbackGeneration;
+        private int _completedPlaybackGeneration;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
         {
@@ -133,31 +133,13 @@ namespace AIRadio.Server.Services.Audio
             await _queue.WaitForIdleAsync(cancellationToken);
 
             _logger.LogDebug(
-                "End utterance: queue idle; cancel={Cancel}, stationChangeMute={StationChangeMute}, isDucked={IsDucked}, restoreVolume={RestoreVolume}.",
-                cancel,
-                _stationChangeMute,
-                IsDucked,
-                _normalVolume);
+                "End utterance: queue idle; cancel={Cancel}.",
+                cancel);
 
-            // EndUtteranceAsync signals PipeWire that no more audio belongs to
-            // this utterance and waits for the queued speech to finish. Do not
-            // wait for playback from inside the audio queue worker: that would
-            // prevent this method from ever reaching EndUtteranceAsync.
+            // EndUtteranceAsync only signals PipeWire that the utterance has
+            // ended. Normal radio volume restoration is driven by the
+            // conversation Idle state and PlaybackCompleted event.
             await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
-
-            if (!cancel && _stationChangeMute)
-            {
-                await _mpvManager.SetVolumeAsync(100, cancellationToken);
-                _normalVolume = 100;
-                _stationChangeMute = false;
-                Volatile.Write(ref _isDucked, false);
-                _logger.LogDebug(
-                    "Station change utterance complete; restored MPV radio volume to full volume.");
-            }
-            else if (!cancel && IsDucked)
-            {
-                await UnduckMpvAsync(cancellationToken);
-            }
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -216,7 +198,7 @@ namespace AIRadio.Server.Services.Audio
             // must not create a new completion cycle.
             if (request.Type is AudioRequestType.Speech or AudioRequestType.Sound)
             {
-                Volatile.Write(ref _playbackCompletionPending, 1);
+                Interlocked.Increment(ref _playbackGeneration);
                 _ = MonitorPlaybackCompletionAsync();
             }
             return Task.CompletedTask;
@@ -270,15 +252,31 @@ namespace AIRadio.Server.Services.Audio
                     await _queue.WaitForIdleAsync(CancellationToken.None);
                     await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(CancellationToken.None);
 
-                    if (IsPlaybackComplete &&
-                        Interlocked.Exchange(ref _playbackCompletionPending, 0) != 0)
-                    {
-                        PlaybackCompleted?.Invoke(this, EventArgs.Empty);
-                        return;
-                    }
+                    if (!IsPlaybackComplete)
+                        continue;
 
-                    if (IsPlaybackComplete)
+                    // Several speech/sound requests can belong to one
+                    // conversation. Wait for the latest playback generation.
+                    var generation = Volatile.Read(ref _playbackGeneration);
+                    if (generation == 0 ||
+                        generation == Volatile.Read(ref _completedPlaybackGeneration))
                         return;
+
+                    await Task.Yield();
+
+                    if (!IsPlaybackComplete ||
+                        generation != Volatile.Read(ref _playbackGeneration))
+                        continue;
+
+                    var previous = Interlocked.Exchange(
+                        ref _completedPlaybackGeneration,
+                        generation);
+
+                    if (previous >= generation)
+                        continue;
+
+                    PlaybackCompleted?.Invoke(this, EventArgs.Empty);
+                    return;
                 }
             }
             catch (Exception ex)
@@ -289,7 +287,9 @@ namespace AIRadio.Server.Services.Audio
             {
                 Interlocked.Exchange(ref _completionMonitorRunning, 0);
 
-                if (!_disposed && Volatile.Read(ref _playbackCompletionPending) != 0)
+                if (!_disposed &&
+                    Volatile.Read(ref _playbackGeneration) !=
+                    Volatile.Read(ref _completedPlaybackGeneration))
                     _ = MonitorPlaybackCompletionAsync();
             }
         }
@@ -304,10 +304,7 @@ namespace AIRadio.Server.Services.Audio
                 return;
             }
 
-            if (!_stationChangeMute)
-            {
-                await DuckMpvAsync(cancellationToken);
-            }
+            await DuckMpvAsync(cancellationToken);
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
             // Do not restore MPV volume here. QueueWavAsync only queues the
@@ -344,18 +341,7 @@ namespace AIRadio.Server.Services.Audio
                     break;
                 case AudioRequestType.MpvPlayStation:
                     ArgumentNullException.ThrowIfNull(request.Station);
-                    try
-                    {
-                        // The station is started while the station-change mute
-                        // remains active. Volume is restored by EndUtteranceAsync
-                        // only after the success response has completed.
-                        await _mpvManager.PlayAsync(request.Station, cancellationToken);
-                    }
-                    catch
-                    {
-                        await UnduckMpvAsync(CancellationToken.None);
-                        throw;
-                    }
+                    await _mpvManager.PlayAsync(request.Station, cancellationToken);
                     break;
             }
         }
@@ -365,13 +351,10 @@ namespace AIRadio.Server.Services.Audio
             if (_mpvClient.IsPlaying)
                 await _mpvManager.StopAsync(cancellationToken);
 
-            // Station changes take ownership of MPV volume. Always restore to
-            // full volume after tuning, regardless of any existing duck/mute state.
-            _normalVolume = 100;
+            // A station change only mutes MPV while the new stream is selected.
+            // Conversation duck/resume state owns the eventual volume restore.
             await _mpvManager.SetVolumeAsync(0, cancellationToken);
-            _stationChangeMute = true;
-            Volatile.Write(ref _isDucked, true);
-            _logger.LogDebug("Muted MPV radio for station change; restore volume is full volume.");
+            _logger.LogDebug("Set MPV radio volume to 0 for station change.");
         }
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
@@ -391,7 +374,6 @@ namespace AIRadio.Server.Services.Audio
                 return;
 
             await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
-            _stationChangeMute = false;
             Volatile.Write(ref _isDucked, false);
             _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
         }
