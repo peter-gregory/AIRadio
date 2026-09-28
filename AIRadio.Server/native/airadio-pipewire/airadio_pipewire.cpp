@@ -80,8 +80,8 @@ public:
         shutting_down_.store(false);
         stop_worker_.store(false);
         stop_completion_.store(false);
-        end_of_utterance_.store(false);
         cancelled_.store(false);
+        playback_pending_.store(false);
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
@@ -196,7 +196,6 @@ public:
 
             while (left) {
                 if (shutting_down_.load(std::memory_order_acquire) ||
-                    end_of_utterance_.load(std::memory_order_acquire) ||
                     cancelled_.load(std::memory_order_acquire))
                     return -16;
 
@@ -212,6 +211,7 @@ public:
                 if (!frames) continue;
 
                 write_fifo_locked(src, frames);
+                playback_pending_.store(true, std::memory_order_release);
                 debug("FIFO WRITE frames=%zu fifo=%zu read=%llu write=%llu",
                       frames, fifo_available_locked(),
                       static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
@@ -233,9 +233,11 @@ public:
               static_cast<unsigned long long>(queued_frames()),
               static_cast<unsigned long long>(outstanding_frames()), active_.load(std::memory_order_acquire));
         if (!started_ || !stream_ || !loop_) return -107;
-        end_of_utterance_.store(true, std::memory_order_release);
-        cancelled_.store(cancel, std::memory_order_release);
+        // End-of-utterance is no longer required to complete normal playback.
+        // The sample/frame counters determine when the final queued buffer has
+        // actually finished playing. Keep this API for cancellation only.
         if (cancel) {
+            cancelled_.store(true, std::memory_order_release);
             pw_thread_loop_lock(loop_);
             const int r = pw_stream_flush(stream_, false);
             if (r < 0)
@@ -245,6 +247,7 @@ public:
             read_frame_.store(write, std::memory_order_release);
             queue_frame_.store(write, std::memory_order_release);
             primed_buffers_.store(0, std::memory_order_release);
+            playback_pending_.store(false, std::memory_order_release);
             debug("FIFO CANCEL drained application FIFO");
         }
         debug("API END_UTTERANCE END end=%d cancel=%d fifo=%zu queued=%llu outstanding=%llu",
@@ -484,7 +487,11 @@ private:
     }
 
     void maybe_complete() {
-        if (!end_of_utterance_.load(std::memory_order_acquire))
+        // Completion is based solely on sample/frame accounting. Once all
+        // written samples have been reported as played, the final buffer has
+        // completed and playback is done. An end-of-utterance signal is not
+        // required to flush or submit the final partial buffer.
+        if (!playback_pending_.load(std::memory_order_acquire))
             return;
 
         update_completed_frames();
@@ -503,7 +510,9 @@ private:
         }
         pw_thread_loop_unlock(loop_);
 
-        if (!end_of_utterance_.exchange(false, std::memory_order_acq_rel))
+        // Consume the completion exactly once. A new enqueue can start a new
+        // playback cycle by setting playback_pending_ again.
+        if (!playback_pending_.exchange(false, std::memory_order_acq_rel))
             return;
 
         cancelled_.store(false, std::memory_order_release);
@@ -641,8 +650,8 @@ private:
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
-    std::atomic<bool> end_of_utterance_{false};
     std::atomic<bool> cancelled_{false};
+    std::atomic<bool> playback_pending_{false};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
