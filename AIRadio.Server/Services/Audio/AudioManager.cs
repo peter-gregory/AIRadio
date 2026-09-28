@@ -45,6 +45,7 @@ namespace AIRadio.Server.Services.Audio
         private int _normalVolume;
         private bool _disposed;
         private int _completionMonitorRunning;
+        private int _playbackCompletionPending;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
         {
@@ -210,7 +211,14 @@ namespace AIRadio.Server.Services.Audio
                 return Task.CompletedTask;
             }
 
-            _ = MonitorPlaybackCompletionAsync();
+            // Only speech and sound produce playback that should generate the
+            // completion event. MPV control requests (duck/unduck/station change)
+            // must not create a new completion cycle.
+            if (request.Type is AudioRequestType.Speech or AudioRequestType.Sound)
+            {
+                Volatile.Write(ref _playbackCompletionPending, 1);
+                _ = MonitorPlaybackCompletionAsync();
+            }
             return Task.CompletedTask;
         }
 
@@ -262,11 +270,15 @@ namespace AIRadio.Server.Services.Audio
                     await _queue.WaitForIdleAsync(CancellationToken.None);
                     await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(CancellationToken.None);
 
-                    if (IsPlaybackComplete)
+                    if (IsPlaybackComplete &&
+                        Interlocked.Exchange(ref _playbackCompletionPending, 0) != 0)
                     {
                         PlaybackCompleted?.Invoke(this, EventArgs.Empty);
                         return;
                     }
+
+                    if (IsPlaybackComplete)
+                        return;
                 }
             }
             catch (Exception ex)
@@ -277,7 +289,7 @@ namespace AIRadio.Server.Services.Audio
             {
                 Interlocked.Exchange(ref _completionMonitorRunning, 0);
 
-                if (!_disposed && !IsPlaybackComplete)
+                if (!_disposed && Volatile.Read(ref _playbackCompletionPending) != 0)
                     _ = MonitorPlaybackCompletionAsync();
             }
         }
