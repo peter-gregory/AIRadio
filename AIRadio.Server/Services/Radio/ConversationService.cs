@@ -15,6 +15,7 @@ namespace AIRadio.Server.Services.Radio
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
+        Task ProcessToolAsync(ToolRequest request, CancellationToken cancellationToken = default);
         Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default);
         Task<Guid> StartAlarmAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
@@ -55,8 +56,28 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, false)))
+            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, false, null)))
                 _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
+            return Task.CompletedTask;
+        }
+
+        public Task ProcessToolAsync(
+            ToolRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!_queue.TryEnqueue(new ConversationRequest(
+                    Guid.NewGuid(),
+                    string.Empty,
+                    false,
+                    request)))
+            {
+                _logger.LogDebug(
+                    "Pre-LLM tool request rejected because the conversation queue is not accepting work.");
+            }
+
             return Task.CompletedTask;
         }
 
@@ -75,7 +96,7 @@ namespace AIRadio.Server.Services.Radio
 
             var conversationId = Guid.NewGuid();
 
-            if (!_queue.TryEnqueue(new ConversationRequest(conversationId, text, true)))
+            if (!_queue.TryEnqueue(new ConversationRequest(conversationId, text, true, null)))
                 throw new InvalidOperationException(
                     "Conversation request was rejected because the conversation queue is not accepting work.");
 
@@ -229,6 +250,39 @@ namespace AIRadio.Server.Services.Radio
                     var pendingRequest = ApplyPendingToolInput(request.Text);
                     _pendingToolRequest = null;
                     conversationComplete = await ExecutePendingToolAsync(pendingRequest, cancellationToken);
+                }
+                else if (request.InitialToolRequest is not null)
+                {
+                    _logger.LogInformation(
+                        "Executing pre-LLM tool request directly: {ToolName}",
+                        request.InitialToolRequest.Name);
+
+                    var result = await ExecuteToolAsync(
+                        request.InitialToolRequest,
+                        cancellationToken);
+
+                    var handling = await HandleToolResultAsync(
+                        result,
+                        cancellationToken);
+
+                    if (handling.Waiting)
+                    {
+                        conversationComplete = false;
+                    }
+                    else if (handling.Result is not null)
+                    {
+                        var response = await _llama.ContinueAsync(
+                            [handling.Result],
+                            cancellationToken);
+
+                        conversationComplete = await ProcessLlamaResponseAsync(
+                            response,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        conversationComplete = true;
+                    }
                 }
                 else
                 {
@@ -693,6 +747,7 @@ namespace AIRadio.Server.Services.Radio
         private sealed record ConversationRequest(
             Guid ConversationId,
             string Text,
-            bool IsAlarm);
+            bool IsAlarm,
+            ToolRequest? InitialToolRequest);
     }
 }
