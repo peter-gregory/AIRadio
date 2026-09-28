@@ -111,12 +111,9 @@ User: "Play WRLT"
         var stationName = request.GetString("stationName");
         if (request.State == ToolRequestState.Initial)
         {
-            // Station tuning owns the complete audio transition. Prepare the
-            // MPV state before the preamble is queued, so the old station stops
-            // immediately and remains muted while the new station and response
-            // speech are played. EndUtteranceAsync restores the prior volume.
+            // Prepare the MPV state before the preamble is queued, so the old
+            // station stops immediately and remains muted while tuning begins.
             await Audio.PrepareStationChangeAsync(cancellationToken);
-            await Audio.WaitForCompletionAsync(cancellationToken);
             await Audio.QueueSpeechAsync(
                 "Looking for your station now {sound:radio-tuning}",
                 cancellationToken);
