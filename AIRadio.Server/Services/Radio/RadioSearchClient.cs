@@ -178,12 +178,15 @@ namespace AIRadio.Server.Services.Radio
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(
+                _logger.LogWarning(
                     ex,
-                    "Radio Browser search failed: {Uri}",
+                    "Radio Browser search request failed: {Uri}",
                     requestUri);
 
-                throw;
+                // An unavailable Radio Browser server is a search miss from
+                // the tool's perspective. Do not let a transient HTTP/TLS
+                // failure escape into the conversation LLM.
+                return [];
             }
             catch (Exception ex)
             {
