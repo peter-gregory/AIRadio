@@ -10,6 +10,8 @@ namespace AIRadio.Server.Services.Audio
     public interface IAudioManager
     {
         bool IsDucked { get; }
+        bool IsPlaybackComplete { get; }
+        event EventHandler? PlaybackCompleted;
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default);
         Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default);
@@ -42,6 +44,7 @@ namespace AIRadio.Server.Services.Audio
         private bool _stationChangeMute;
         private int _normalVolume;
         private bool _disposed;
+        private int _completionMonitorRunning;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
         {
@@ -57,6 +60,13 @@ namespace AIRadio.Server.Services.Audio
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
+
+        public bool IsPlaybackComplete =>
+            _queue.IsIdle &&
+            _pipeWireAudioClient.QueuedFrameCount == 0 &&
+            _pipeWireAudioClient.OutstandingFrameCount == 0;
+
+        public event EventHandler? PlaybackCompleted;
 
         public Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
         {
@@ -195,7 +205,12 @@ namespace AIRadio.Server.Services.Audio
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!_queue.TryEnqueue(request))
+            {
                 _logger.LogDebug("Audio request rejected because the audio queue is not accepting work.");
+                return Task.CompletedTask;
+            }
+
+            _ = MonitorPlaybackCompletionAsync();
             return Task.CompletedTask;
         }
 
@@ -228,6 +243,42 @@ namespace AIRadio.Server.Services.Audio
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Audio request failed.");
+            }
+        }
+
+        private async Task MonitorPlaybackCompletionAsync()
+        {
+            if (_disposed || Interlocked.Exchange(ref _completionMonitorRunning, 1) != 0)
+                return;
+
+            try
+            {
+                // Allow the queue worker to observe newly enqueued work before
+                // checking whether the queue has become idle.
+                await Task.Yield();
+
+                while (!_disposed)
+                {
+                    await _queue.WaitForIdleAsync(CancellationToken.None);
+                    await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(CancellationToken.None);
+
+                    if (IsPlaybackComplete)
+                    {
+                        PlaybackCompleted?.Invoke(this, EventArgs.Empty);
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Audio playback completion monitor stopped unexpectedly.");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _completionMonitorRunning, 0);
+
+                if (!_disposed && !IsPlaybackComplete)
+                    _ = MonitorPlaybackCompletionAsync();
             }
         }
 
