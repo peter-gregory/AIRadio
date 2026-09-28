@@ -18,16 +18,19 @@ namespace AIRadio.Server.Services.Radio
     {
         private readonly ILogger<IntentService> _logger;
         private readonly IRegexIntentParser _intentParser;
+        private readonly IPreLlmIntentParser _preLlmIntentParser;
         private readonly IConversationService _conversationService;
         private readonly AsyncWorkQueue<string> _queue;
 
         public IntentService(
             ILogger<IntentService> logger,
             IRegexIntentParser intentParser,
+            IPreLlmIntentParser preLlmIntentParser,
             IConversationService conversationService)
         {
             _logger = logger;
             _intentParser = intentParser;
+            _preLlmIntentParser = preLlmIntentParser;
             _conversationService = conversationService;
 
             _logger.LogInformation("Starting IntentService");
@@ -154,9 +157,25 @@ namespace AIRadio.Server.Services.Radio
                                 cancellationToken);
                         }
 
-                        await _conversationService.ProcessAsync(
-                            match.Text,
-                            cancellationToken);
+                        var preLlmIntent = _preLlmIntentParser.TryParse(match.Text);
+
+                        if (preLlmIntent is not null)
+                        {
+                            _logger.LogInformation(
+                                "Pre-LLM intent matched: {ToolName} for command: {Command}",
+                                preLlmIntent.Name,
+                                match.Text);
+
+                            await _conversationService.ProcessToolAsync(
+                                preLlmIntent,
+                                cancellationToken);
+                        }
+                        else
+                        {
+                            await _conversationService.ProcessAsync(
+                                match.Text,
+                                cancellationToken);
+                        }
                     }
                     else
                     {
