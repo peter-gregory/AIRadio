@@ -45,7 +45,7 @@ namespace AIRadio.Server.Services.Radio
             _logger.LogInformation("Finished starting RadioManagerService");
         }
 
-        public Task ProcessSpeechAsync(string text, CancellationToken cancellationToken = default)
+        public async Task ProcessSpeechAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             _logger.LogInformation("Processing received voice prompt: " + text);
