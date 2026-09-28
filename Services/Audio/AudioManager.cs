@@ -102,11 +102,24 @@ namespace AIRadio.Server.Services.Audio
         public async Task EndUtteranceAsync(bool cancel = false, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _queue.WaitForIdleAsync(cancellationToken);
-            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
 
+            // PipeWire playback is sample-based now; there is no utterance
+            // boundary to mark during normal playback. This operation is only
+            // used to clear/cancel queued speaking audio.
             if (!cancel)
-                _logger.LogDebug("Audio utterance completed.");
+                throw new InvalidOperationException(
+                    "EndUtteranceAsync is only supported for clearing the speaking queue.");
+
+            await _queue.CancelAsync(CancellationToken.None);
+            await _pipeWireAudioClient.EndUtteranceAsync(
+                cancel: true,
+                CancellationToken.None);
+
+            Interlocked.Exchange(ref _pendingPlaybackRequests, 0);
+            PlaybackCompleted?.Invoke(this, EventArgs.Empty);
+            _queue.Resume();
+
+            _logger.LogDebug("Audio speaking queue cleared.");
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
