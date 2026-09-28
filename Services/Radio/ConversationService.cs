@@ -61,6 +61,8 @@ namespace AIRadio.Server.Services.Radio
         public async Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Duck immediately after wake-word detection. The conversation owns
+            // the duck lifecycle; audio playback only reports when its queue empties.
             await _audioManager.DuckAsync(cancellationToken);
             await _audioManager.PlaySpeechAsync(GetRandomPhrase(WakeAcknowledgements), cancellationToken);
         }
@@ -205,9 +207,9 @@ namespace AIRadio.Server.Services.Radio
                 _conversationEnded = false;
                 _speechPlaybackCompleted = false;
 
-                // Duck once when the conversation begins. AudioManager no longer
-                // ducks/unducks around individual speech segments.
-                await _audioManager.DuckAsync(cancellationToken);
+                // The wake acknowledgement has already started the conversation
+                // and requested the duck. Keep the radio ducked until both the
+                // conversation and all speech playback are complete.
 
                 if (_pendingToolRequest is not null)
                 {
