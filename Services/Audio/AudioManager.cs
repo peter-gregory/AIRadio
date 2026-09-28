@@ -233,6 +233,7 @@ namespace AIRadio.Server.Services.Audio
             }
             _logger.LogInformation($"Queue sound {tag} ({sound.FileName}) with {sound.WavData.Length} bytes");
             await _pipeWireAudioClient.QueueWavAsync(sound.WavData, cancellationToken);
+            await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
         }
 
         private async Task ProcessMpvAsync(AudioRequest request, CancellationToken cancellationToken)
