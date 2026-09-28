@@ -113,7 +113,8 @@ namespace AIRadio.Server.Services.Radio
             try
             {
                 if (_conversationService.State != ConversationState.Idle ||
-                    !_audioManager.IsPlaybackComplete)
+                    !_audioManager.IsPlaybackComplete ||
+                    !_audioManager.IsDucked)
                     return;
 
                 _logger.LogDebug(
