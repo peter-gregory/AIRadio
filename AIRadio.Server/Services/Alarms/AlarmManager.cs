@@ -76,6 +76,10 @@ namespace AIRadio.Server.Services.Alarms
 
                 try
                 {
+                    // Each alarm owns its cancellation lifecycle. A previous
+                    // user cancellation must not affect a newly activated alarm.
+                    _conversationService.ResetCancellation();
+
                     var alarmTime = alarm.When.DueAt ?? timestamp;
                     var preamble = $"{{sound:alarm-alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
 
@@ -102,9 +106,25 @@ namespace AIRadio.Server.Services.Alarms
 
                     await _conversationCompletion.Task.WaitAsync(cancellationToken);
 
+                    if (_conversationService.WasCancelled)
+                    {
+                        _logger.LogInformation(
+                            "Alarm {Id} was cancelled by the user; stopping remaining actions.",
+                            alarm.Id);
+                        break;
+                    }
+
                     foreach (var action in alarm.Actions)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+
+                        if (_conversationService.WasCancelled)
+                        {
+                            _logger.LogInformation(
+                                "Alarm {Id} was cancelled by the user; stopping remaining actions.",
+                                alarm.Id);
+                            break;
+                        }
 
                         var alarmAction = AppendWakeUpSound(action);
 
@@ -134,6 +154,14 @@ namespace AIRadio.Server.Services.Alarms
                         }
 
                         await _conversationCompletion.Task.WaitAsync(cancellationToken);
+
+                        if (_conversationService.WasCancelled)
+                        {
+                            _logger.LogInformation(
+                                "Alarm {Id} was cancelled by the user; stopping remaining actions.",
+                                alarm.Id);
+                            break;
+                        }
                     }
                 }
                 finally
