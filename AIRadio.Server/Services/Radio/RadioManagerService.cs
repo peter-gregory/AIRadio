@@ -25,19 +25,23 @@ namespace AIRadio.Server.Services.Radio
         private readonly IAudioManager _audioManager;
         private readonly IMpvManager _mpvManager;
         private readonly IMpvState _mpvState;
+        private readonly IConversationService _conversationService;
 
         public RadioManagerService(
             ILogger<RadioManagerService> logger,
             IIntentService intentService,
             IAudioManager audioManager,
             IMpvManager mpvManager,
-            IMpvState mpvState)
+            IMpvState mpvState,
+            IConversationService conversationService)
         {
             _logger = logger;
             _intentService = intentService;
             _audioManager = audioManager;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
+            _conversationService = conversationService;
+            _conversationService.StateChanged += OnConversationStateChanged;
             _logger.LogInformation("Finished starting RadioManagerService");
         }
 
@@ -45,6 +49,7 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             _logger.LogInformation("Processing received voice prompt: " + text);
+            await _audioManager.DuckAsync(cancellationToken);
             return _intentService.ProcessAsync(text, cancellationToken);
         }
 
@@ -86,5 +91,34 @@ namespace AIRadio.Server.Services.Radio
             _mpvManager.SetRadioPlaylist(stations, source);
 
         public IMpvState GetRadioState() => _mpvState;
+
+        private void OnConversationStateChanged(
+            object? sender,
+            ConversationStateChangedEventArgs e)
+        {
+            if (e.Current != ConversationState.Idle)
+                return;
+
+            _ = RestoreRadioVolumeAfterConversationAsync(e.ConversationId);
+        }
+
+        private async Task RestoreRadioVolumeAfterConversationAsync(Guid conversationId)
+        {
+            try
+            {
+                _logger.LogDebug(
+                    "Conversation {ConversationId} reached Idle; restoring radio volume.",
+                    conversationId);
+
+                await _audioManager.UnduckAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to restore radio volume after conversation {ConversationId}.",
+                    conversationId);
+            }
+        }
     }
 }
