@@ -40,6 +40,7 @@ namespace AIRadio.Server.Services.Audio
         private bool _isDucked;
         private int _normalVolume;
         private bool _disposed;
+        private int _pendingPlaybackRequests;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
         {
@@ -105,10 +106,7 @@ namespace AIRadio.Server.Services.Audio
             await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
 
             if (!cancel)
-            {
-                _logger.LogDebug("Audio playback completed for the current utterance.");
-                PlaybackCompleted?.Invoke(this, EventArgs.Empty);
-            }
+                _logger.LogDebug("Audio utterance completed.");
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -117,6 +115,7 @@ namespace AIRadio.Server.Services.Audio
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel: true, CancellationToken.None);
             _logger.LogDebug("Audio playback cancelled and completed.");
+            Interlocked.Exchange(ref _pendingPlaybackRequests, 0);
             PlaybackCompleted?.Invoke(this, EventArgs.Empty);
             _queue.Resume();
         }
@@ -146,7 +145,18 @@ namespace AIRadio.Server.Services.Audio
         private void EnqueueSound(string tag, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnqueueAsync(new(AudioRequestType.Sound, tag, null), cancellationToken);
+            EnqueuePlaybackAsync(new(AudioRequestType.Sound, tag, null), cancellationToken);
+        }
+
+        private void EnqueuePlaybackAsync(AudioRequest request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _pendingPlaybackRequests);
+            if (!_queue.TryEnqueue(request))
+            {
+                Interlocked.Decrement(ref _pendingPlaybackRequests);
+                _logger.LogDebug("Audio request rejected because the audio queue is not accepting work.");
+            }
         }
 
         private Task EnqueueAsync(AudioRequest request, CancellationToken cancellationToken)
@@ -185,6 +195,15 @@ namespace AIRadio.Server.Services.Audio
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Audio request failed.");
+            }
+            finally
+            {
+                if (request.Type is AudioRequestType.Speech or AudioRequestType.Sound &&
+                    Interlocked.Decrement(ref _pendingPlaybackRequests) == 0)
+                {
+                    _logger.LogDebug("Speech playback queue is completely empty.");
+                    PlaybackCompleted?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
 
