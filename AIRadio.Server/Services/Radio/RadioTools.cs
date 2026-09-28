@@ -180,7 +180,8 @@ User: "Play WRLT"
 
         if (station is null && !string.IsNullOrWhiteSpace(stationName))
         {
-            var searchQuery = stationName.Trim();
+            var spokenStationName = stationName.Trim();
+            var searchQuery = SpokenNumberNormalizer.Normalize(spokenStationName);
             _logger.LogInformation(
                 "Radio play name lookup: sending query '{Query}' to search service.",
                 searchQuery);
