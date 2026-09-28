@@ -117,14 +117,8 @@ User: "Play WRLT"
             // speech are played. EndUtteranceAsync restores the prior volume.
             await Audio.PrepareStationChangeAsync(cancellationToken);
             await Audio.WaitForCompletionAsync(cancellationToken);
-            var stationDescription = !string.IsNullOrWhiteSpace(stationName)
-                ? $"station {stationName}"
-                : !string.IsNullOrWhiteSpace(stationId)
-                    ? $"station {stationId}"
-                    : "your saved stations";
-
             await Audio.QueueSpeechAsync(
-                $"Looking for {stationDescription} now {{sound:radio-tuning}}",
+                "Looking for your station now {sound:radio-tuning}",
                 cancellationToken);
 
             return ToolResult.Preamble(
