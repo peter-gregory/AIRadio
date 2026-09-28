@@ -222,10 +222,6 @@ namespace AIRadio.Server.Services.Radio
                         request.Text,
                         cancellationToken);
 
-                    await _audioManager.EndUtteranceAsync(
-                        cancel: false,
-                        cancellationToken);
-
                     conversationComplete = true;
                 }
                 else if (_pendingToolRequest is not null)
@@ -371,18 +367,13 @@ namespace AIRadio.Server.Services.Radio
                     conversationComplete = await ProcessLlamaResponseAsync(response, cancellationToken);
                 }
 
-                // Queue deterministic completion speech before ending the utterance.
-                // EndUtteranceAsync waits for PipeWire playback to finish, so doing
-                // this in the opposite order would delay the completion speech until
-                // the entire response queue has drained.
+                // Queue deterministic completion speech after the response audio.
                 if (!string.IsNullOrWhiteSpace(_completionPrompt))
                 {
                     var completionPrompt = _completionPrompt;
                     _completionPrompt = null;
                     await _audioManager.PlaySpeechAsync(completionPrompt, cancellationToken);
                 }
-
-                await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
 
                 // Alarm actions can legitimately require user input. Keep the
                 // pending tool request alive so the user's next utterance can
