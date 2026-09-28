@@ -46,39 +46,58 @@ namespace AIRadio.Server.Services.Location
 
             _logger.LogInformation($"Get location lat/long using {url}");
 
-            using var response =
-                await _httpClient.GetAsync(
-                    url,
-                    cancellationToken);
-
-            _logger.LogInformation($"Response: {response}");
-
-            response.EnsureSuccessStatusCode();
-
-            var json =
-                await response.Content.ReadAsStringAsync(
-                    cancellationToken);
-
-            _logger.LogInformation($"Received location reply {json}");
-
-            var result =
-                JsonConvert.DeserializeObject<OpenMeteoGeocodingResponse>(
-                    json);
-
-            var item =
-                result?.Results?.FirstOrDefault();
-
-            if (item is null)
+            try
             {
+                using var response =
+                    await _httpClient.GetAsync(
+                        url,
+                        cancellationToken);
+
+                _logger.LogInformation($"Response: {response}");
+
+                response.EnsureSuccessStatusCode();
+
+                var json =
+                    await response.Content.ReadAsStringAsync(
+                        cancellationToken);
+
+                _logger.LogInformation($"Received location reply {json}");
+
+                var result =
+                    JsonConvert.DeserializeObject<OpenMeteoGeocodingResponse>(
+                        json);
+
+                var item =
+                    result?.Results?.FirstOrDefault();
+
+                if (item is null)
+                {
+                    return null;
+                }
+
+                return new WeatherCoordinates
+                {
+                    Latitude = item.Latitude,
+                    Longitude = item.Longitude,
+                    TimeZone = item.TimeZone
+                };
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Weather location lookup failed for '{Query}'.",
+                    query);
+
                 return null;
             }
 
-            return new WeatherCoordinates
-            {
-                Latitude = item.Latitude,
-                Longitude = item.Longitude,
-                TimeZone = item.TimeZone
-            };
+
         }
 
         private static string? BuildQuery(
