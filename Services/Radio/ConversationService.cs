@@ -291,8 +291,10 @@ namespace AIRadio.Server.Services.Radio
                     await _audioManager.PlaySpeechAsync(completionPrompt, cancellationToken);
                 }
 
-                await _audioManager.EndUtteranceAsync(cancel: false, cancellationToken);
-
+                // Playback completion is reported by AudioManager when all speech
+                // and sound requests have drained. There is no PipeWire utterance
+                // boundary to mark here.
+                
                 // Alarm actions can legitimately require user input. Keep the
                 // pending tool request alive so the user's next utterance can
                 // complete the action before the alarm continues to its next action.
