@@ -68,28 +68,26 @@ public sealed class RadioPlayTool : RadioToolBase
         _stationStore = stationStore;
     }
     public override string Name => "radioPlay";
-    public override string Intent => "Play a known radio station by its exact station name or ID. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
+    public override string Intent => "Play a known radio station by its station name. A genre, style, mood, language, country, or other station characteristic is a radioSearch request.";
     public override bool HasParameters => true;
-    public override string GetLlmRequestTemplate() => "{tool:radioPlay,stationId=<optional>,stationName=<optional>}";
+    public override string GetLlmRequestTemplate() => "{tool:radioPlay,stationName=<optional>}";
     public override string GetLlmInstructions() => """
 RADIO PLAY
 
 Play a station, or start playback from the saved station list when no station is specified.
 
 Parameters:
-- stationId: Optional station ID. Use the exact ID from the current playlist. Station IDs are identifiers such as numeric IDs; do not put a station call sign, brand name, or descriptive name in stationId.
-- stationName: Optional station name or call sign supplied by the user. Use stationName for names such as "Jazz FM", "Lightning 100", or "WRLT".
-- Provide stationId or stationName when the user supplies a station identifier or station name.
-- stationId and stationName are both optional. If neither is supplied, play the saved station list starting with its first station.
-- When both are supplied, stationId takes precedence.
+- stationName: Optional station name or call sign supplied by the user.
+- stationName is the only station-selection parameter accepted by this tool.
+- If neither a station name nor station selection is supplied, play the saved station list starting with its first station.
 
 Important:
-- A station name or ID must identify an actual station explicitly supplied by the user or returned by a previous search/playlist result.
+- First check the current radio playlist for the requested station name.
+- If the requested station is already known in the current playlist, use that station name exactly as supplied by the user.
+- If the requested station is not already known in the current playlist, use stationName with the user’s station name so the station-name search service can resolve it.
+- Never use or invent a station ID as a radioPlay argument.
+- Never convert a number contained in a station name into a station ID. For example, "Lightning 100" and "Lightning One Hundred" are station names.
 - Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName. For example, "light jazz" is a search criterion, not a station name.
-- First check the current radio playlist for the requested station.
-- If a stationName is not already in the playlist, use the station-name search service to resolve it.
-- Do not invent station IDs or station names.
-- Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName.
 - If the user says "play the radio", "play some music", or "play my favorites" without naming a station, load the saved station list and start with its first station.
 - The saved list is ordered with the most recently favorited station first, followed by other saved stations.
 - If the saved station list is empty, report that there are no saved stations.
@@ -98,8 +96,11 @@ Examples:
 User: "Play Jazz FM"
 {tool:radioPlay,stationName="Jazz FM"}
 
-User: "Play station 12345"
-{tool:radioPlay,stationId=12345}
+User: "Play Lightning 100"
+{tool:radioPlay,stationName="Lightning 100"}
+
+User: "Play Lightning One Hundred"
+{tool:radioPlay,stationName="Lightning One Hundred"}
 
 User: "Play WRLT"
 {tool:radioPlay,stationName="WRLT"}
