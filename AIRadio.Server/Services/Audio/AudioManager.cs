@@ -248,8 +248,8 @@ namespace AIRadio.Server.Services.Audio
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
             // Do not restore MPV volume here. QueueWavAsync only queues the
-            // samples; PipeWire may still be playing them. EndUtteranceAsync
-            // waits for actual playback completion before restoring MPV volume.
+            // samples; PipeWire may still be playing them. The completion monitor
+            // detects actual playback completion without blocking this queue.
         }
 
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
