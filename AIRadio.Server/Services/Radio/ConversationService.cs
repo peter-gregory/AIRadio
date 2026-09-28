@@ -466,11 +466,16 @@ namespace AIRadio.Server.Services.Radio
                 {
                     // Do not wait for PipeWire here. Conversation completion and
                     // audio playback completion are separate state boundaries.
-                    if (_state != ConversationState.Complete)
-                        SetState(ConversationState.Complete, conversationId);
+                    // The normal path may already have transitioned to Idle, so
+                    // do not cycle Idle -> Complete -> Idle again in finally.
+                    if (_state != ConversationState.Idle)
+                    {
+                        if (_state != ConversationState.Complete)
+                            SetState(ConversationState.Complete, conversationId);
 
-                    if (_state == ConversationState.Complete)
-                        SetState(ConversationState.Idle, conversationId);
+                        if (_state == ConversationState.Complete)
+                            SetState(ConversationState.Idle, conversationId);
+                    }
 
                     _pendingToolRequest = null;
                     try
