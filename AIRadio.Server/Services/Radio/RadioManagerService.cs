@@ -42,6 +42,7 @@ namespace AIRadio.Server.Services.Radio
             _mpvState = mpvState;
             _conversationService = conversationService;
             _conversationService.StateChanged += OnConversationStateChanged;
+            _audioManager.PlaybackCompleted += OnAudioPlaybackCompleted;
             _logger.LogInformation("Finished starting RadioManagerService");
         }
 
@@ -50,7 +51,7 @@ namespace AIRadio.Server.Services.Radio
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             _logger.LogInformation("Processing received voice prompt: " + text);
             await _audioManager.DuckAsync(cancellationToken);
-            return _intentService.ProcessAsync(text, cancellationToken);
+            await _intentService.ProcessAsync(text, cancellationToken);
         }
 
         public Task<Guid> ProcessAlarmAsync(string text, CancellationToken cancellationToken = default)
@@ -99,15 +100,24 @@ namespace AIRadio.Server.Services.Radio
             if (e.Current != ConversationState.Idle)
                 return;
 
-            _ = RestoreRadioVolumeAfterConversationAsync(e.ConversationId);
+            // Do not wait for speech here. If PipeWire is still playing,
+            // playback completion will perform the second Idle check.
+            if (!_audioManager.IsPlaybackComplete)
+                return;
+
+            _ = RestoreRadioVolumeAsync(e.ConversationId);
         }
 
-        private async Task RestoreRadioVolumeAfterConversationAsync(Guid conversationId)
+        private async Task RestoreRadioVolumeAsync(Guid conversationId)
         {
             try
             {
+                if (_conversationService.State != ConversationState.Idle ||
+                    !_audioManager.IsPlaybackComplete)
+                    return;
+
                 _logger.LogDebug(
-                    "Conversation {ConversationId} reached Idle; restoring radio volume.",
+                    "Conversation {ConversationId} is idle and audio is complete; restoring radio volume.",
                     conversationId);
 
                 await _audioManager.UnduckAsync(CancellationToken.None);
@@ -119,6 +129,14 @@ namespace AIRadio.Server.Services.Radio
                     "Failed to restore radio volume after conversation {ConversationId}.",
                     conversationId);
             }
+        }
+
+        private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
+        {
+            if (_conversationService.State != ConversationState.Idle)
+                return;
+
+            _ = RestoreRadioVolumeAsync(Guid.Empty);
         }
     }
 }
