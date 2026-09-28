@@ -433,11 +433,13 @@ private:
         pw_thread_loop_unlock(loop_);
     }
 
-    // PipeWire invokes this on its realtime data thread. During the
-    // initial activation we queue up to two available buffers so playback
-    // starts with one buffer ready behind the buffer being consumed. Once
-    // primed, each process callback handles exactly one returned buffer.
+    // PipeWire invokes this on its realtime data thread. A returned buffer
+    // means PipeWire has consumed the corresponding portion of the stream.
+    // Update the playback head first so the final tail == head transition
+    // can generate the completion event before we refill the returned buffer.
+    // During initial activation we queue up to two available buffers.
     void process_rt() noexcept {
+        update_completed_frames();
         size_t to_prime = 0;
         if (primed_buffers_.load(std::memory_order_acquire) < kInitialBufferCount)
             to_prime = kInitialBufferCount;
