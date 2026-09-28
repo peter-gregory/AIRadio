@@ -11,6 +11,7 @@ namespace AIRadio.Server.Services.Radio
     {
         ConversationState State { get; }
         bool IsWaitingForInput { get; }
+        bool WasCancelled { get; }
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
@@ -18,6 +19,7 @@ namespace AIRadio.Server.Services.Radio
         Task<Guid> StartAlarmAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
+        void ResetCancellation();
     }
 
     public sealed class ConversationService : IConversationService, IAsyncDisposable
@@ -31,9 +33,11 @@ namespace AIRadio.Server.Services.Radio
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
         private Guid _conversationId;
+        private bool _wasCancelled;
 
         public ConversationState State => _state;
         public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
+        public bool WasCancelled => _wasCancelled;
         public event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
@@ -114,12 +118,22 @@ namespace AIRadio.Server.Services.Radio
         public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Preserve the user cancellation after the active conversation has
+            // been cancelled so an alarm can stop its remaining actions.
+            _wasCancelled = true;
+
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
             SetState(ConversationState.Complete, _conversationId);
             SetState(ConversationState.Idle, _conversationId);
             _queue.Resume();
+        }
+
+        public void ResetCancellation()
+        {
+            _wasCancelled = false;
         }
 
         private static readonly string[] WakeAcknowledgements =
