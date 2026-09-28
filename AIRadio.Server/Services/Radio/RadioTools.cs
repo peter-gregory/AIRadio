@@ -862,7 +862,6 @@ User: "Find a Nashville country station"
         if (request.State == ToolRequestState.Initial)
         {
             await _audio.PrepareStationChangeAsync(cancellationToken);
-            await _audio.WaitForCompletionAsync(cancellationToken);
             query = request.GetString("query");
             var searchDescription = string.IsNullOrWhiteSpace(query)
                 ? "radio stations"
