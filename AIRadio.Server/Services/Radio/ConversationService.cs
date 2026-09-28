@@ -434,6 +434,13 @@ namespace AIRadio.Server.Services.Radio
                 // complete the action before the alarm continues to its next action.
                 if (conversationComplete)
                 {
+                    // AudioManager queues speech asynchronously. Conversation state
+                    // must not transition to Complete/Idle until every queued speech
+                    // segment and sound effect has actually finished playing. This
+                    // is the synchronization boundary used by the wake/conversation
+                    // layer to decide when it is safe to resume normal radio volume.
+                    await _audioManager.WaitForCompletionAsync(cancellationToken);
+
                     SetState(ConversationState.Complete, conversationId);
                     SetState(ConversationState.Idle, conversationId);
                 }
@@ -460,22 +467,24 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
-                    // Speech and sound effects are queued asynchronously. Signal
-                    // utterance completion so AudioManager can wait for the queued
-                    // PipeWire audio and restore MPV duck/station-change mute.
-                    try
-                    {
-                        await _audioManager.EndUtteranceAsync(
-                            cancel: false,
-                            CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to complete the audio utterance.");
-                    }
-
+                    // AudioManager owns audio playback completion. Do not call
+                    // EndUtteranceAsync here: there is no utterance boundary to
+                    // signal after sample-based PipeWire playback, and the normal
+                    // (cancel:false) operation is intentionally unsupported.
                     if (_state != ConversationState.Complete)
+                    {
+                        try
+                        {
+                            await _audioManager.WaitForCompletionAsync(
+                                CancellationToken.None);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to drain conversation audio.");
+                        }
+
                         SetState(ConversationState.Complete, conversationId);
+                    }
 
                     if (_state == ConversationState.Complete)
                         SetState(ConversationState.Idle, conversationId);
