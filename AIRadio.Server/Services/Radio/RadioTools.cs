@@ -116,7 +116,7 @@ User: "Play WRLT"
             // station stops immediately and remains muted while tuning begins.
             await Audio.PrepareStationChangeAsync(cancellationToken);
             await Audio.QueueSpeechAsync(
-                "Looking for your station now {sound:radio-tuning}",
+                "Looking for your station now {sound-loop:loop-tuning}",
                 cancellationToken);
 
             return ToolResult.Preamble(
@@ -870,7 +870,7 @@ User: "Find a Nashville country station"
                 : $"radio stations with {query.Trim()}";
 
             await _audio.QueueSpeechAsync(
-                $"Looking for {searchDescription} now {{sound:radio-tuning}}",
+                $"Looking for {searchDescription} now {{sound-loop:loop-tuning}}",
                 cancellationToken);
 
             return ToolResult.Preamble(
