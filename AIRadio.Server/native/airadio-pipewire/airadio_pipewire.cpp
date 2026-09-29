@@ -28,7 +28,6 @@ constexpr uint32_t kAIRadioSampleRate = 48000;
 constexpr uint32_t kAIRadioChannels = 1;
 constexpr uint32_t kAIRadioBits = 16;
 constexpr size_t kFifoSeconds = 60;
-constexpr size_t kPipeWireFillMilliseconds = 100;
 constexpr size_t kInitialBufferCount = 2;
 
 class PipeWireBackend {
@@ -63,15 +62,13 @@ public:
             return -22;
         }
 
-        fifo_capacity_frames_ = static_cast<size_t>(sample_rate_) * 60;
-        fill_frames_ = static_cast<size_t>(sample_rate_) * kPipeWireFillMilliseconds / 1000;
+        fifo_capacity_frames_ = static_cast<size_t>(sample_rate_) * kFifoSeconds;
         try { fifo_.resize(fifo_capacity_frames_ * bytes_per_frame_); }
         catch (...) { last_error_ = "Unable to allocate AIRadio PCM FIFO"; return -12; }
 
-        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), fill=%zu frames (%.1fms), RT process enabled",
+        debug("START %u Hz %u ch %u-bit; FIFO=%zu frames (%.1fs), variable PipeWire buffer fill, RT process enabled",
               sample_rate_, channels_, bits_, fifo_capacity_frames_,
-              1.0 * fifo_capacity_frames_ / sample_rate_,
-              fill_frames_, 1000.0 * fill_frames_ / sample_rate_);
+              1.0 * fifo_capacity_frames_ / sample_rate_);
 
         read_frame_.store(0, std::memory_order_relaxed);
         queue_frame_.store(0, std::memory_order_relaxed);
@@ -190,6 +187,11 @@ public:
         if (!started_ || !stream_ || !loop_) return -107;
         if (count && !segments) return -22;
 
+        // A new enqueue starts a fresh playback run after an explicit
+        // cancellation. Normal playback completion clears this flag when the
+        // ring becomes empty.
+        cancelled_.store(false, std::memory_order_release);
+
         for (size_t i = 0; i < count; ++i) {
             if (!segments[i].size) continue;
             if (!segments[i].data || segments[i].size % bytes_per_frame_)
@@ -288,7 +290,15 @@ public:
     // been returned by PipeWire. The returned buffer was the previously queued
     // playback block, so pw_buffer::size tells us exactly how many frames have
     // finished. This avoids querying PipeWire timing state from the RT path.
-    bool update_completed_frames(uint64_t consumed_frames) noexcept {
+    bool update_completed_frames(const pw_buffer *buffer) noexcept {
+        // Cancellation flushes the PipeWire queue and immediately advances
+        // the application FIFO to the current write position. PipeWire may
+        // still return one of the flushed buffers to the process callback;
+        // never advance the tail for that stale buffer.
+        if (cancelled_.load(std::memory_order_acquire))
+            return false;
+
+        const uint64_t consumed_frames = buffer ? buffer->size : 0;
         if (consumed_frames) {
             const uint64_t old_read =
                 read_frame_.load(std::memory_order_relaxed);
@@ -436,8 +446,10 @@ private:
         // PipeWire returned this buffer because the previously queued block
         // has finished playing. pw_buffer::size is the frame count that was
         // submitted for that block. The initial empty buffer has size zero.
-        const uint64_t consumed_frames = buffer->size;
-        update_completed_frames(consumed_frames);
+        if (!update_completed_frames(buffer)) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
 
         if (write_frame_.load(std::memory_order_acquire) ==
             read_frame_.load(std::memory_order_acquire)) {
@@ -471,11 +483,11 @@ private:
             return;
         }
 
-        // Refill the returned buffer from the application FIFO. The buffer
-        // size is always expressed in frames.
+        // Refill the returned buffer with as much queued audio as it can
+        // hold. PipeWire's actual buffer capacity determines the block size;
+        // there is no application-level 100 ms fill limit.
         const size_t frames = queue_fifo_rt(
-            static_cast<uint8_t *>(d->data),
-            std::min(fill_frames_, capacity));
+            static_cast<uint8_t *>(d->data), capacity);
 
         if (!frames) {
             pw_stream_return_buffer(stream_, buffer);
@@ -528,8 +540,7 @@ private:
         spa_data *d = &buffer->buffer->datas[0];
         const size_t capacity = d->maxsize / self->bytes_per_frame_;
         const size_t frames = capacity
-            ? self->queue_fifo_rt(static_cast<uint8_t *>(d->data),
-                                  std::min(self->fill_frames_, capacity))
+            ? self->queue_fifo_rt(static_cast<uint8_t *>(d->data), capacity)
             : 0;
 
         buffer->size = frames;
@@ -664,7 +675,6 @@ private:
 
     uint32_t sample_rate_, channels_, bits_, bytes_per_frame_;
     size_t fifo_capacity_frames_ = 0;
-    size_t fill_frames_ = 0;
     std::vector<uint8_t> fifo_;
     std::atomic<uint64_t> read_frame_{0};
     std::atomic<uint64_t> queue_frame_{0};
