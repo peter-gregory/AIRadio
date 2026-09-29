@@ -23,28 +23,28 @@ namespace AIRadio.Server.Services.Location
         public JsonLocationStore(
             IConfiguration configuration)
         {
-            var dataDirectory =
-                configuration["Radio:DataDirectory"];
+            var configDirectory =
+                configuration["Application:ConfigDirectory"];
 
-            if (string.IsNullOrWhiteSpace(dataDirectory))
+            if (string.IsNullOrWhiteSpace(configDirectory))
             {
                 var home =
                     Environment.GetFolderPath(
                         Environment.SpecialFolder.UserProfile);
 
-                dataDirectory =
+                configDirectory =
                     Path.Combine(
                         home,
                         ".radio",
-                        "data");
+                        "config");
             }
 
             Directory.CreateDirectory(
-                dataDirectory);
+                configDirectory);
 
             _filePath =
                 Path.Combine(
-                    dataDirectory,
+                    configDirectory,
                     "location.json");
         }
 
