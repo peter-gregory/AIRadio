@@ -5,6 +5,8 @@ namespace AIRadio.Server.Services.Mpv
 {
     public interface IMpvManager
     {
+        int PersistentVolume { get; }
+
         Task PlayAsync(
             RadioStation station,
             CancellationToken cancellationToken = default);
@@ -65,6 +67,8 @@ namespace AIRadio.Server.Services.Mpv
             _mpv.Error +=
                 OnMpvError;
         }
+
+        public int PersistentVolume => _state.Volume;
 
         // ============================================================
         // PLAY
