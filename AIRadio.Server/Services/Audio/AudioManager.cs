@@ -286,6 +286,13 @@ namespace AIRadio.Server.Services.Audio
                     if (previous >= generation)
                         continue;
 
+                    _logger.LogInformation(
+                        "C# audio playback completed: generation={Generation}, queued={QueuedFrames}, outstanding={OutstandingFrames}.",
+                        generation,
+                        _pipeWireAudioClient.QueuedFrameCount,
+                        _pipeWireAudioClient.OutstandingFrameCount);
+
+                    _logger.LogInformation("C# AudioManager PlaybackCompleted event fired.");
                     PlaybackCompleted?.Invoke(this, EventArgs.Empty);
                     return;
                 }
