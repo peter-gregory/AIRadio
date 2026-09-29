@@ -50,7 +50,8 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             _logger.LogInformation("Processing received voice prompt: " + text);
-            await _audioManager.DuckAsync(cancellationToken);
+            // Radio ducking is performed by IntentService only after the
+            // wake-up/keyword gate has been validated.
             await _intentService.ProcessAsync(text, cancellationToken);
         }
 
