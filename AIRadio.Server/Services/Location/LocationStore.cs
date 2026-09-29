@@ -19,7 +19,6 @@ namespace AIRadio.Server.Services.Location
     public sealed class JsonLocationStore : ILocationStore
     {
         private readonly string _filePath;
-        private readonly string _legacyFilePath;
 
         public JsonLocationStore(
             IConfiguration configuration)
@@ -47,40 +46,19 @@ namespace AIRadio.Server.Services.Location
                 Path.Combine(
                     configDirectory,
                     "location.json");
-
-            var home =
-                Environment.GetFolderPath(
-                    Environment.SpecialFolder.UserProfile);
-
-            _legacyFilePath =
-                Path.Combine(
-                    home,
-                    ".radio",
-                    "data",
-                    "location.json");
         }
 
         public async Task<RadioLocation?> GetAsync(
             CancellationToken cancellationToken = default)
         {
-            var filePath = _filePath;
-            var migrateLegacy = false;
-
-            if (!File.Exists(filePath) &&
-                File.Exists(_legacyFilePath))
-            {
-                filePath = _legacyFilePath;
-                migrateLegacy = true;
-            }
-
-            if (!File.Exists(filePath))
+            if (!File.Exists(_filePath))
             {
                 return null;
             }
 
             var json =
                 await File.ReadAllTextAsync(
-                    filePath,
+                    _filePath,
                     cancellationToken);
 
             if (string.IsNullOrWhiteSpace(json))
@@ -88,19 +66,8 @@ namespace AIRadio.Server.Services.Location
                 return null;
             }
 
-            var location =
-                JsonConvert.DeserializeObject<RadioLocation>(
-                    json);
-
-            if (location is not null &&
-                migrateLegacy)
-            {
-                await SaveAsync(
-                    location,
-                    cancellationToken);
-            }
-
-            return location;
+            return JsonConvert.DeserializeObject<RadioLocation>(
+                json);
         }
 
         public async Task SaveAsync(
