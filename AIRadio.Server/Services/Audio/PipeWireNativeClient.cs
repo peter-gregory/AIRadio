@@ -345,6 +345,10 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
     {
         try
         {
+            _logger.LogInformation(
+                "C# PipeWire playback-completed callback received: queued={QueuedFrames}, outstanding={OutstandingFrames}.",
+                QueuedFrameCount,
+                OutstandingFrameCount);
             TaskCompletionSource<object?>? completion;
 
             lock (_completionLock)
