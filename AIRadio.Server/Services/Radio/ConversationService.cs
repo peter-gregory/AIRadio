@@ -497,11 +497,21 @@ namespace AIRadio.Server.Services.Radio
                 // complete the action before the alarm continues to its next action.
                 if (conversationComplete)
                 {
-                    // Conversation state becomes Idle when command processing is
-                    // finished. ConversationCompleted is raised separately once
-                    // the final PipeWire playback callback has also arrived.
-                    SetState(ConversationState.Complete, conversationId);
-                    SetState(ConversationState.Idle, conversationId);
+                    // A queued utterance is part of the same active conversation.
+                    // Keep the conversation active so the next command can begin
+                    // immediately and overlap its LLM/tool processing with speech
+                    // already queued from this command.
+                    if (HasQueuedUtteranceCommands())
+                    {
+                        _logger.LogInformation(
+                            "Conversation {ConversationId} has queued utterances; continuing without transitioning to Idle.",
+                            conversationId);
+                    }
+                    else
+                    {
+                        SetState(ConversationState.Complete, conversationId);
+                        SetState(ConversationState.Idle, conversationId);
+                    }
                 }
                 else
                 {
@@ -526,7 +536,11 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
-                    if (_state != ConversationState.Idle)
+                    // Do not transition through Idle between queued commands.
+                    // Idle is reserved for the end of the entire queued
+                    // conversation, after which playback completion can restore
+                    // the radio volume.
+                    if (!HasQueuedUtteranceCommands() && _state != ConversationState.Idle)
                     {
                         if (_state != ConversationState.Complete)
                             SetState(ConversationState.Complete, conversationId);
@@ -891,6 +905,14 @@ namespace AIRadio.Server.Services.Radio
             _shutdown.Dispose();
         }
 
+        private bool HasQueuedUtteranceCommands()
+        {
+            lock (_commandSync)
+            {
+                return _utteranceCommands.Count > 0;
+            }
+        }
+
         private bool EnqueueCommand(ConversationRequest command, bool input)
         {
             lock (_commandSync)
@@ -924,7 +946,8 @@ namespace AIRadio.Server.Services.Radio
                         {
                             command = _inputCommands.Dequeue();
                         }
-                        else if (_state == ConversationState.Idle &&
+                        else if ((_state == ConversationState.Idle ||
+                                  _state == ConversationState.Processing) &&
                                  _utteranceCommands.Count > 0)
                         {
                             command = _utteranceCommands.Dequeue();
