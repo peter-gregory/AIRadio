@@ -249,7 +249,6 @@ public:
             const uint64_t write = write_frame_.load(std::memory_order_acquire);
             read_frame_.store(write, std::memory_order_release);
             queue_frame_.store(write, std::memory_order_release);
-            primed_buffers_.store(0, std::memory_order_release);
             debug("FIFO CANCEL drained application FIFO");
         }
         debug("API END_UTTERANCE END cancel=%d fifo=%zu queued=%llu outstanding=%llu",
