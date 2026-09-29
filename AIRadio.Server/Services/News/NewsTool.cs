@@ -53,7 +53,7 @@ The news data is already written for speech.
         {
             return ToolResult.Preamble(
                 Name,
-                "Here are the latest news headlines {sound:news-intro}",
+                "Here are the latest news headlines {sound:news-intro} {sound-loop:loop-thinking}",
                 request.WithState(ToolRequestState.PreambleComplete));
         }
 
