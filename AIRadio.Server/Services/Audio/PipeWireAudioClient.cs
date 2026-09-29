@@ -50,6 +50,8 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
         _sampleRate = configuration.GetValue("AudioFormat:SampleRate", 48000);
         _channels = configuration.GetValue<short>("AudioFormat:Channels", 1);
         _bitsPerSample = configuration.GetValue<short>("AudioFormat:BitsPerSample", 16);
+
+        _pipeWire.PlaybackCompleted += OnPlaybackCompleted;
     }
 
     public bool IsInitialized => _initialized;
@@ -126,8 +128,11 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
         CancellationToken cancellationToken = default) =>
         Task.FromResult(_masterVolume);
 
-    private void OnPlaybackCompleted(object? sender, EventArgs e) =>
+    private void OnPlaybackCompleted(object? sender, EventArgs e)
+    {
+        _logger.LogDebug("PipeWire playback completed; forwarding completion event.");
         PlaybackCompleted?.Invoke(this, e);
+    }
 
     public async ValueTask DisposeAsync()
     {
