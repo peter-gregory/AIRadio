@@ -57,7 +57,13 @@ namespace AIRadio.Server.Services.Audio
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
-        public bool HasPendingPlayback => Volatile.Read(ref _hasPendingPlayback);
+
+        // Conversation completion must wait for both queued audio requests and
+        // audio already submitted to PipeWire. _hasPendingPlayback remains set
+        // until PipeWire reports that the current playback run has completed.
+        public bool HasPendingPlayback =>
+            !_queue.IsIdle ||
+            Volatile.Read(ref _hasPendingPlayback);
 
         public event EventHandler? PlaybackCompleted;
 
