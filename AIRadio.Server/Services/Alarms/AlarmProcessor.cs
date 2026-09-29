@@ -37,6 +37,8 @@ internal sealed class AlarmProcessor : IAsyncDisposable
         _conversationService.ConversationCancelled += OnConversationCancelled;
     }
 
+    public bool WasCancelled => _cancelled;
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
