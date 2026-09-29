@@ -21,6 +21,7 @@ namespace AIRadio.Server.Services.Radio
         Task ProcessToolAsync(ToolRequest request, CancellationToken cancellationToken = default);
         Task PlayWakeAcknowledgementAsync(CancellationToken cancellationToken = default);
         Task<Guid> StartAlarmAsync(string text, CancellationToken cancellationToken = default);
+        Task QueueAlarmCommandsAsync(IEnumerable<string> commands, CancellationToken cancellationToken = default);
         Task ProcessAndWaitAsync(string text, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
         void ResetCancellation();
@@ -32,7 +33,16 @@ namespace AIRadio.Server.Services.Radio
         private readonly IConversationLlamaClient _llama;
         private readonly IAudioManager _audioManager;
         private readonly IReadOnlyDictionary<string, ITool> _tools;
-        private readonly AsyncWorkQueue<ConversationRequest> _queue;
+        private readonly object _commandSync = new();
+        private readonly Queue<ConversationRequest> _utteranceCommands = new();
+        private readonly Queue<ConversationRequest> _inputCommands = new();
+        private readonly SemaphoreSlim _commandSignal = new(0);
+        private readonly CancellationTokenSource _shutdown = new();
+        private Task _commandWorkerTask = Task.CompletedTask;
+        private CancellationTokenSource? _activeCommandCts;
+        private TaskCompletionSource? _activeCommandCompletion;
+        private bool _disposed;
+        private bool _playbackComplete;
         private ToolRequest? _pendingToolRequest;
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
@@ -57,8 +67,7 @@ namespace AIRadio.Server.Services.Radio
             _audioManager = audioManager;
             ArgumentNullException.ThrowIfNull(tools);
             _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
-            _queue = new AsyncWorkQueue<ConversationRequest>();
-            _queue.Start(ProcessRequestAsync);
+            _commandWorkerTask = ProcessCommandQueueAsync();
             _audioManager.PlaybackCompleted += OnAudioPlaybackCompleted;
         }
 
@@ -66,8 +75,13 @@ namespace AIRadio.Server.Services.Radio
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_queue.TryEnqueue(new ConversationRequest(Guid.NewGuid(), text, false, null)))
-                _logger.LogDebug("Conversation request rejected because the conversation queue is not accepting work.");
+
+            var input = _state == ConversationState.WaitingForInput;
+            var conversationId = input ? _conversationId : Guid.NewGuid();
+            EnqueueCommand(
+                new ConversationRequest(conversationId, text, false, null, input),
+                input);
+
             return Task.CompletedTask;
         }
 
@@ -78,15 +92,9 @@ namespace AIRadio.Server.Services.Radio
             ArgumentNullException.ThrowIfNull(request);
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_queue.TryEnqueue(new ConversationRequest(
-                    Guid.NewGuid(),
-                    string.Empty,
-                    false,
-                    request)))
-            {
-                _logger.LogDebug(
-                    "Pre-LLM tool request rejected because the conversation queue is not accepting work.");
-            }
+            EnqueueCommand(
+                new ConversationRequest(Guid.NewGuid(), string.Empty, false, request, false),
+                false);
 
             return Task.CompletedTask;
         }
@@ -105,12 +113,41 @@ namespace AIRadio.Server.Services.Radio
             cancellationToken.ThrowIfCancellationRequested();
 
             var conversationId = Guid.NewGuid();
-
-            if (!_queue.TryEnqueue(new ConversationRequest(conversationId, text, true, null)))
-                throw new InvalidOperationException(
-                    "Conversation request was rejected because the conversation queue is not accepting work.");
+            EnqueueCommand(
+                new ConversationRequest(conversationId, text, true, null, false),
+                false);
 
             return Task.FromResult(conversationId);
+        }
+
+        public Task QueueAlarmCommandsAsync(
+            IEnumerable<string> commands,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(commands);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var commandList = commands
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToList();
+
+            if (commandList.Count == 0)
+                return Task.CompletedTask;
+
+            lock (_commandSync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                foreach (var text in commandList)
+                {
+                    _utteranceCommands.Enqueue(
+                        new ConversationRequest(Guid.NewGuid(), text, true, null, false));
+                }
+            }
+
+            _commandSignal.Release(commandList.Count);
+            return Task.CompletedTask;
         }
 
         public async Task ProcessAndWaitAsync(
@@ -156,12 +193,29 @@ namespace AIRadio.Server.Services.Radio
                 this,
                 new ConversationCancelledEventArgs(_conversationId));
 
-            await _queue.CancelAsync(CancellationToken.None);
+            CancellationTokenSource? activeCts;
+            Task? activeCompletion;
+
+            lock (_commandSync)
+            {
+                _utteranceCommands.Clear();
+                _inputCommands.Clear();
+                activeCts = _activeCommandCts;
+                activeCompletion = _activeCommandCompletion?.Task;
+            }
+
+            if (activeCts is not null)
+                await activeCts.CancelAsync();
+
+            if (activeCompletion is not null)
+                await activeCompletion;
+
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
+            _playbackComplete = true;
             SetState(ConversationState.Complete, _conversationId);
             SetState(ConversationState.Idle, _conversationId);
-            _queue.Resume();
+            _commandSignal.Release();
         }
 
         public void ResetCancellation()
@@ -744,6 +798,7 @@ namespace AIRadio.Server.Services.Radio
         private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
         {
             _playbackCompletedConversationId = _conversationId;
+            _playbackComplete = true;
 
             _logger.LogDebug(
                 "Conversation {ConversationId} playback completed.",
@@ -791,10 +846,131 @@ namespace AIRadio.Server.Services.Radio
             _ = TryCompleteConversationAsync(conversationId);
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
+            if (_disposed)
+                return;
+
+            _disposed = true;
             _audioManager.PlaybackCompleted -= OnAudioPlaybackCompleted;
-            return _queue.DisposeAsync();
+
+            CancellationTokenSource? activeCts;
+            lock (_commandSync)
+            {
+                _utteranceCommands.Clear();
+                _inputCommands.Clear();
+                activeCts = _activeCommandCts;
+                _shutdown.Cancel();
+            }
+
+            if (activeCts is not null)
+                await activeCts.CancelAsync();
+
+            _commandSignal.Release();
+
+            try
+            {
+                await _commandWorkerTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            _commandSignal.Dispose();
+            _shutdown.Dispose();
+        }
+
+        private bool EnqueueCommand(ConversationRequest command, bool input)
+        {
+            lock (_commandSync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                if (input)
+                    _inputCommands.Enqueue(command);
+                else
+                    _utteranceCommands.Enqueue(command);
+            }
+
+            _commandSignal.Release();
+            return true;
+        }
+
+        private async Task ProcessCommandQueueAsync()
+        {
+            try
+            {
+                while (!_shutdown.IsCancellationRequested)
+                {
+                    await _commandSignal.WaitAsync(_shutdown.Token);
+
+                    ConversationRequest? command = null;
+
+                    lock (_commandSync)
+                    {
+                        if (_state == ConversationState.WaitingForInput &&
+                            _inputCommands.Count > 0)
+                        {
+                            command = _inputCommands.Dequeue();
+                            _playbackComplete = false;
+                        }
+                        else if (_state == ConversationState.Idle &&
+                                 _playbackComplete &&
+                                 _utteranceCommands.Count > 0)
+                        {
+                            command = _utteranceCommands.Dequeue();
+                            _playbackComplete = false;
+                        }
+                    }
+
+                    if (command is null)
+                        continue;
+
+                    var commandCts =
+                        CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+                    var completion =
+                        new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                    lock (_commandSync)
+                    {
+                        _activeCommandCts = commandCts;
+                        _activeCommandCompletion = completion;
+                    }
+
+                    try
+                    {
+                        await ProcessRequestAsync(command, commandCts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "Conversation command {ConversationId} failed.",
+                            command.ConversationId);
+                    }
+                    finally
+                    {
+                        lock (_commandSync)
+                        {
+                            if (ReferenceEquals(_activeCommandCts, commandCts))
+                                _activeCommandCts = null;
+
+                            if (ReferenceEquals(_activeCommandCompletion, completion))
+                                _activeCommandCompletion = null;
+                        }
+
+                        completion.TrySetResult();
+                        commandCts.Dispose();
+
+                        if (_state == ConversationState.Idle)
+                            _commandSignal.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+                when (_shutdown.IsCancellationRequested)
+            {
+            }
         }
 
         private void SetState(ConversationState state, Guid conversationId)
@@ -823,6 +999,7 @@ namespace AIRadio.Server.Services.Radio
             Guid ConversationId,
             string Text,
             bool IsAlarm,
-            ToolRequest? InitialToolRequest);
+            ToolRequest? InitialToolRequest,
+            bool IsConversationInput);
     }
 }
