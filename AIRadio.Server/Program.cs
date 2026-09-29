@@ -39,6 +39,7 @@ builder.Services.AddSingleton<IPipeWireAudioClient, PipeWireAudioClient>();
 builder.Services.AddSingleton<IMpvTransport, MpvTransport>();
 builder.Services.AddSingleton<IRadioMetadataTranslator, RadioMetadataTranslator>();
 builder.Services.AddSingleton<IMpvClient, MpvClient>();
+builder.Services.AddSingleton<IMpvVolumeStore, JsonMpvVolumeStore>();
 builder.Services.AddSingleton<IMpvManager, MpvManager>();
 builder.Services.AddSingleton<IAudioManager, AudioManager>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
@@ -108,6 +109,7 @@ if (!Directory.Exists(promptsDirectory)) throw new DirectoryNotFoundException($"
 
 await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(soundsDirectory);
 await app.Services.GetRequiredService<ILocationService>().InitializeAsync();
+await app.Services.GetRequiredService<IMpvManager>().InitializeAsync();
 await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
 await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
 
