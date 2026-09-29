@@ -311,12 +311,13 @@ public:
         if (!advanced || completed != write)
             return true;
 
-        pw_thread_loop_lock(loop_);
+        // This function runs from PipeWire's realtime process callback. Do not
+        // take the thread-loop lock here: that would block the realtime callback
+        // against the PipeWire loop thread. The frame counters are the
+        // synchronization mechanism for the completion edge.
         if (write_frame_.load(std::memory_order_acquire) !=
-            read_frame_.load(std::memory_order_acquire)) {
-            pw_thread_loop_unlock(loop_);
+            read_frame_.load(std::memory_order_acquire))
             return true;
-        }
 
         if (active_.load(std::memory_order_acquire)) {
             pw_stream_set_active(stream_, false);
@@ -324,7 +325,6 @@ public:
             active_debug_.store(false, std::memory_order_release);
             primed_buffers_.store(0, std::memory_order_release);
         }
-        pw_thread_loop_unlock(loop_);
 
         cancelled_.store(false, std::memory_order_release);
         queue_playback_callback();
@@ -567,7 +567,7 @@ private:
 
     static void on_drained(void *data) {
         auto *self = static_cast<PipeWireBackend *>(data);
-        self->debug("CALLBACK drained fifo=%zu queued=%llu outstanding=%llu active=%d end=%d",
+        self->debug("CALLBACK drained fifo=%zu queued=%llu outstanding=%llu active=%d",
                     self->fifo_available(), static_cast<unsigned long long>(self->queued_frames()),
                     static_cast<unsigned long long>(self->outstanding_frames()),
                     self->active_debug_.load());
@@ -628,7 +628,6 @@ private:
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
     std::atomic<bool> cancelled_{false};
-    std::atomic<bool> playback_pending_{false};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
 
