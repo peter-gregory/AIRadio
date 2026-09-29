@@ -371,6 +371,7 @@ namespace AIRadio.Server.Services.Audio
             // A station change only mutes MPV while the new stream is selected.
             // Conversation duck/resume state owns the eventual volume restore.
             await _mpvManager.SetTemporaryVolumeAsync(0, cancellationToken);
+            Volatile.Write(ref _isDucked, true);
             _logger.LogDebug("Temporarily muted MPV radio volume for station change; persistent radio volume was unchanged.");
         }
 
@@ -379,10 +380,16 @@ namespace AIRadio.Server.Services.Audio
             if (IsDucked)
                 return;
 
-            // Capture the user's normal MPV volume at conversation start even
-            // when a station is not currently playing. A radio-change tool may
-            // start a new station later in the same conversation, and its
-            // temporary volume=0 must not become the saved restore volume.
+            var persistentVolume = _mpvManager.PersistentVolume;
+            if (persistentVolume <= _duckVolume)
+            {
+                _logger.LogDebug(
+                    "Skipping MPV duck because persistent radio volume {PersistentVolume} is already at or below duck volume {DuckVolume}.",
+                    persistentVolume,
+                    _duckVolume);
+                return;
+            }
+
             await _mpvManager.SetTemporaryVolumeAsync(_duckVolume, cancellationToken);
             Volatile.Write(ref _isDucked, true);
             _logger.LogDebug(
