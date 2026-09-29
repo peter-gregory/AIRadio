@@ -234,31 +234,31 @@ namespace AIRadio.Server.Services.Radio
             {
                 ["news"] =
                 [
-                    "Getting the latest news headlines",
-                    "Let me check the latest news",
-                    "Checking for the latest headlines"
+                    "Getting the latest news headlines {sound-loop:loop-thinking}",
+                    "Let me check the latest news {sound-loop:loop-thinking}",
+                    "Checking for the latest headlines {sound-loop:loop-thinking}"
                 ],
                 ["weather"] =
                 [
-                    "Checking the current weather conditions",
-                    "Let me check the weather for you",
-                    "Getting the current weather conditions"
+                    "Checking the current weather conditions {sound-loop:loop-thinking}",
+                    "Let me check the weather for you {sound-loop:loop-thinking}",
+                    "Getting the current weather conditions {sound-loop:loop-thinking}"
                 ],
                 ["alarm"] =
                 [
-                    "Let's set up a new alarm",
-                    "I'll set up that alarm for you",
-                    "Let's get your alarm set up"
+                    "Let's set up a new alarm {sound-loop:loop-thinking}",
+                    "I'll set up that alarm for you {sound-loop:loop-thinking}",
+                    "Let's get your alarm set up {sound-loop:loop-thinking}"
                 ],
                 ["events"] =
                 [
-                    "Getting your events for the day {sound:event-intro}"
+                    "Getting your events for the day {sound:event-intro} {sound-loop:loop-thinking}"
                 ],
                 ["conversation"] =
                 [
-                    "Give me a second",
-                    "Just a moment",
-                    "Let me think about that"
+                    "Give me a second {sound-loop:loop-thinking}",
+                    "Just a moment {sound-loop:loop-thinking}",
+                    "Let me think about that {sound-loop:loop-thinking}"
                 ]
             };
 
