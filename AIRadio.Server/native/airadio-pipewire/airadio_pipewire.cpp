@@ -20,7 +20,6 @@
 #include <thread>
 #include <functional>
 #include <chrono>
-#include <condition_variable>
 
 namespace {
 
@@ -81,6 +80,7 @@ public:
         shutting_down_.store(false);
         stop_worker_.store(false);
         completion_pending_.store(false, std::memory_order_release);
+        process_callback_count_.store(0, std::memory_order_relaxed);
         cancelled_.store(false);
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
@@ -301,11 +301,7 @@ public:
         const uint64_t read = read_frame_.load(std::memory_order_acquire);
         const uint64_t write = write_frame_.load(std::memory_order_acquire);
 
-        debug("PLAYBACK BUFFER COMPLETE frames=%llu read=%llu queue=%llu write=%llu",
-              static_cast<unsigned long long>(consumed_frames),
-              static_cast<unsigned long long>(read),
-              static_cast<unsigned long long>(queue_frame_.load(std::memory_order_acquire)),
-              static_cast<unsigned long long>(write));
+        process_callback_count_.fetch_add(1, std::memory_order_relaxed);
 
         // The ring buffer itself defines playback state. A transition from
         // outstanding samples (write != read) to empty (write == read) means
@@ -339,8 +335,6 @@ public:
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
         stop_worker_.store(true, std::memory_order_release);
-        callback_cv_.notify_one();
-
         if (loop_) {
             pw_thread_loop_lock(loop_);
             if (stream_) {
@@ -575,26 +569,23 @@ private:
                     self->active_debug_.load());
     }
 
+    // The realtime path only changes this atomic flag. The callback worker
+    // polls it, so the PipeWire RT thread never takes a mutex, touches a
+    // condition variable, performs I/O, or calls non-RT PipeWire APIs.
     void signal_playback_callback() noexcept {
-        const bool was_pending = completion_pending_.exchange(true, std::memory_order_acq_rel);
-        if (!was_pending)
-            callback_cv_.notify_one();
+        completion_pending_.store(true, std::memory_order_release);
     }
 
     void callback_worker() noexcept {
-        std::unique_lock<std::mutex> lock(callback_wait_mutex_);
         while (true) {
-            callback_cv_.wait(lock, [this] {
-                return stop_worker_.load(std::memory_order_acquire) ||
-                       completion_pending_.load(std::memory_order_acquire);
-            });
-
             if (stop_worker_.load(std::memory_order_acquire) &&
                 !completion_pending_.load(std::memory_order_acquire))
                 return;
 
-            completion_pending_.store(false, std::memory_order_release);
-            lock.unlock();
+            if (!completion_pending_.exchange(false, std::memory_order_acq_rel)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
 
             // The realtime process callback only signals completion. Perform
             // stream control on this normal worker thread, where the
@@ -620,7 +611,9 @@ private:
             if (cb)
                 cb(ud);
 
-            lock.lock();
+            debug("PLAYBACK COMPLETE callback worker fired; process_callbacks=%llu",
+                  static_cast<unsigned long long>(
+                      process_callback_count_.load(std::memory_order_acquire)));
         }
     }
 
@@ -668,8 +661,7 @@ private:
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
     std::atomic<bool> completion_pending_{false};
-    std::condition_variable callback_cv_;
-    std::mutex callback_wait_mutex_;
+    std::atomic<uint64_t> process_callback_count_{0};
     std::thread callback_thread_;
     std::atomic<bool> cancelled_{false};
     std::atomic<float> volume_{1.0f};
