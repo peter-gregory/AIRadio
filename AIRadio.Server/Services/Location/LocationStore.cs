@@ -19,6 +19,7 @@ namespace AIRadio.Server.Services.Location
     public sealed class JsonLocationStore : ILocationStore
     {
         private readonly string _filePath;
+        private readonly string _legacyFilePath;
 
         public JsonLocationStore(
             IConfiguration configuration)
@@ -46,19 +47,40 @@ namespace AIRadio.Server.Services.Location
                 Path.Combine(
                     configDirectory,
                     "location.json");
+
+            var home =
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.UserProfile);
+
+            _legacyFilePath =
+                Path.Combine(
+                    home,
+                    ".radio",
+                    "data",
+                    "location.json");
         }
 
         public async Task<RadioLocation?> GetAsync(
             CancellationToken cancellationToken = default)
         {
-            if (!File.Exists(_filePath))
+            var filePath = _filePath;
+            var migrateLegacy = false;
+
+            if (!File.Exists(filePath) &&
+                File.Exists(_legacyFilePath))
+            {
+                filePath = _legacyFilePath;
+                migrateLegacy = true;
+            }
+
+            if (!File.Exists(filePath))
             {
                 return null;
             }
 
             var json =
                 await File.ReadAllTextAsync(
-                    _filePath,
+                    filePath,
                     cancellationToken);
 
             if (string.IsNullOrWhiteSpace(json))
@@ -66,8 +88,19 @@ namespace AIRadio.Server.Services.Location
                 return null;
             }
 
-            return JsonConvert.DeserializeObject<RadioLocation>(
-                json);
+            var location =
+                JsonConvert.DeserializeObject<RadioLocation>(
+                    json);
+
+            if (location is not null &&
+                migrateLegacy)
+            {
+                await SaveAsync(
+                    location,
+                    cancellationToken);
+            }
+
+            return location;
         }
 
         public async Task SaveAsync(
