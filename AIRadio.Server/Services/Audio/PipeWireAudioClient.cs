@@ -7,6 +7,7 @@ namespace AIRadio.Server.Services.Audio;
 
 public interface IPipeWireAudioClient : IAsyncDisposable
 {
+    event EventHandler? PlaybackCompleted;
     bool IsInitialized { get; }
     ulong QueuedFrameCount { get; }
     ulong OutstandingFrameCount { get; }
@@ -41,6 +42,8 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
     private bool _initialized;
     private int _masterVolume = 100;
 
+    public event EventHandler? PlaybackCompleted;
+
     public PipeWireAudioClient(
         IPipeWireNativeClient pipeWire,
         IConfiguration configuration,
@@ -55,9 +58,7 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
 
     public bool IsInitialized => _initialized;
 
-    public ulong QueuedFrameCount => _pipeWire.QueuedFrameCount;
 
-    public ulong OutstandingFrameCount => _pipeWire.OutstandingFrameCount;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -107,23 +108,6 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
         CancellationToken cancellationToken = default) =>
         _pipeWire.EndUtteranceAsync(cancel, cancellationToken);
 
-    public Task WaitForPlaybackCompleteAsync(
-        CancellationToken cancellationToken = default)
-    {
-        if (QueuedFrameCount == 0 && OutstandingFrameCount == 0)
-            return Task.CompletedTask;
-
-        return WaitForNativeCompletionAsync(cancellationToken);
-    }
-
-    private async Task WaitForNativeCompletionAsync(
-        CancellationToken cancellationToken)
-    {
-        // The native client owns the completion event. If a producer races
-        // with this call, the native callback will complete the wait.
-        await _pipeWire.WaitForPlaybackCompleteAsync(cancellationToken);
-    }
-
     public Task ClearQueueAsync(
         CancellationToken cancellationToken = default) =>
         _pipeWire.ClearAsync(cancellationToken);
@@ -146,8 +130,14 @@ public sealed class PipeWireAudioClient : IPipeWireAudioClient
         CancellationToken cancellationToken = default) =>
         Task.FromResult(_masterVolume);
 
-    public ValueTask DisposeAsync() =>
-        _pipeWire.DisposeAsync();
+    private void OnPlaybackCompleted(object? sender, EventArgs e) =>
+        PlaybackCompleted?.Invoke(this, e);
+
+    public async ValueTask DisposeAsync()
+    {
+        _pipeWire.PlaybackCompleted -= OnPlaybackCompleted;
+        await _pipeWire.DisposeAsync();
+    }
 
     internal static class WaveParser
     {
