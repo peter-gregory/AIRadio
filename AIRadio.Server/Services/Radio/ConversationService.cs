@@ -131,6 +131,11 @@ namespace AIRadio.Server.Services.Radio
             {
                 conversationId = await StartAlarmAsync(text, cancellationToken);
 
+                if (State == ConversationState.Idle &&
+                    ConversationId == conversationId &&
+                    _completedEventConversationId == conversationId)
+                    completion.TrySetResult(true);
+
                 await completion.Task.WaitAsync(cancellationToken);
             }
             finally
