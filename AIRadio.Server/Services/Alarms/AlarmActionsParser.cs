@@ -10,12 +10,27 @@ public static partial class AlarmActionsParser
             return [];
 
         var text = Normalize(expression);
-        var parts = ActionSeparatorRegex().Split(text);
-
-        return parts
+        var parts = ActionSeparatorRegex()
+            .Split(text)
             .Select(Clean)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList();
+
+        if (parts.Count <= 1)
+            return parts;
+
+        var inheritedVerb = GetLeadingVerb(parts[0]);
+
+        if (string.IsNullOrWhiteSpace(inheritedVerb))
+            return parts;
+
+        for (var i = 1; i < parts.Count; i++)
+        {
+            if (!HasLeadingVerb(parts[i]))
+                parts[i] = $"{inheritedVerb} {parts[i]}";
+        }
+
+        return parts;
     }
 
     private static string Normalize(string value) =>
@@ -27,6 +42,18 @@ public static partial class AlarmActionsParser
         text = LeadingSeparatorRegex().Replace(text, string.Empty);
         return text.Trim();
     }
+
+    private static string? GetLeadingVerb(string value)
+    {
+        var match = LeadingVerbRegex().Match(value);
+        return match.Success ? match.Groups["verb"].Value : null;
+    }
+
+    private static bool HasLeadingVerb(string value) =>
+        LeadingVerbRegex().IsMatch(value);
+
+    [GeneratedRegex(@"^(?<verb>[a-z]+(?:\s+[a-z]+){0,2})(?=\s+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex LeadingVerbRegex();
 
     [GeneratedRegex(@"\s*(?:[,;]|\bthen\b|\band\b)\s*", RegexOptions.IgnoreCase)]
     private static partial Regex ActionSeparatorRegex();
