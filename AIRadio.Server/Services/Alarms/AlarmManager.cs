@@ -76,97 +76,20 @@ namespace AIRadio.Server.Services.Alarms
 
                 try
                 {
-                    // Each alarm owns its cancellation lifecycle. A previous
-                    // user cancellation must not affect a newly activated alarm.
-                    _conversationService.ResetCancellation();
-
                     var alarmTime = alarm.When.DueAt ?? timestamp;
-                    var preamble = $"{{sound:alarm-alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
+                    var preamble =
+                        $"{{sound:alarm-alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
 
-                    _logger.LogInformation(
-                        "Playing alarm activation preamble for {Id}: {Preamble}",
-                        alarm.Id,
-                        preamble);
-
-                    _conversationCompletion = new TaskCompletionSource<bool>(
-                        TaskCreationOptions.RunContinuationsAsynchronously);
-                    _activeConversationId = Guid.Empty;
-
-                    var preambleConversationId = await _radioManager.ProcessAlarmAsync(
+                    await using var processor = new AlarmProcessor(
+                        alarm,
                         preamble,
-                        cancellationToken);
+                        _conversationService,
+                        _logger);
 
-                    _activeConversationId = preambleConversationId;
-
-                    if (_conversationService.State == ConversationState.Idle &&
-                        _conversationService.ConversationId == preambleConversationId)
-                    {
-                        _conversationCompletion.TrySetResult(true);
-                    }
-
-                    await _conversationCompletion.Task.WaitAsync(cancellationToken);
-
-                    if (_conversationService.WasCancelled)
-                    {
-                        _logger.LogInformation(
-                            "Alarm {Id} was cancelled by the user; stopping remaining actions.",
-                            alarm.Id);
-                        break;
-                    }
-
-                    foreach (var action in alarm.Actions)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        if (_conversationService.WasCancelled)
-                        {
-                            _logger.LogInformation(
-                                "Alarm {Id} was cancelled by the user; stopping remaining actions.",
-                                alarm.Id);
-                            break;
-                        }
-
-                        var alarmAction = AppendWakeUpSound(action);
-
-                        _logger.LogInformation(
-                            "Executing alarm {Id} action: {Action}",
-                            alarm.Id,
-                            alarmAction);
-
-                        _conversationCompletion = new TaskCompletionSource<bool>(
-                            TaskCreationOptions.RunContinuationsAsynchronously);
-                        _activeConversationId = Guid.Empty;
-
-                        var conversationId = await _radioManager.ProcessAlarmAsync(
-                            alarmAction,
-                            cancellationToken);
-
-                        _activeConversationId = conversationId;
-
-                        // The conversation may have completely finished before
-                        // the alarm manager received the conversation ID.
-                        if (_conversationService.State == ConversationState.Idle &&
-                            _conversationService.ConversationId == conversationId)
-                        {
-                            _conversationCompletion.TrySetResult(true);
-                        }
-
-                        await _conversationCompletion.Task.WaitAsync(cancellationToken);
-
-                        if (_conversationService.WasCancelled)
-                        {
-                            _logger.LogInformation(
-                                "Alarm {Id} was cancelled by the user; stopping remaining actions.",
-                                alarm.Id);
-                            break;
-                        }
-                    }
+                    await processor.RunAsync(cancellationToken);
                 }
                 finally
                 {
-                    _conversationCompletion = null;
-                    _activeConversationId = Guid.Empty;
-
                     // A one-shot alarm is consumed even if an action fails so
                     // a failed action does not repeat on the next poll.
                     if (alarm.When.Type == SchedulePatternType.Once)
@@ -174,7 +97,6 @@ namespace AIRadio.Server.Services.Alarms
                 }
             }
         }
-
         private static string AppendWakeUpSound(string action)
         {
             if (!Regex.IsMatch(action, @"\bwake\s+up\b", RegexOptions.IgnoreCase) ||
@@ -186,25 +108,5 @@ namespace AIRadio.Server.Services.Alarms
             return $"{action.Trim()} {{sound:wake-up}}";
         }
 
-        private void OnConversationCompleted(
-            object? sender,
-            ConversationCompletedEventArgs args)
-        {
-            if (_conversationCompletion is not null &&
-                _activeConversationId == args.ConversationId)
-            {
-                _logger.LogDebug(
-                    "Alarm manager observed conversation {ConversationId} completely finished; releasing current action.",
-                    args.ConversationId);
-                _conversationCompletion.TrySetResult(true);
-            }
-        }
-
-        public override void Dispose()
-        {
-            _conversationService.ConversationCompleted -= OnConversationCompleted;
-            _conversationCompletion?.TrySetCanceled();
-            base.Dispose();
-        }
     }
 }
