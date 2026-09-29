@@ -223,10 +223,10 @@ namespace AIRadio.Server.Services.Radio
 
         private static readonly string[] WakeAcknowledgements =
         [
-            "Got it",
-            "Okay",
-            "Sure",
-            "Yes"
+            "Got it {sound-loop:loop-thinking}",
+            "Okay {sound-loop:loop-thinking}",
+            "Sure {sound-loop:loop-thinking}",
+            "Yes {sound-loop:loop-thinking}"
         ];
 
         private static readonly IReadOnlyDictionary<string, string[]> IntentPreambles =
