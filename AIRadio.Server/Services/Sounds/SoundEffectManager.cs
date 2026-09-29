@@ -31,11 +31,13 @@ namespace AIRadio.Server.Services.Sounds
                     "radioPlay", "radioStop", "radioNext", "radioPrevious",
                     "radioVolume", "radioCurrent", "radioStatus", "radioPlaylist", "radioSearch"
                 ],
-                ["weather"] = ["weather-current", "forecast"]
+                ["weather"] = ["weather-current", "forecast"],
+                ["loops"] = []
             };
 
         private readonly ILogger<SoundEffectManager> _logger;
         private Dictionary<string, SoundEffect> _soundEffects = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, SoundEffect> _soundLoops = new(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, string> _promptEntries = new(StringComparer.OrdinalIgnoreCase);
         private string _promptText = string.Empty;
 
@@ -57,6 +59,7 @@ namespace AIRadio.Server.Services.Sounds
                 throw new DirectoryNotFoundException($"Sound effects directory was not found: {soundsDirectory}");
 
             var discovered = new Dictionary<string, List<SoundEffectWave>>(StringComparer.OrdinalIgnoreCase);
+            var discoveredLoops = new Dictionary<string, List<SoundEffectWave>>(StringComparer.OrdinalIgnoreCase);
             var allowedTools = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in Directory.EnumerateFiles(soundsDirectory, "*.wav", SearchOption.AllDirectories))
@@ -97,10 +100,14 @@ namespace AIRadio.Server.Services.Sounds
                     continue;
                 }
 
-                if (!discovered.TryGetValue(tag, out var effects))
+                var target = string.Equals(category, "loops", StringComparison.OrdinalIgnoreCase)
+                    ? discoveredLoops
+                    : discovered;
+
+                if (!target.TryGetValue(tag, out var effects))
                 {
                     effects = [];
-                    discovered.Add(tag, effects);
+                    target.Add(tag, effects);
                 }
 
                 effects.Add(new SoundEffectWave
@@ -108,6 +115,9 @@ namespace AIRadio.Server.Services.Sounds
                     FileName = Path.GetFileName(file),
                     WavData = wavData
                 });
+
+                if (string.Equals(category, "loops", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 if (!allowedTools.TryGetValue(tag, out var tools))
                 {
@@ -134,14 +144,29 @@ namespace AIRadio.Server.Services.Sounds
                 });
             }
 
+            var soundLoops = new Dictionary<string, SoundEffect>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (tag, effects) in discoveredLoops)
+            {
+                if (effects.Count == 0) continue;
+
+                soundLoops.Add(tag, new SoundEffect
+                {
+                    Tag = tag,
+                    Effects = effects,
+                    AllowedTools = Array.Empty<string>()
+                });
+            }
+
             _soundEffects = soundEffects;
+            _soundLoops = soundLoops;
             _promptEntries = await BuildPromptEntriesAsync(soundsDirectory, _soundEffects.Values, cancellationToken);
             _promptText = string.Join('\n', _promptEntries.OrderBy(static x => x.Key, StringComparer.OrdinalIgnoreCase).Select(static x => x.Value));
             IsInitialized = true;
 
             _logger.LogInformation(
-                "Sound effect library initialized: {SoundEffectCount} tags, {WaveCount} WAV files.",
-                _soundEffects.Count, _soundEffects.Values.Sum(x => x.Effects.Count));
+                "Sound effect library initialized: {SoundEffectCount} tags, {WaveCount} WAV files, {SoundLoopCount} loop tags, {SoundLoopWaveCount} loop WAV files.",
+                _soundEffects.Count, _soundEffects.Values.Sum(x => x.Effects.Count),
+                _soundLoops.Count, _soundLoops.Values.Sum(x => x.Effects.Count));
         }
 
         public bool HasSoundEffect(string tag)
@@ -166,6 +191,12 @@ namespace AIRadio.Server.Services.Sounds
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(tag);
             return _soundEffects.TryGetValue(tag, out var soundEffect) ? soundEffect.GetRandom() : null;
+        }
+
+        public SoundEffectWave? GetRandomLoopSound(string tag)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+            return _soundLoops.TryGetValue(tag, out var soundEffect) ? soundEffect.GetRandom() : null;
         }
 
         public IReadOnlyList<string> GetTags() =>
@@ -195,6 +226,7 @@ namespace AIRadio.Server.Services.Sounds
         public void Clear()
         {
             _soundEffects = new(StringComparer.OrdinalIgnoreCase);
+            _soundLoops = new(StringComparer.OrdinalIgnoreCase);
             _promptEntries = new(StringComparer.OrdinalIgnoreCase);
             _promptText = string.Empty;
             IsInitialized = false;
