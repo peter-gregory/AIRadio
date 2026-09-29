@@ -72,14 +72,14 @@ namespace AIRadio.Server.Services.Audio
 
         public event EventHandler? PlaybackCompleted;
 
-        public Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
+        public async Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
             var position = 0;
             foreach (Match match in AudioTagRegex.Matches(text))
             {
-                EnqueueSpeech(text[position..match.Index], cancellationToken);
+                await EnqueueSpeechAsync(text[position..match.Index], cancellationToken);
                 if (match.Groups["loop"].Success)
                     StartSoundLoop(match.Groups["loop"].Value);
                 else
@@ -87,19 +87,17 @@ namespace AIRadio.Server.Services.Audio
                 position = match.Index + match.Length;
             }
 
-            EnqueueSpeech(text[position..], cancellationToken);
-
-            return Task.CompletedTask;
+            await EnqueueSpeechAsync(text[position..], cancellationToken);
         }
 
-        public Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default)
+        public async Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
             var position = 0;
             foreach (Match match in AudioTagRegex.Matches(text))
             {
-                EnqueueSpeech(text[position..match.Index], cancellationToken, waitForPlayback: false);
+                await EnqueueSpeechAsync(text[position..match.Index], cancellationToken, waitForPlayback: false);
                 if (match.Groups["loop"].Success)
                     StartSoundLoop(match.Groups["loop"].Value);
                 else
@@ -107,8 +105,7 @@ namespace AIRadio.Server.Services.Audio
                 position = match.Index + match.Length;
             }
 
-            EnqueueSpeech(text[position..], cancellationToken, waitForPlayback: false);
-            return Task.CompletedTask;
+            await EnqueueSpeechAsync(text[position..], cancellationToken, waitForPlayback: false);
         }
 
         public Task PlaySoundAsync(string sound, CancellationToken cancellationToken = default)
@@ -146,7 +143,7 @@ namespace AIRadio.Server.Services.Audio
         public async Task CancelAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            StopSoundLoop();
+            await StopSoundLoopAsync(CancellationToken.None);
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel: true, CancellationToken.None);
             Volatile.Write(ref _hasPendingPlayback, false);
@@ -159,12 +156,14 @@ namespace AIRadio.Server.Services.Audio
             _queue.Resume();
         }
 
-        private void EnqueueSpeech(string text, CancellationToken cancellationToken, bool waitForPlayback = true)
+        private async Task EnqueueSpeechAsync(string text, CancellationToken cancellationToken, bool waitForPlayback = true)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
+
+            await StopSoundLoopAsync(cancellationToken);
+
             foreach (var sentence in SentenceParser.Split(text))
             {
-                StopSoundLoop();
                 Interlocked.Increment(ref _pendingSpeechRequests);
                 Volatile.Write(ref _hasPendingPlayback, true);
                 _logger.LogInformation("Queue speech: " + sentence);
@@ -261,15 +260,41 @@ namespace AIRadio.Server.Services.Audio
             _logger.LogInformation("Started sound loop {Tag}.", tag);
         }
 
-        private void StopSoundLoop()
+        private async Task StopSoundLoopAsync(CancellationToken cancellationToken)
         {
+            Task? loopTask = null;
+            var cancelPlayback = false;
+
             lock (_soundLoopSync)
             {
-                if (!_soundLoopActive)
-                    return;
+                if (_soundLoopActive)
+                {
+                    _soundLoopActive = false;
+                    cancelPlayback = true;
+                }
 
-                _soundLoopActive = false;
+                loopTask = _soundLoopTask;
                 _soundLoopCts?.Cancel();
+            }
+
+            if (cancelPlayback)
+            {
+                _logger.LogDebug("Cancelling active sound loop playback before queuing new audio.");
+                await _pipeWireAudioClient.EndUtteranceAsync(
+                    cancel: true,
+                    cancellationToken);
+            }
+
+            if (loopTask is not null)
+            {
+                try
+                {
+                    await loopTask.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
             }
         }
 
@@ -473,7 +498,7 @@ namespace AIRadio.Server.Services.Audio
         {
             if (_disposed) return;
 
-            StopSoundLoop();
+            await StopSoundLoopAsync(CancellationToken.None);
             _pipeWireAudioClient.PlaybackCompleted -= OnPlaybackCompleted;
             _disposed = true;
             try { await _queue.StopAsync(CancellationToken.None); } catch (Exception ex) { _logger.LogDebug(ex, "Error stopping AudioManager queue."); }
