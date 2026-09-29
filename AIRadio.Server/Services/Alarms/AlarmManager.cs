@@ -18,7 +18,6 @@ namespace AIRadio.Server.Services.Alarms
             _alarmService = alarmService;
             _conversationService = conversationService;
             _logger = logger;
-            _conversationService.ConversationCompleted += OnConversationCompleted;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -90,9 +89,6 @@ namespace AIRadio.Server.Services.Alarms
                         _alarmService.DisableEvent(alarm.Id);
                 }
             }
-        }
-
-            return $"{action.Trim()} {{sound:wake-up}}";
         }
 
     }
