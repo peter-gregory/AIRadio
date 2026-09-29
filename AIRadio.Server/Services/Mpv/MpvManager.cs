@@ -29,6 +29,13 @@ namespace AIRadio.Server.Services.Mpv
         Task SetVolumeAsync(
             int volume,
             CancellationToken cancellationToken = default);
+
+        Task SetTemporaryVolumeAsync(
+            int volume,
+            CancellationToken cancellationToken = default);
+
+        Task RestoreVolumeAsync(
+            CancellationToken cancellationToken = default);
     }
 
     public sealed class MpvManager : IMpvManager
@@ -306,6 +313,37 @@ namespace AIRadio.Server.Services.Mpv
                     update.IsMuted =
                         volume == 0;
                 });
+        }
+
+        // ============================================================
+        // TEMPORARY VOLUME
+        // ============================================================
+
+        public async Task SetTemporaryVolumeAsync(
+            int volume,
+            CancellationToken cancellationToken = default)
+        {
+            volume = Math.Clamp(volume, 0, 100);
+
+            await EnsureConnectedAsync(cancellationToken);
+
+            // Temporary ducking/muting changes MPV's current output only.
+            // Do not update IMpvState.Volume: that is the user's desired
+            // radio volume and must survive temporary audio states.
+            await _mpv.SetVolumeAsync(volume, cancellationToken);
+        }
+
+        public async Task RestoreVolumeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var volume = Math.Clamp(_state.Volume, 0, 100);
+
+            await EnsureConnectedAsync(cancellationToken);
+
+            // Restore the persistent desired radio volume. This deliberately
+            // updates MPV without treating the restore as a new user volume
+            // setting.
+            await _mpv.SetVolumeAsync(volume, cancellationToken);
         }
 
         // ============================================================
