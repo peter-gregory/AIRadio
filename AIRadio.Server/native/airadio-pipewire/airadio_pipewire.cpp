@@ -295,10 +295,19 @@ public:
         // the application FIFO to the current write position. PipeWire may
         // still return one of the flushed buffers to the process callback;
         // never advance the tail for that stale buffer.
-        if (cancelled_.load(std::memory_order_acquire))
+        if (cancelled_.load(std::memory_order_acquire)) {
+            if (buffer)
+                buffer->size = 0;
             return false;
+        }
 
+        // pw_stream_return_buffer() makes a buffer immediately available
+        // for dequeue again. Clear the consumed size now so a returned
+        // buffer cannot be mistaken for another completed playback block.
+        // When the buffer is reused below, queueing code sets its new size.
         const uint64_t consumed_frames = buffer ? buffer->size : 0;
+        if (buffer)
+            buffer->size = 0;
         if (consumed_frames) {
             const uint64_t old_read =
                 read_frame_.load(std::memory_order_relaxed);
@@ -503,6 +512,7 @@ private:
             const uint64_t queue =
                 queue_frame_.load(std::memory_order_relaxed);
             queue_frame_.store(queue - frames, std::memory_order_release);
+            buffer->size = 0;
             pw_stream_return_buffer(stream_, buffer);
             return;
         }
