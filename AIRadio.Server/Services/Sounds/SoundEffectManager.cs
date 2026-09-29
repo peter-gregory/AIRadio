@@ -11,6 +11,7 @@ namespace AIRadio.Server.Services.Sounds
         bool TryGetSoundEffect(string tag, out SoundEffect? soundEffect);
         SoundEffect? GetSoundEffect(string tag);
         SoundEffectWave? GetRandomSound(string tag);
+        SoundEffectWave? GetRandomLoopSound(string tag);
         IReadOnlyList<string> GetTags();
         string GetPromptText();
         string GetPromptText(IEnumerable<string> toolNames);
