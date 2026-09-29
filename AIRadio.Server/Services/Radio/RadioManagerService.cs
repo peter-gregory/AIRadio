@@ -100,10 +100,23 @@ namespace AIRadio.Server.Services.Radio
             if (e.Current != ConversationState.Idle)
                 return;
 
+            _logger.LogInformation(
+                "Conversation {ConversationId} reached Idle; checking whether speech playback is complete.",
+                e.ConversationId);
+
             // Do not wait for speech here. If PipeWire is still playing,
-            // playback completion will perform the second Idle check.
+            // the PlaybackCompleted event will perform the second Idle check.
             if (!_audioManager.IsPlaybackComplete)
+            {
+                _logger.LogInformation(
+                    "Conversation {ConversationId} is idle, but speech playback is still active; waiting for PlaybackCompleted.",
+                    e.ConversationId);
                 return;
+            }
+
+            _logger.LogInformation(
+                "Conversation {ConversationId} is idle and speech playback is already complete; restoring radio volume.",
+                e.ConversationId);
 
             _ = RestoreRadioVolumeAsync(e.ConversationId);
         }
@@ -117,11 +130,15 @@ namespace AIRadio.Server.Services.Radio
                     !_audioManager.IsDucked)
                     return;
 
-                _logger.LogDebug(
-                    "Conversation {ConversationId} is idle and audio is complete; restoring radio volume.",
+                _logger.LogInformation(
+                    "Conversation {ConversationId} is idle and speech playback is complete; restoring radio volume.",
                     conversationId);
 
                 await _audioManager.UnduckAsync(CancellationToken.None);
+
+                _logger.LogInformation(
+                    "Radio volume restored after conversation {ConversationId}.",
+                    conversationId);
             }
             catch (Exception ex)
             {
@@ -134,8 +151,21 @@ namespace AIRadio.Server.Services.Radio
 
         private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
         {
-            if (_conversationService.State != ConversationState.Idle)
+            var state = _conversationService.State;
+
+            _logger.LogInformation(
+                "C# PlaybackCompleted callback received by RadioManagerService; conversationState={ConversationState}.",
+                state);
+
+            if (state != ConversationState.Idle)
+            {
+                _logger.LogInformation(
+                    "PlaybackCompleted received while conversation is not idle; radio resume deferred until conversation reaches Idle.");
                 return;
+            }
+
+            _logger.LogInformation(
+                "PlaybackCompleted received while conversation is idle; restoring radio volume now.");
 
             _ = RestoreRadioVolumeAsync(Guid.Empty);
         }
