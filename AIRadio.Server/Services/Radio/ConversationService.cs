@@ -48,7 +48,6 @@ namespace AIRadio.Server.Services.Radio
         private Guid _conversationId;
         private bool _wasCancelled;
         private Guid _idleConversationId;
-        private Guid _playbackCompletedConversationId;
         private Guid _completedEventConversationId;
 
         public ConversationState State => _state;
@@ -795,8 +794,6 @@ namespace AIRadio.Server.Services.Radio
 
         private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
         {
-            _playbackCompletedConversationId = _conversationId;
-
             _logger.LogDebug(
                 "Conversation {ConversationId} playback completed.",
                 _conversationId);
