@@ -1,6 +1,7 @@
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Time;
+using System.Text.RegularExpressions;
 
 namespace AIRadio.Server.Services.Alarms
 {
@@ -73,26 +74,23 @@ namespace AIRadio.Server.Services.Alarms
                     var preamble =
                         $"{{sound:alarm-alarm}} This is your {TimeSpeechFormatter.Format(alarmTime)} alarm";
 
-                    await using var processor = new AlarmProcessor(
-                        alarm,
-                        preamble,
-                        _conversationService,
-                        _logger);
-
-                    await processor.RunAsync(cancellationToken);
-
-                    if (processor.WasCancelled)
+                    var commands = new List<string>
                     {
-                        _logger.LogInformation(
-                            "Alarm {Id} was cancelled; cancelling the remaining active alarms.",
-                            alarm.Id);
-                        break;
-                    }
+                        preamble
+                    };
+
+                    commands.AddRange(
+                        alarm.Actions.Select(AppendWakeUpSound));
+
+                    await _conversationService.QueueAlarmCommandsAsync(
+                        commands,
+                        cancellationToken);
                 }
                 finally
                 {
-                    // A one-shot alarm is consumed even if an action fails so
-                    // a failed action does not repeat on the next poll.
+                    // A one-shot alarm is consumed once its commands are
+                    // handed to the ConversationService. The conversation
+                    // manager owns execution and FIFO sequencing.
                     if (alarm.When.Type == SchedulePatternType.Once)
                         _alarmService.DisableEvent(alarm.Id);
                 }
