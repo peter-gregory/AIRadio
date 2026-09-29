@@ -43,6 +43,7 @@ namespace AIRadio.Server.Services.Audio
         private Task? _soundLoopTask;
         private int _pendingSpeechRequests;
         private bool _soundLoopActive;
+        private bool _soundLoopPlaybackActive;
         private bool _isDucked;
         private bool _hasPendingPlayback;
         private bool _disposed;
@@ -268,11 +269,9 @@ namespace AIRadio.Server.Services.Audio
             lock (_soundLoopSync)
             {
                 if (_soundLoopActive)
-                {
                     _soundLoopActive = false;
-                    cancelPlayback = true;
-                }
 
+                cancelPlayback = _soundLoopPlaybackActive;
                 loopTask = _soundLoopTask;
                 _soundLoopCts?.Cancel();
             }
@@ -339,6 +338,9 @@ namespace AIRadio.Server.Services.Audio
                         break;
 
                     Volatile.Write(ref _hasPendingPlayback, true);
+                    lock (_soundLoopSync)
+                        _soundLoopPlaybackActive = true;
+
                     _logger.LogInformation(
                         "Queue sound loop {Tag} ({FileName}) with {Bytes} bytes.",
                         tag, sound.FileName, sound.WavData.Length);
@@ -359,6 +361,8 @@ namespace AIRadio.Server.Services.Audio
                     finally
                     {
                         _pipeWireAudioClient.PlaybackCompleted -= handler;
+                        lock (_soundLoopSync)
+                            _soundLoopPlaybackActive = false;
                     }
 
                     if (!IsSoundLoopActive() || Volatile.Read(ref _pendingSpeechRequests) > 0)
@@ -380,6 +384,7 @@ namespace AIRadio.Server.Services.Audio
                     if (ReferenceEquals(_soundLoopCts, loopCts))
                     {
                         _soundLoopActive = false;
+                        _soundLoopPlaybackActive = false;
                         _soundLoopTask = null;
                         _soundLoopCts = null;
                     }
