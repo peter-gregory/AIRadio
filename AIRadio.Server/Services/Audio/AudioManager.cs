@@ -406,6 +406,8 @@ namespace AIRadio.Server.Services.Audio
             _pipeWireAudioClient.PlaybackCompleted += handler;
             try
             {
+                // Re-check after subscribing so a completion that raced with
+                // the initial state check cannot leave the waiter blocked.
                 if (Volatile.Read(ref _hasPendingPlayback))
                     await completion.Task.WaitAsync(cancellationToken);
             }
