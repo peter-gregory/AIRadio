@@ -10,6 +10,7 @@ namespace AIRadio.Server.Services.Radio
     public interface IConversationService
     {
         ConversationState State { get; }
+        Guid ConversationId { get; }
         bool IsWaitingForInput { get; }
         bool WasCancelled { get; }
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
@@ -41,6 +42,7 @@ namespace AIRadio.Server.Services.Radio
         private Guid _completedEventConversationId;
 
         public ConversationState State => _state;
+        public Guid ConversationId => _conversationId;
         public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
         public bool WasCancelled => _wasCancelled;
         public event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
