@@ -20,6 +20,7 @@
 #include <thread>
 #include <functional>
 #include <chrono>
+#include <condition_variable>
 
 namespace {
 
@@ -79,12 +80,19 @@ public:
         primed_buffers_.store(0, std::memory_order_relaxed);
         shutting_down_.store(false);
         stop_worker_.store(false);
+        completion_pending_.store(false, std::memory_order_release);
         cancelled_.store(false);
         connection_ready_ = false;
         active_debug_.store(false, std::memory_order_release);
         connection_error_ = 0;
 
         pw_init(nullptr, nullptr);
+        try {
+            callback_thread_ = std::thread([this] { callback_worker(); });
+        } catch (...) {
+            last_error_ = "Unable to start AIRadio playback callback thread";
+            return -12;
+        }
         loop_ = pw_thread_loop_new("AIRadioPipeWire", nullptr);
         if (!loop_) return -12;
 
@@ -327,7 +335,11 @@ public:
         }
 
         cancelled_.store(false, std::memory_order_release);
-        queue_playback_callback();
+
+        // The PipeWire process callback only detects the playback-complete
+        // edge. Never invoke the managed callback from the realtime thread.
+        // Signal the dedicated callback thread instead.
+        signal_playback_callback();
         return true;
     }
 
@@ -347,6 +359,9 @@ public:
 
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
+        stop_worker_.store(true, std::memory_order_release);
+        callback_cv_.notify_one();
+
         if (loop_) {
             pw_thread_loop_lock(loop_);
             if (stream_) {
@@ -359,6 +374,9 @@ public:
             pw_thread_loop_destroy(loop_);
             loop_ = nullptr;
         }
+
+        if (callback_thread_.joinable())
+            callback_thread_.join();
 
         fifo_.clear();
         started_ = false;
@@ -573,15 +591,39 @@ private:
                     self->active_debug_.load());
     }
 
-    void queue_playback_callback() {
-        AIRadioPlaybackCallback cb;
-        void *ud;
-        {
-            std::lock_guard<std::mutex> lock(callback_mutex_);
-            cb = playback_callback_;
-            ud = playback_user_data_;
+    void signal_playback_callback() noexcept {
+        const bool was_pending = completion_pending_.exchange(true, std::memory_order_acq_rel);
+        if (!was_pending)
+            callback_cv_.notify_one();
+    }
+
+    void callback_worker() noexcept {
+        std::unique_lock<std::mutex> lock(callback_wait_mutex_);
+        while (true) {
+            callback_cv_.wait(lock, [this] {
+                return stop_worker_.load(std::memory_order_acquire) ||
+                       completion_pending_.load(std::memory_order_acquire);
+            });
+
+            if (stop_worker_.load(std::memory_order_acquire) &&
+                !completion_pending_.load(std::memory_order_acquire))
+                return;
+
+            completion_pending_.store(false, std::memory_order_release);
+            lock.unlock();
+
+            AIRadioPlaybackCallback cb;
+            void *ud;
+            {
+                std::lock_guard<std::mutex> callback_lock(callback_mutex_);
+                cb = playback_callback_;
+                ud = playback_user_data_;
+            }
+            if (cb)
+                cb(ud);
+
+            lock.lock();
         }
-        if (cb) cb(ud);
     }
 
     void queue_error_callback(int code, const std::string &message) {
@@ -627,6 +669,10 @@ private:
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<bool> stop_worker_{false};
+    std::atomic<bool> completion_pending_{false};
+    std::condition_variable callback_cv_;
+    std::mutex callback_wait_mutex_;
+    std::thread callback_thread_;
     std::atomic<bool> cancelled_{false};
     std::atomic<float> volume_{1.0f};
     std::string last_error_;
