@@ -49,6 +49,7 @@ namespace AIRadio.Server.Services.Radio
         private bool _wasCancelled;
         private Guid _idleConversationId;
         private Guid _completedEventConversationId;
+        private Guid _waitingForInputConversationId;
 
         public ConversationState State => _state;
         public Guid ConversationId => _conversationId;
@@ -817,6 +818,26 @@ namespace AIRadio.Server.Services.Radio
             // Conversation completion is allowed to leave Complete only after
             // the AudioManager queue is also empty. A PipeWire completion can
             // arrive while another speech request is still waiting for TTS.
+            if (_waitingForInputConversationId == conversationId &&
+                _state != ConversationState.WaitingForInput &&
+                !_audioManager.HasPendingPlayback)
+            {
+                // Speech may have been followed by background chatter while the
+                // conversation was still processing. Those utterances were
+                // intentionally queued as normal utterances because we were not
+                // yet accepting interactive input. Discard them before opening
+                // the input window so they cannot become the answer to the
+                // pending question.
+                lock (_commandSync)
+                {
+                    _utteranceCommands.Clear();
+                }
+
+                _waitingForInputConversationId = Guid.Empty;
+                SetState(ConversationState.WaitingForInput, conversationId);
+                return;
+            }
+
             if (_state == ConversationState.Complete &&
                 _conversationId == conversationId &&
                 !_audioManager.HasPendingPlayback)
@@ -1024,6 +1045,16 @@ namespace AIRadio.Server.Services.Radio
         {
             if (_state == state)
                 return;
+
+            if (state == ConversationState.WaitingForInput &&
+                _audioManager.HasPendingPlayback)
+            {
+                _waitingForInputConversationId = conversationId;
+                _logger.LogDebug(
+                    "Deferring conversation {ConversationId} WaitingForInput transition because audio playback is still pending.",
+                    conversationId);
+                return;
+            }
 
             if (state == ConversationState.Idle &&
                 _audioManager.HasPendingPlayback)
