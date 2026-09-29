@@ -127,7 +127,7 @@ Examples:
             var displayLocation = GetDisplayLocation(locationForWeather);
             return ToolResult.Preamble(
                 Name,
-                $"Here's your current weather conditions for {displayLocation}. {{sound:weather-intro}}",
+                $"Here's your current weather conditions for {displayLocation}. {{sound:weather-intro}} {{sound-loop:loop-thinking}}",
                 request.WithState(ToolRequestState.PreambleComplete));
         }
 
