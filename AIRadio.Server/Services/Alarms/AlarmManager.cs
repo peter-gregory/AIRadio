@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using AIRadio.Server.Models.Alarms;
 using AIRadio.Server.Services.Radio;
 using AIRadio.Server.Services.Time;
@@ -8,20 +7,15 @@ namespace AIRadio.Server.Services.Alarms
     public sealed class AlarmManager : BackgroundService
     {
         private readonly IAlarmService _alarmService;
-        private readonly IRadioManagerService _radioManager;
         private readonly IConversationService _conversationService;
         private readonly ILogger<AlarmManager> _logger;
-        private TaskCompletionSource<bool>? _conversationCompletion;
-        private Guid _activeConversationId;
 
         public AlarmManager(
             IAlarmService alarmService,
-            IRadioManagerService radioManager,
             IConversationService conversationService,
             ILogger<AlarmManager> logger)
         {
             _alarmService = alarmService;
-            _radioManager = radioManager;
             _conversationService = conversationService;
             _logger = logger;
             _conversationService.ConversationCompleted += OnConversationCompleted;
@@ -97,13 +91,6 @@ namespace AIRadio.Server.Services.Alarms
                 }
             }
         }
-        private static string AppendWakeUpSound(string action)
-        {
-            if (!Regex.IsMatch(action, @"\bwake\s+up\b", RegexOptions.IgnoreCase) ||
-                Regex.IsMatch(action, @"\{sound:wake-up\}", RegexOptions.IgnoreCase))
-            {
-                return action;
-            }
 
             return $"{action.Trim()} {{sound:wake-up}}";
         }
