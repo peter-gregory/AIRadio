@@ -525,10 +525,38 @@ private:
             pw_thread_loop_signal(self->loop_, false);
             return;
         }
-        buffer->size = 0;
-        self->debug("ADD_BUFFER buffer=%p maxsize=%u",
-                    static_cast<void *>(buffer),
-                    buffer->buffer->datas[0].maxsize);
+        spa_data *d = &buffer->buffer->datas[0];
+        const size_t capacity = d->maxsize / self->bytes_per_frame_;
+        const size_t frames = capacity
+            ? self->queue_fifo_rt(static_cast<uint8_t *>(d->data),
+                                  std::min(self->fill_frames_, capacity))
+            : 0;
+
+        buffer->size = frames;
+        if (frames) {
+            d->chunk->offset = 0;
+            d->chunk->stride = static_cast<int32_t>(self->bytes_per_frame_);
+            d->chunk->size =
+                static_cast<uint32_t>(frames * self->bytes_per_frame_);
+
+            const int r = pw_stream_queue_buffer(self->stream_, buffer);
+            if (r < 0) {
+                const uint64_t queue =
+                    self->queue_frame_.load(std::memory_order_relaxed);
+                self->queue_frame_.store(queue - frames,
+                                         std::memory_order_release);
+                buffer->size = 0;
+                self->debug("ADD_BUFFER queue failed error=%d", r);
+            } else {
+                self->debug("ADD_BUFFER buffer=%p maxsize=%u primed=%zu",
+                            static_cast<void *>(buffer),
+                            d->maxsize, frames);
+            }
+        } else {
+            self->debug("ADD_BUFFER buffer=%p maxsize=%u no FIFO data",
+                        static_cast<void *>(buffer), d->maxsize);
+        }
+
         pw_thread_loop_signal(self->loop_, false);
     }
 
