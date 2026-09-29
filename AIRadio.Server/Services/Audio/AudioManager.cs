@@ -10,7 +10,6 @@ namespace AIRadio.Server.Services.Audio
     public interface IAudioManager
     {
         bool IsDucked { get; }
-        bool IsPlaybackComplete { get; }
         event EventHandler? PlaybackCompleted;
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default);
@@ -22,7 +21,6 @@ namespace AIRadio.Server.Services.Audio
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
         Task ClearQueueAsync(CancellationToken cancellationToken = default);
         Task EndUtteranceAsync(bool cancel = false, CancellationToken cancellationToken = default);
-        Task WaitForCompletionAsync(CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
 
@@ -42,9 +40,6 @@ namespace AIRadio.Server.Services.Audio
         private readonly AsyncWorkQueue<AudioRequest> _queue;
         private bool _isDucked;
         private bool _disposed;
-        private int _completionMonitorRunning;
-        private int _playbackGeneration;
-        private int _completedPlaybackGeneration;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
         {
@@ -57,14 +52,10 @@ namespace AIRadio.Server.Services.Audio
             _duckVolume = configuration.GetValue("Mpv:Transport:DuckVolume", 20);
             _queue = new AsyncWorkQueue<AudioRequest>();
             _queue.Start(ProcessRequestAsync);
+            _pipeWireAudioClient.PlaybackCompleted += OnPlaybackCompleted;
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
-
-        public bool IsPlaybackComplete =>
-            _queue.IsIdle &&
-            _pipeWireAudioClient.QueuedFrameCount == 0 &&
-            _pipeWireAudioClient.OutstandingFrameCount == 0;
 
         public event EventHandler? PlaybackCompleted;
 
@@ -155,17 +146,6 @@ namespace AIRadio.Server.Services.Audio
             _queue.Resume();
         }
 
-        public async Task WaitForCompletionAsync(CancellationToken cancellationToken = default)
-        {
-            while (true)
-            {
-                await _queue.WaitForIdleAsync(cancellationToken);
-                await _pipeWireAudioClient.WaitForPlaybackCompleteAsync(cancellationToken);
-                if (_queue.IsIdle && _pipeWireAudioClient.QueuedFrameCount == 0 && _pipeWireAudioClient.OutstandingFrameCount == 0)
-                    return;
-            }
-        }
-
         private void EnqueueSpeech(string text, CancellationToken cancellationToken, bool waitForPlayback = true)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
@@ -192,14 +172,6 @@ namespace AIRadio.Server.Services.Audio
                 return Task.CompletedTask;
             }
 
-            // Only speech and sound produce playback that should generate the
-            // completion event. MPV control requests (duck/unduck/station change)
-            // must not create a new completion cycle.
-            if (request.Type is AudioRequestType.Speech or AudioRequestType.Sound)
-            {
-                Interlocked.Increment(ref _playbackGeneration);
-                _ = MonitorPlaybackCompletionAsync();
-            }
             return Task.CompletedTask;
         }
 
@@ -235,82 +207,6 @@ namespace AIRadio.Server.Services.Audio
             }
         }
 
-        private async Task MonitorPlaybackCompletionAsync()
-        {
-            if (_disposed || Interlocked.Exchange(ref _completionMonitorRunning, 1) != 0)
-                return;
-
-            try
-            {
-                // Allow the queue worker to observe newly enqueued work before
-                // checking whether the queue has become idle.
-                await Task.Yield();
-
-                while (!_disposed)
-                {
-                    await _queue.WaitForIdleAsync(CancellationToken.None);
-
-                    // Normal playback completion must not depend on
-                    // EndUtteranceAsync. The native PipeWire completion callback
-                    // is intentionally reserved for utterance cancellation/end
-                    // signaling. Here we simply observe the actual frame counts
-                    // until the queued and outstanding audio have drained.
-                    while (!_disposed &&
-                           (_pipeWireAudioClient.QueuedFrameCount != 0 ||
-                            _pipeWireAudioClient.OutstandingFrameCount != 0))
-                    {
-                        await Task.Delay(20, CancellationToken.None);
-                    }
-
-                    if (!IsPlaybackComplete)
-                        continue;
-
-                    // Several speech/sound requests can belong to one
-                    // conversation. Wait for the latest playback generation.
-                    var generation = Volatile.Read(ref _playbackGeneration);
-                    if (generation == 0 ||
-                        generation == Volatile.Read(ref _completedPlaybackGeneration))
-                        return;
-
-                    await Task.Yield();
-
-                    if (!IsPlaybackComplete ||
-                        generation != Volatile.Read(ref _playbackGeneration))
-                        continue;
-
-                    var previous = Interlocked.Exchange(
-                        ref _completedPlaybackGeneration,
-                        generation);
-
-                    if (previous >= generation)
-                        continue;
-
-                    _logger.LogInformation(
-                        "C# audio playback completed: generation={Generation}, queued={QueuedFrames}, outstanding={OutstandingFrames}.",
-                        generation,
-                        _pipeWireAudioClient.QueuedFrameCount,
-                        _pipeWireAudioClient.OutstandingFrameCount);
-
-                    _logger.LogInformation("C# AudioManager PlaybackCompleted event fired.");
-                    PlaybackCompleted?.Invoke(this, EventArgs.Empty);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Audio playback completion monitor stopped unexpectedly.");
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _completionMonitorRunning, 0);
-
-                if (!_disposed &&
-                    Volatile.Read(ref _playbackGeneration) !=
-                    Volatile.Read(ref _completedPlaybackGeneration))
-                    _ = MonitorPlaybackCompletionAsync();
-            }
-        }
-
         private async Task ProcessSpeechAsync(AudioRequest request, CancellationToken cancellationToken)
         {
             var wavData = await _piperClient.GenerateWavAsync(request.Value!, cancellationToken);
@@ -324,9 +220,8 @@ namespace AIRadio.Server.Services.Audio
             await DuckMpvAsync(cancellationToken);
 
             await _pipeWireAudioClient.QueueWavAsync(wavData, cancellationToken);
-            // Do not restore MPV volume here. QueueWavAsync only queues the
-            // samples; PipeWire may still be playing them. The completion monitor
-            // detects actual playback completion without blocking this queue.
+            // QueueWavAsync only queues the samples. Playback completion is
+            // reported by the PipeWire completion callback.
         }
 
         private async Task ProcessSoundAsync(string tag, CancellationToken cancellationToken)
@@ -407,9 +302,13 @@ namespace AIRadio.Server.Services.Audio
             _logger.LogDebug("Restored MPV radio volume to the persistent radio volume.");
         }
 
+        private void OnPlaybackCompleted(object? sender, EventArgs e) =>
+            PlaybackCompleted?.Invoke(this, e);
+
         public async ValueTask DisposeAsync()
         {
             if (_disposed) return;
+            _pipeWireAudioClient.PlaybackCompleted -= OnPlaybackCompleted;
             _disposed = true;
             try { await _queue.StopAsync(CancellationToken.None); } catch (Exception ex) { _logger.LogDebug(ex, "Error stopping AudioManager queue."); }
             try { await _pipeWireAudioClient.StopPlaybackAsync(CancellationToken.None); } catch (Exception ex) { _logger.LogDebug(ex, "Error clearing PipeWire playback."); }
