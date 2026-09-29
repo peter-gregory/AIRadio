@@ -25,22 +25,19 @@ namespace AIRadio.Server.Services.Radio
         private readonly IAudioManager _audioManager;
         private readonly IMpvManager _mpvManager;
         private readonly IMpvState _mpvState;
-        private readonly IConversationService _conversationService;
 
         public RadioManagerService(
             ILogger<RadioManagerService> logger,
             IIntentService intentService,
             IAudioManager audioManager,
             IMpvManager mpvManager,
-            IMpvState mpvState,
-            IConversationService conversationService)
+            IMpvState mpvState)
         {
             _logger = logger;
             _intentService = intentService;
             _audioManager = audioManager;
             _mpvManager = mpvManager;
             _mpvState = mpvState;
-            _conversationService = conversationService;
             _logger.LogInformation("Finished starting RadioManagerService");
         }
 
