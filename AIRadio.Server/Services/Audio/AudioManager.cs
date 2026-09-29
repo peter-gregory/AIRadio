@@ -106,6 +106,14 @@ namespace AIRadio.Server.Services.Audio
             return EnqueueAsync(new(AudioRequestType.Sound, sound, null), cancellationToken);
         }
 
+        public Task PlaySoundLoopAsync(string sound, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sound);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartSoundLoop(sound);
+            return Task.CompletedTask;
+        }
+
         public Task PlayStationAsync(RadioStation station, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(station);
