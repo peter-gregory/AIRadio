@@ -290,7 +290,7 @@ public:
     // been returned by PipeWire. The returned buffer was the previously queued
     // playback block, so pw_buffer::size tells us exactly how many frames have
     // finished. This avoids querying PipeWire timing state from the RT path.
-    bool update_completed_frames(const pw_buffer *buffer) noexcept {
+    bool update_completed_frames(pw_buffer *buffer) noexcept {
         // Cancellation flushes the PipeWire queue and immediately advances
         // the application FIFO to the current write position. PipeWire may
         // still return one of the flushed buffers to the process callback;
