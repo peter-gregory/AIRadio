@@ -41,7 +41,6 @@ namespace AIRadio.Server.Services.Audio
         private readonly int _duckVolume;
         private readonly AsyncWorkQueue<AudioRequest> _queue;
         private bool _isDucked;
-        private int _normalVolume;
         private bool _disposed;
         private int _completionMonitorRunning;
         private int _playbackGeneration;
@@ -371,8 +370,8 @@ namespace AIRadio.Server.Services.Audio
 
             // A station change only mutes MPV while the new stream is selected.
             // Conversation duck/resume state owns the eventual volume restore.
-            await _mpvManager.SetVolumeAsync(0, cancellationToken);
-            _logger.LogDebug("Set MPV radio volume to 0 for station change.");
+            await _mpvManager.SetTemporaryVolumeAsync(0, cancellationToken);
+            _logger.LogDebug("Temporarily muted MPV radio volume for station change; persistent radio volume was unchanged.");
         }
 
         private async Task DuckMpvAsync(CancellationToken cancellationToken)
@@ -384,12 +383,10 @@ namespace AIRadio.Server.Services.Audio
             // when a station is not currently playing. A radio-change tool may
             // start a new station later in the same conversation, and its
             // temporary volume=0 must not become the saved restore volume.
-            _normalVolume = await _mpvClient.GetVolumeAsync(cancellationToken);
-            await _mpvManager.SetVolumeAsync(_duckVolume, cancellationToken);
+            await _mpvManager.SetTemporaryVolumeAsync(_duckVolume, cancellationToken);
             Volatile.Write(ref _isDucked, true);
             _logger.LogDebug(
-                "Ducked MPV radio volume from {NormalVolume} to {DuckVolume}.",
-                _normalVolume,
+                "Ducked MPV radio volume to {DuckVolume}; persistent radio volume was unchanged.",
                 _duckVolume);
         }
 
@@ -398,9 +395,9 @@ namespace AIRadio.Server.Services.Audio
             if (!IsDucked)
                 return;
 
-            await _mpvManager.SetVolumeAsync(_normalVolume, cancellationToken);
+            await _mpvManager.RestoreVolumeAsync(cancellationToken);
             Volatile.Write(ref _isDucked, false);
-            _logger.LogDebug("Restored MPV radio volume to {NormalVolume}.", _normalVolume);
+            _logger.LogDebug("Restored MPV radio volume to the persistent radio volume.");
         }
 
         public async ValueTask DisposeAsync()
