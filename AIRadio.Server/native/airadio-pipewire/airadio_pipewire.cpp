@@ -286,59 +286,38 @@ public:
         return write - read;
     }
 
-    bool update_completed_frames() {
-        pw_time time{};
-        const int r = pw_stream_get_time_n(stream_, &time, sizeof(time));
-        if (r < 0) {
-            debug("TIME failed error=%d", r);
-            return false;
+    // Called from the PipeWire realtime process callback after a buffer has
+    // been returned by PipeWire. The returned buffer was the previously queued
+    // playback block, so pw_buffer::size tells us exactly how many frames have
+    // finished. This avoids querying PipeWire timing state from the RT path.
+    bool update_completed_frames(uint64_t consumed_frames) noexcept {
+        if (consumed_frames) {
+            const uint64_t old_read =
+                read_frame_.load(std::memory_order_relaxed);
+            read_frame_.store(old_read + consumed_frames,
+                              std::memory_order_release);
         }
 
-        const uint64_t queue = queue_frame_.load(std::memory_order_acquire);
-        const uint64_t queued = std::min<uint64_t>(time.queued, queue);
-        const uint64_t completed = queue - queued;
-        const uint64_t old_read = read_frame_.load(std::memory_order_acquire);
-        const bool advanced = completed > old_read;
-
-        if (advanced)
-            read_frame_.store(completed, std::memory_order_release);
-
-        debug("TIME queued=%llu queued_buffers=%u avail_buffers=%u read=%llu queue=%llu write=%llu",
-              static_cast<unsigned long long>(time.queued),
-              time.queued_buffers,
-              time.avail_buffers,
-              static_cast<unsigned long long>(read_frame_.load(std::memory_order_acquire)),
-              static_cast<unsigned long long>(queue_frame_.load(std::memory_order_acquire)),
-              static_cast<unsigned long long>(write_frame_.load(std::memory_order_acquire)));
-
-        // The ring buffer itself defines playback state. If read advances from
-        // behind the tail to exactly the current write position, the final
-        // queued samples have finished playing. No separate completion flag
-        // or end-of-utterance signal is required.
+        const uint64_t read = read_frame_.load(std::memory_order_acquire);
         const uint64_t write = write_frame_.load(std::memory_order_acquire);
-        if (!advanced || completed != write)
-            return true;
 
-        // This function runs from PipeWire's realtime process callback. Do not
-        // take the thread-loop lock here: that would block the realtime callback
-        // against the PipeWire loop thread. The frame counters are the
-        // synchronization mechanism for the completion edge.
-        if (write_frame_.load(std::memory_order_acquire) !=
-            read_frame_.load(std::memory_order_acquire))
-            return true;
+        debug("PLAYBACK BUFFER COMPLETE frames=%llu read=%llu queue=%llu write=%llu",
+              static_cast<unsigned long long>(consumed_frames),
+              static_cast<unsigned long long>(read),
+              static_cast<unsigned long long>(queue_frame_.load(std::memory_order_acquire)),
+              static_cast<unsigned long long>(write));
 
-        if (active_.load(std::memory_order_acquire)) {
-            pw_stream_set_active(stream_, false);
-            active_.store(false, std::memory_order_release);
-            active_debug_.store(false, std::memory_order_release);
-            primed_buffers_.store(0, std::memory_order_release);
-        }
+        // The ring buffer itself defines playback state. A transition from
+        // outstanding samples (write != read) to empty (write == read) means
+        // the last queued playback buffer has finished.
+        if (read != write)
+            return true;
 
         cancelled_.store(false, std::memory_order_release);
 
-        // The PipeWire process callback only detects the playback-complete
-        // edge. Never invoke the managed callback from the realtime thread.
-        // Signal the dedicated callback thread instead.
+        // The realtime callback only detects the completion edge. Stream
+        // deactivation and the managed callback happen on the dedicated
+        // callback worker thread.
         signal_playback_callback();
         return true;
     }
@@ -457,32 +436,41 @@ private:
     // can generate the completion event before we refill the returned buffer.
     // During initial activation we queue up to two available buffers.
     void process_rt() noexcept {
-        update_completed_frames();
-        size_t to_prime = 0;
-        if (primed_buffers_.load(std::memory_order_acquire) < kInitialBufferCount)
-            to_prime = kInitialBufferCount;
+        pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
+        if (!buffer)
+            return;
 
-        do {
-            pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
-            if (!buffer)
-                return;
+        // PipeWire returned this buffer because the previously queued block
+        // has finished playing. pw_buffer::size is the frame count that was
+        // submitted for that block. The initial empty buffer has size zero.
+        const uint64_t consumed_frames = buffer->size;
+        update_completed_frames(consumed_frames);
 
-            if (cancelled_.load(std::memory_order_acquire)) {
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
+        if (write_frame_.load(std::memory_order_acquire) ==
+            read_frame_.load(std::memory_order_acquire)) {
+            // The callback worker will deactivate the stream and invoke the
+            // managed playback-complete callback. Do not requeue this final
+            // buffer.
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
 
-            if (!buffer->buffer || !buffer->buffer->n_datas ||
-                !buffer->buffer->datas) {
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
+        if (cancelled_.load(std::memory_order_acquire)) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
 
-            spa_data *d = &buffer->buffer->datas[0];
-            if (!d->data || !d->chunk || !d->maxsize) {
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
+        if (!buffer->buffer || !buffer->buffer->n_datas ||
+            !buffer->buffer->datas) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        spa_data *d = &buffer->buffer->datas[0];
+        if (!d->data || !d->chunk || !d->maxsize) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
 
             const size_t capacity = d->maxsize / bytes_per_frame_;
             if (!capacity) {
@@ -516,12 +504,8 @@ private:
                 return;
             }
 
-            const size_t primed = primed_buffers_.fetch_add(1, std::memory_order_acq_rel) + 1;
-            if (primed >= kInitialBufferCount)
-                return;
-
-            if (!to_prime)
-                return;
+            primed_buffers_.fetch_add(1, std::memory_order_acq_rel);
+            return;
         } while (true);
     }
 
@@ -611,6 +595,20 @@ private:
 
             completion_pending_.store(false, std::memory_order_release);
             lock.unlock();
+
+            // The realtime process callback only signals completion. Perform
+            // stream control on this normal worker thread, where the
+            // PipeWire thread-loop lock is safe.
+            if (loop_ && stream_) {
+                pw_thread_loop_lock(loop_);
+                if (stream_ && active_.load(std::memory_order_acquire)) {
+                    pw_stream_set_active(stream_, false);
+                    active_.store(false, std::memory_order_release);
+                    active_debug_.store(false, std::memory_order_release);
+                    primed_buffers_.store(0, std::memory_order_release);
+                }
+                pw_thread_loop_unlock(loop_);
+            }
 
             AIRadioPlaybackCallback cb;
             void *ud;
