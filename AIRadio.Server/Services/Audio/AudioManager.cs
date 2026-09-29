@@ -10,6 +10,7 @@ namespace AIRadio.Server.Services.Audio
     public interface IAudioManager
     {
         bool IsDucked { get; }
+        bool HasPendingPlayback { get; }
         event EventHandler? PlaybackCompleted;
         Task PlaySpeechAsync(string text, CancellationToken cancellationToken = default);
         Task QueueSpeechAsync(string text, CancellationToken cancellationToken = default);
@@ -38,6 +39,7 @@ namespace AIRadio.Server.Services.Audio
         private readonly int _duckVolume;
         private readonly AsyncWorkQueue<AudioRequest> _queue;
         private bool _isDucked;
+        private bool _hasPendingPlayback;
         private bool _disposed;
 
         public AudioManager(ILogger<AudioManager> logger, ISoundEffectManager soundEffectManager, IPipeWireAudioClient pipeWireAudioClient, IPiperClient piperClient, IMpvManager mpvManager, IMpvClient mpvClient, IConfiguration configuration)
@@ -55,6 +57,7 @@ namespace AIRadio.Server.Services.Audio
         }
 
         public bool IsDucked => Volatile.Read(ref _isDucked);
+        public bool HasPendingPlayback => Volatile.Read(ref _hasPendingPlayback);
 
         public event EventHandler? PlaybackCompleted;
 
@@ -120,6 +123,7 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             await _queue.CancelAsync(CancellationToken.None);
             await _pipeWireAudioClient.EndUtteranceAsync(cancel: true, CancellationToken.None);
+            Volatile.Write(ref _hasPendingPlayback, false);
 
             if (IsDucked)
             {
@@ -134,6 +138,7 @@ namespace AIRadio.Server.Services.Audio
             if (string.IsNullOrWhiteSpace(text)) return;
             foreach (var sentence in SentenceParser.Split(text))
             {
+                Volatile.Write(ref _hasPendingPlayback, true);
                 _logger.LogInformation("Queue speech: " + sentence);
                 cancellationToken.ThrowIfCancellationRequested();
                 EnqueueAsync(new(AudioRequestType.Speech, sentence, null, waitForPlayback), cancellationToken);
@@ -143,6 +148,7 @@ namespace AIRadio.Server.Services.Audio
         private void EnqueueSound(string tag, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Volatile.Write(ref _hasPendingPlayback, true);
             EnqueueAsync(new(AudioRequestType.Sound, tag, null), cancellationToken);
         }
 
@@ -285,8 +291,11 @@ namespace AIRadio.Server.Services.Audio
             _logger.LogDebug("Restored MPV radio volume to the persistent radio volume.");
         }
 
-        private void OnPlaybackCompleted(object? sender, EventArgs e) =>
+        private void OnPlaybackCompleted(object? sender, EventArgs e)
+        {
+            Volatile.Write(ref _hasPendingPlayback, false);
             PlaybackCompleted?.Invoke(this, e);
+        }
 
         public async ValueTask DisposeAsync()
         {
