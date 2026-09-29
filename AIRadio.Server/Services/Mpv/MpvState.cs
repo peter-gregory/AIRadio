@@ -57,7 +57,7 @@ namespace AIRadio.Server.Services.Mpv
         private bool _isPaused;
         private bool _isMuted;
 
-        private int _volume;
+        private int _volume = 100;
 
         private RadioStation? _radioStation;
 
