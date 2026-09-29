@@ -20,18 +20,21 @@ namespace AIRadio.Server.Services.Radio
         private readonly IRegexIntentParser _intentParser;
         private readonly IPreLlmIntentParser _preLlmIntentParser;
         private readonly IConversationService _conversationService;
+        private readonly IAudioManager _audioManager;
         private readonly AsyncWorkQueue<string> _queue;
 
         public IntentService(
             ILogger<IntentService> logger,
             IRegexIntentParser intentParser,
             IPreLlmIntentParser preLlmIntentParser,
-            IConversationService conversationService)
+            IConversationService conversationService,
+            IAudioManager audioManager)
         {
             _logger = logger;
             _intentParser = intentParser;
             _preLlmIntentParser = preLlmIntentParser;
             _conversationService = conversationService;
+            _audioManager = audioManager;
 
             _logger.LogInformation("Starting IntentService");
 
@@ -149,10 +152,19 @@ namespace AIRadio.Server.Services.Radio
                                 cancellationToken);
                         }
 
-                        // Give immediate audible feedback only when starting from
-                        // idle. A barge-in should go directly to the new request.
+                        // The wake-up gate has now been validated. Duck only
+                        // after this point so ignored speech never changes radio
+                        // volume.
                         if (_conversationService.State == ConversationState.Idle)
                         {
+                            _logger.LogInformation(
+                                "Wake-up validated; ducking radio before acknowledgement.");
+
+                            await _audioManager.DuckAsync(cancellationToken);
+
+                            // Give immediate audible feedback only when starting
+                            // from idle. A barge-in should go directly to the
+                            // new request.
                             await _conversationService.PlayWakeAcknowledgementAsync(
                                 cancellationToken);
                         }
