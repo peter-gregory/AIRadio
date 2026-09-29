@@ -818,7 +818,7 @@ namespace AIRadio.Server.Services.Radio
             // the AudioManager queue is also empty. A PipeWire completion can
             // arrive while another speech request is still waiting for TTS.
             if (_state == ConversationState.Complete &&
-                _idleConversationId == conversationId &&
+                _conversationId == conversationId &&
                 !_audioManager.HasPendingPlayback)
             {
                 SetState(ConversationState.Idle, conversationId);
@@ -1025,6 +1025,15 @@ namespace AIRadio.Server.Services.Radio
             if (_state == state)
                 return;
 
+            if (state == ConversationState.Idle &&
+                _audioManager.HasPendingPlayback)
+            {
+                _logger.LogDebug(
+                    "Deferring conversation {ConversationId} Idle transition because audio playback is still pending.",
+                    conversationId);
+                return;
+            }
+
             var previous = _state;
             _state = state;
 
@@ -1047,7 +1056,6 @@ namespace AIRadio.Server.Services.Radio
                     _logger.LogDebug(
                         "Deferring conversation {ConversationId} Idle transition because audio playback is still pending.",
                         conversationId);
-                    _state = ConversationState.Complete;
                     return;
                 }
 
