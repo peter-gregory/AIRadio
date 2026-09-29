@@ -42,7 +42,6 @@ namespace AIRadio.Server.Services.Radio
         private CancellationTokenSource? _activeCommandCts;
         private TaskCompletionSource? _activeCommandCompletion;
         private bool _disposed;
-        private bool _playbackComplete = true;
         private ToolRequest? _pendingToolRequest;
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
@@ -212,7 +211,6 @@ namespace AIRadio.Server.Services.Radio
 
             await _audioManager.CancelAsync(CancellationToken.None);
             _pendingToolRequest = null;
-            _playbackComplete = true;
             SetState(ConversationState.Complete, _conversationId);
             SetState(ConversationState.Idle, _conversationId);
             _commandSignal.Release();
@@ -798,7 +796,6 @@ namespace AIRadio.Server.Services.Radio
         private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
         {
             _playbackCompletedConversationId = _conversationId;
-            _playbackComplete = true;
 
             _logger.LogDebug(
                 "Conversation {ConversationId} playback completed.",
@@ -809,11 +806,24 @@ namespace AIRadio.Server.Services.Radio
 
         private async Task TryCompleteConversationAsync(Guid conversationId)
         {
+            bool hasQueuedCommands;
+            bool commandActive;
+
+            lock (_commandSync)
+            {
+                hasQueuedCommands =
+                    _utteranceCommands.Count > 0 ||
+                    _inputCommands.Count > 0;
+                commandActive = _activeCommandCompletion is not null;
+            }
+
             if (conversationId == Guid.Empty ||
                 _state != ConversationState.Idle ||
                 _idleConversationId != conversationId ||
-                _playbackCompletedConversationId != conversationId ||
-                _completedEventConversationId == conversationId)
+                hasQueuedCommands ||
+                commandActive ||
+                _completedEventConversationId == conversationId ||
+                _audioManager.HasPendingPlayback)
                 return;
 
             _completedEventConversationId = conversationId;
@@ -839,9 +849,9 @@ namespace AIRadio.Server.Services.Radio
                 this,
                 new ConversationCompletedEventArgs(conversationId));
 
-            // Wake the command engine so FIFO processing can advance only
-            // after both Idle and final playback completion are reached.
-            _commandSignal.Release();
+            // No queued command remains, so this is the terminal conversation
+            // completion point. Playback has already completed because
+            // TryCompleteConversationAsync checks HasPendingPlayback.
         }
 
         private void OnConversationStateIdle(Guid conversationId)
@@ -916,14 +926,11 @@ namespace AIRadio.Server.Services.Radio
                             _inputCommands.Count > 0)
                         {
                             command = _inputCommands.Dequeue();
-                            _playbackComplete = false;
                         }
                         else if (_state == ConversationState.Idle &&
-                                 _playbackComplete &&
                                  _utteranceCommands.Count > 0)
                         {
                             command = _utteranceCommands.Dequeue();
-                            _playbackComplete = false;
                         }
                     }
 
@@ -967,7 +974,10 @@ namespace AIRadio.Server.Services.Radio
                         commandCts.Dispose();
 
                         if (_state == ConversationState.Idle)
+                        {
                             _commandSignal.Release();
+                            _ = TryCompleteConversationAsync(command.ConversationId);
+                        }
                     }
                 }
             }
