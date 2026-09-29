@@ -38,6 +38,9 @@ namespace AIRadio.Server.Services.Mpv
 
         Task RestoreVolumeAsync(
             CancellationToken cancellationToken = default);
+
+        Task InitializeAsync(
+            CancellationToken cancellationToken = default);
     }
 
     public sealed class MpvManager : IMpvManager
@@ -45,15 +48,18 @@ namespace AIRadio.Server.Services.Mpv
         private readonly ILogger<MpvManager> _logger;
         private readonly IMpvClient _mpv;
         private readonly IMpvState _state;
+        private readonly IMpvVolumeStore _volumeStore;
 
         public MpvManager(
             ILogger<MpvManager> logger,
             IMpvClient mpv,
-            IMpvState state)
+            IMpvState state,
+            IMpvVolumeStore volumeStore)
         {
             _logger = logger;
             _mpv = mpv;
             _state = state;
+            _volumeStore = volumeStore;
 
             _mpv.PlaybackChanged +=
                 OnPlaybackChanged;
@@ -69,6 +75,35 @@ namespace AIRadio.Server.Services.Mpv
         }
 
         public int PersistentVolume => _state.Volume;
+
+        // ============================================================
+        // INITIALIZATION
+        // ============================================================
+
+        public async Task InitializeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var persistedVolume =
+                await _volumeStore.GetAsync(cancellationToken);
+
+            var volume =
+                persistedVolume.HasValue
+                    ? Math.Clamp(persistedVolume.Value, 0, 100)
+                    : 100;
+
+            _state.Update(
+                update =>
+                {
+                    update.Volume = volume;
+                    update.IsMuted = volume == 0;
+                });
+
+            _logger.LogInformation(
+                persistedVolume.HasValue
+                    ? "Radio volume initialized from persistent preference: {Volume}%."
+                    : "No persistent radio volume found; using default volume {Volume}%.",
+                volume);
+        }
 
         // ============================================================
         // PLAY
@@ -317,6 +352,10 @@ namespace AIRadio.Server.Services.Mpv
                     update.IsMuted =
                         volume == 0;
                 });
+
+            await _volumeStore.SaveAsync(
+                volume,
+                cancellationToken);
         }
 
         // ============================================================
@@ -368,6 +407,13 @@ namespace AIRadio.Server.Services.Mpv
                     "MPV is not connected. Attempting to connect.");
 
                 await _mpv.ConnectAsync(
+                    cancellationToken);
+
+                // Apply the user's persisted volume to MPV after every
+                // new connection. Temporary mute/ducking never changes
+                // the persisted state in IMpvState.
+                await _mpv.SetVolumeAsync(
+                    Math.Clamp(_state.Volume, 0, 100),
                     cancellationToken);
             }
             catch (Exception ex)
