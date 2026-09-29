@@ -15,6 +15,7 @@ namespace AIRadio.Server.Services.Radio
         bool WasCancelled { get; }
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
         event EventHandler<ConversationCompletedEventArgs>? ConversationCompleted;
+        event EventHandler<ConversationCancelledEventArgs>? ConversationCancelled;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessToolAsync(ToolRequest request, CancellationToken cancellationToken = default);
@@ -47,6 +48,7 @@ namespace AIRadio.Server.Services.Radio
         public bool WasCancelled => _wasCancelled;
         public event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
         public event EventHandler<ConversationCompletedEventArgs>? ConversationCompleted;
+        public event EventHandler<ConversationCancelledEventArgs>? ConversationCancelled;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
         {
@@ -148,9 +150,11 @@ namespace AIRadio.Server.Services.Radio
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Preserve the user cancellation after the active conversation has
-            // been cancelled so an alarm can stop its remaining actions.
+            // Notify alarm processors immediately so pending commands are discarded.
             _wasCancelled = true;
+            ConversationCancelled?.Invoke(
+                this,
+                new ConversationCancelledEventArgs(_conversationId));
 
             await _queue.CancelAsync(CancellationToken.None);
             await _audioManager.CancelAsync(CancellationToken.None);
