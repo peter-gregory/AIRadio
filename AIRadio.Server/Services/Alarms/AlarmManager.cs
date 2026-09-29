@@ -24,7 +24,7 @@ namespace AIRadio.Server.Services.Alarms
             _radioManager = radioManager;
             _conversationService = conversationService;
             _logger = logger;
-            _conversationService.StateChanged += OnConversationStateChanged;
+            _conversationService.ConversationCompleted += OnConversationCompleted;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -98,8 +98,8 @@ namespace AIRadio.Server.Services.Alarms
 
                     _activeConversationId = preambleConversationId;
 
-                    if (_conversationService.State == ConversationState.Complete &&
-                        _conversationService.State != ConversationState.WaitingForInput)
+                    if (_conversationService.State == ConversationState.Idle &&
+                        _conversationService.ConversationId == preambleConversationId)
                     {
                         _conversationCompletion.TrySetResult(true);
                     }
@@ -143,12 +143,10 @@ namespace AIRadio.Server.Services.Alarms
 
                         _activeConversationId = conversationId;
 
-                        // The conversation may have completed before the alarm
-                        // manager received the conversation ID. Check the
-                        // authoritative state once, then rely exclusively on
-                        // state-change events.
-                        if (_conversationService.State == ConversationState.Complete &&
-                            _conversationService.State != ConversationState.WaitingForInput)
+                        // The conversation may have completely finished before
+                        // the alarm manager received the conversation ID.
+                        if (_conversationService.State == ConversationState.Idle &&
+                            _conversationService.ConversationId == conversationId)
                         {
                             _conversationCompletion.TrySetResult(true);
                         }
@@ -188,41 +186,23 @@ namespace AIRadio.Server.Services.Alarms
             return $"{action.Trim()} {{sound:wake-up}}";
         }
 
-        private void OnConversationStateChanged(
+        private void OnConversationCompleted(
             object? sender,
-            ConversationStateChangedEventArgs args)
+            ConversationCompletedEventArgs args)
         {
-            switch (args.Current)
+            if (_conversationCompletion is not null &&
+                _activeConversationId == args.ConversationId)
             {
-                case ConversationState.Processing:
-                    _activeConversationId = args.ConversationId;
-                    _logger.LogDebug(
-                        "Alarm manager observed conversation {ConversationId} entering Processing.",
-                        args.ConversationId);
-                    break;
-
-                case ConversationState.WaitingForInput:
-                    _logger.LogDebug(
-                        "Alarm manager observed conversation {ConversationId} waiting for user input.",
-                        args.ConversationId);
-                    break;
-
-                case ConversationState.Complete:
-                    if (_conversationCompletion is not null &&
-                        _activeConversationId == args.ConversationId)
-                    {
-                        _logger.LogDebug(
-                            "Alarm manager observed conversation {ConversationId} complete; releasing current action.",
-                            args.ConversationId);
-                        _conversationCompletion.TrySetResult(true);
-                    }
-                    break;
+                _logger.LogDebug(
+                    "Alarm manager observed conversation {ConversationId} completely finished; releasing current action.",
+                    args.ConversationId);
+                _conversationCompletion.TrySetResult(true);
             }
         }
 
         public override void Dispose()
         {
-            _conversationService.StateChanged -= OnConversationStateChanged;
+            _conversationService.ConversationCompleted -= OnConversationCompleted;
             _conversationCompletion?.TrySetCanceled();
             base.Dispose();
         }
