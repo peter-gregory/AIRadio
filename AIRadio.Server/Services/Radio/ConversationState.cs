@@ -27,6 +27,14 @@ namespace AIRadio.Server.Services.Radio
 }
 
 
+public sealed class ConversationCancelledEventArgs : EventArgs
+{
+    public ConversationCancelledEventArgs(Guid conversationId) =>
+        ConversationId = conversationId;
+
+    public Guid ConversationId { get; }
+}
+
 public sealed class ConversationCompletedEventArgs : EventArgs
 {
     public ConversationCompletedEventArgs(Guid conversationId) =>
