@@ -89,7 +89,7 @@ namespace AIRadio.Server.Services.Mpv
             var volume =
                 persistedVolume.HasValue
                     ? Math.Clamp(persistedVolume.Value, 0, 100)
-                    : 100;
+                    : 50;
 
             _state.Update(
                 update =>
