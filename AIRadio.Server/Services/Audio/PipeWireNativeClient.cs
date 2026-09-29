@@ -4,6 +4,7 @@ namespace AIRadio.Server.Services.Audio;
 
 public interface IPipeWireNativeClient : IAsyncDisposable
 {
+    event EventHandler? PlaybackCompleted;
     bool IsConnected { get; }
     ulong QueuedFrameCount { get; }
     ulong OutstandingFrameCount { get; }
@@ -48,6 +49,8 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
     private bool _disposed;
     private bool _connected;
     private int _volume = 100;
+
+    public event EventHandler? PlaybackCompleted;
 
     public PipeWireNativeClient(ILogger<PipeWireNativeClient> logger) =>
         _logger = logger;
@@ -358,6 +361,7 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
             }
 
             completion?.TrySetResult(null);
+            PlaybackCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
