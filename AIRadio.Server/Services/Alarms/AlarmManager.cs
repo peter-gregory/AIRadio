@@ -80,6 +80,14 @@ namespace AIRadio.Server.Services.Alarms
                         _logger);
 
                     await processor.RunAsync(cancellationToken);
+
+                    if (processor.WasCancelled)
+                    {
+                        _logger.LogInformation(
+                            "Alarm {Id} was cancelled; cancelling the remaining active alarms.",
+                            alarm.Id);
+                        break;
+                    }
                 }
                 finally
                 {
