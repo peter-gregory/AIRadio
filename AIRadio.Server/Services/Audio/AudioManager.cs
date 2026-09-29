@@ -20,7 +20,6 @@ namespace AIRadio.Server.Services.Audio
         Task UnduckAsync(CancellationToken cancellationToken = default);
         Task StopSpeechAsync(CancellationToken cancellationToken = default);
         Task ClearQueueAsync(CancellationToken cancellationToken = default);
-        Task EndUtteranceAsync(bool cancel = false, CancellationToken cancellationToken = default);
         Task CancelAsync(CancellationToken cancellationToken = default);
     }
 
@@ -114,22 +113,6 @@ namespace AIRadio.Server.Services.Audio
             cancellationToken.ThrowIfCancellationRequested();
             _queue.ClearPending();
             return Task.CompletedTask;
-        }
-
-        public async Task EndUtteranceAsync(bool cancel = false, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await _queue.WaitForIdleAsync(cancellationToken);
-
-            _logger.LogDebug(
-                "End utterance: queue idle; cancel={Cancel}.",
-                cancel);
-
-            // EndUtteranceAsync only signals PipeWire that the utterance has
-            // ended. Normal radio volume restoration is driven by the
-            // conversation Idle state and PlaybackCompleted event.
-            await _pipeWireAudioClient.EndUtteranceAsync(cancel, cancellationToken);
         }
 
         public async Task CancelAsync(CancellationToken cancellationToken = default)
