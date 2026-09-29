@@ -76,7 +76,6 @@ public:
         read_frame_.store(0, std::memory_order_relaxed);
         queue_frame_.store(0, std::memory_order_relaxed);
         write_frame_.store(0, std::memory_order_relaxed);
-        primed_buffers_.store(0, std::memory_order_relaxed);
         shutting_down_.store(false);
         stop_worker_.store(false);
         completion_pending_.store(false, std::memory_order_release);
@@ -335,6 +334,12 @@ public:
     void destroy() {
         shutting_down_.store(true, std::memory_order_release);
         stop_worker_.store(true, std::memory_order_release);
+
+        // The callback worker may need the PipeWire loop to deactivate the
+        // stream, so let it finish before destroying the loop.
+        if (callback_thread_.joinable())
+            callback_thread_.join();
+
         if (loop_) {
             pw_thread_loop_lock(loop_);
             if (stream_) {
@@ -347,9 +352,6 @@ public:
             pw_thread_loop_destroy(loop_);
             loop_ = nullptr;
         }
-
-        if (callback_thread_.joinable())
-            callback_thread_.join();
 
         fifo_.clear();
         started_ = false;
@@ -414,7 +416,6 @@ private:
             } else {
                 active_.store(true, std::memory_order_release);
                 active_debug_.store(true, std::memory_order_release);
-                primed_buffers_.store(0, std::memory_order_release);
                 debug("STREAM ACTIVATE fifo=%zu queued=%llu outstanding=%llu",
                       fifo_available(),
                       static_cast<unsigned long long>(queued_frames()),
@@ -428,7 +429,6 @@ private:
     // means PipeWire has consumed the corresponding portion of the stream.
     // Update the playback head first so the final tail == head transition
     // can generate the completion event before we refill the returned buffer.
-    // During initial activation we queue up to two available buffers.
     void process_rt() noexcept {
         pw_buffer *buffer = pw_stream_dequeue_buffer(stream_);
         if (!buffer)
@@ -466,41 +466,36 @@ private:
             return;
         }
 
-            const size_t capacity = d->maxsize / bytes_per_frame_;
-            if (!capacity) {
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
-
-            // buffer->requested describes the amount PipeWire requested
-            // for this process cycle. It is not the size of the next audio
-            // block in our double-buffer pipeline. Once a buffer is returned,
-            // refill it with our fixed block size (subject only to the actual
-            // buffer capacity).
-            const size_t frames = queue_fifo_rt(
-                static_cast<uint8_t *>(d->data),
-                std::min(fill_frames_, capacity));
-
-            if (!frames) {
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
-
-            d->chunk->offset = 0;
-            d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
-            d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
-            buffer->size = frames;
-
-            if (pw_stream_queue_buffer(stream_, buffer) < 0) {
-                const uint64_t queue = queue_frame_.load(std::memory_order_relaxed);
-                queue_frame_.store(queue - frames, std::memory_order_release);
-                pw_stream_return_buffer(stream_, buffer);
-                return;
-            }
-
-            primed_buffers_.fetch_add(1, std::memory_order_acq_rel);
+        const size_t capacity = d->maxsize / bytes_per_frame_;
+        if (!capacity) {
+            pw_stream_return_buffer(stream_, buffer);
             return;
-        } while (true);
+        }
+
+        // Refill the returned buffer from the application FIFO. The buffer
+        // size is always expressed in frames.
+        const size_t frames = queue_fifo_rt(
+            static_cast<uint8_t *>(d->data),
+            std::min(fill_frames_, capacity));
+
+        if (!frames) {
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
+        d->chunk->offset = 0;
+        d->chunk->stride = static_cast<int32_t>(bytes_per_frame_);
+        d->chunk->size = static_cast<uint32_t>(frames * bytes_per_frame_);
+        buffer->size = frames;
+
+        if (pw_stream_queue_buffer(stream_, buffer) < 0) {
+            const uint64_t queue =
+                queue_frame_.load(std::memory_order_relaxed);
+            queue_frame_.store(queue - frames, std::memory_order_release);
+            pw_stream_return_buffer(stream_, buffer);
+            return;
+        }
+
     }
 
     static void on_state_changed(void *data, pw_stream_state old_state,
@@ -531,6 +526,7 @@ private:
             pw_thread_loop_signal(self->loop_, false);
             return;
         }
+        buffer->size = 0;
         self->debug("ADD_BUFFER buffer=%p maxsize=%u",
                     static_cast<void *>(buffer),
                     buffer->buffer->datas[0].maxsize);
@@ -596,7 +592,6 @@ private:
                     pw_stream_set_active(stream_, false);
                     active_.store(false, std::memory_order_release);
                     active_debug_.store(false, std::memory_order_release);
-                    primed_buffers_.store(0, std::memory_order_release);
                 }
                 pw_thread_loop_unlock(loop_);
             }
@@ -647,7 +642,6 @@ private:
     std::atomic<uint64_t> read_frame_{0};
     std::atomic<uint64_t> queue_frame_{0};
     std::atomic<uint64_t> write_frame_{0};
-    std::atomic<size_t> primed_buffers_{0};
     pw_thread_loop *loop_ = nullptr;
     pw_stream *stream_ = nullptr;
     bool started_ = false;
