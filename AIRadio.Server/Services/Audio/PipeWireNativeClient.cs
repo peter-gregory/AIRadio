@@ -261,13 +261,39 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         if (!IsConnected)
             return;
 
+        // Cancellation is destructive: native flushes PipeWire and drains the
+        // application FIFO immediately. It does not produce a playback-
+        // completed event, so never wait for one during cancellation.
+        if (cancel)
+        {
+            await _nativeCallLock.WaitAsync(cancellationToken);
+            try
+            {
+                var result = PipeWireNativeMethods.airadio_pw_end_utterance(
+                    _client, 1);
+
+                if (result < 0)
+                    throw new InvalidOperationException(
+                        $"PipeWire native end-utterance failed: {result} ({GetNativeError()})");
+            }
+            finally
+            {
+                _nativeCallLock.Release();
+            }
+
+            lock (_completionLock)
+            {
+                _playbackCompletion = null;
+            }
+
+            return;
+        }
+
         TaskCompletionSource<object?> completion;
 
-        /*
-         * Establish the completion waiter before calling native end_utterance.
-         * The native implementation may complete immediately when the queue is
-         * already empty, so creating the TCS afterwards would lose the event.
-         */
+        // Establish the completion waiter before calling native end_utterance.
+        // The native implementation may complete immediately when the queue is
+        // already empty, so creating the TCS afterwards would lose the event.
         lock (_completionLock)
         {
             completion = _playbackCompletion ??= CreateCompletionSource();
@@ -278,8 +304,7 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
         try
         {
             var result = PipeWireNativeMethods.airadio_pw_end_utterance(
-                _client,
-                cancel ? 1 : 0);
+                _client, 0);
 
             if (result < 0)
             {
@@ -290,7 +315,7 @@ public sealed class PipeWireNativeClient : IPipeWireNativeClient
                 }
 
                 throw new InvalidOperationException(
-                    $"Native PipeWire end-utterance failed: {result} ({GetNativeError()})");
+                    $"PipeWire native end-utterance failed: {result} ({GetNativeError()})");
             }
         }
         finally
