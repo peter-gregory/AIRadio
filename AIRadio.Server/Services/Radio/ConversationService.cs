@@ -838,6 +838,10 @@ namespace AIRadio.Server.Services.Radio
             ConversationCompleted?.Invoke(
                 this,
                 new ConversationCompletedEventArgs(conversationId));
+
+            // Wake the command engine so FIFO processing can advance only
+            // after both Idle and final playback completion are reached.
+            _commandSignal.Release();
         }
 
         private void OnConversationStateIdle(Guid conversationId)
