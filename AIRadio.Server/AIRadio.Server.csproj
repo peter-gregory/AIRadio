@@ -48,4 +48,12 @@
     <None Include="Config\IntentActions.json" />
   </ItemGroup>
 
+
+
+  <ItemGroup>
+    <None Update="libairadio-pipewire.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
