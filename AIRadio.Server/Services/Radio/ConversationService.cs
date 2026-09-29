@@ -808,11 +808,24 @@ namespace AIRadio.Server.Services.Radio
 
         private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
         {
+            var conversationId = _conversationId;
+
             _logger.LogDebug(
                 "Conversation {ConversationId} playback completed.",
-                _conversationId);
+                conversationId);
 
-            _ = TryCompleteConversationAsync(_conversationId);
+            // Conversation completion is allowed to leave Complete only after
+            // the AudioManager queue is also empty. A PipeWire completion can
+            // arrive while another speech request is still waiting for TTS.
+            if (_state == ConversationState.Complete &&
+                _idleConversationId == conversationId &&
+                !_audioManager.HasPendingPlayback)
+            {
+                SetState(ConversationState.Idle, conversationId);
+                return;
+            }
+
+            _ = TryCompleteConversationAsync(conversationId);
         }
 
         private async Task TryCompleteConversationAsync(Guid conversationId)
@@ -1026,7 +1039,20 @@ namespace AIRadio.Server.Services.Radio
                 new ConversationStateChangedEventArgs(previous, state, conversationId));
 
             if (state == ConversationState.Idle)
+            {
+                // Do not enter Idle while speech is still queued or playing.
+                // Playback completion will retry the transition.
+                if (_audioManager.HasPendingPlayback)
+                {
+                    _logger.LogDebug(
+                        "Deferring conversation {ConversationId} Idle transition because audio playback is still pending.",
+                        conversationId);
+                    _state = ConversationState.Complete;
+                    return;
+                }
+
                 OnConversationStateIdle(conversationId);
+            }
         }
 
         private sealed record ConversationRequest(
