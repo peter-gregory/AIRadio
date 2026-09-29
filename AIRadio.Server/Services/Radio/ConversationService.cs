@@ -42,7 +42,7 @@ namespace AIRadio.Server.Services.Radio
         private CancellationTokenSource? _activeCommandCts;
         private TaskCompletionSource? _activeCommandCompletion;
         private bool _disposed;
-        private bool _playbackComplete;
+        private bool _playbackComplete = true;
         private ToolRequest? _pendingToolRequest;
         private string? _completionPrompt;
         private ConversationState _state = ConversationState.Idle;
