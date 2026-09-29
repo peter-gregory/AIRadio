@@ -13,6 +13,7 @@ namespace AIRadio.Server.Services.Radio
         bool IsWaitingForInput { get; }
         bool WasCancelled { get; }
         event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
+        event EventHandler<ConversationCompletedEventArgs>? ConversationCompleted;
 
         Task ProcessAsync(string text, CancellationToken cancellationToken = default);
         Task ProcessToolAsync(ToolRequest request, CancellationToken cancellationToken = default);
@@ -35,11 +36,15 @@ namespace AIRadio.Server.Services.Radio
         private ConversationState _state = ConversationState.Idle;
         private Guid _conversationId;
         private bool _wasCancelled;
+        private Guid _idleConversationId;
+        private Guid _playbackCompletedConversationId;
+        private Guid _completedEventConversationId;
 
         public ConversationState State => _state;
         public bool IsWaitingForInput => _state == ConversationState.WaitingForInput;
         public bool WasCancelled => _wasCancelled;
         public event EventHandler<ConversationStateChangedEventArgs>? StateChanged;
+        public event EventHandler<ConversationCompletedEventArgs>? ConversationCompleted;
 
         public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
         {
@@ -50,6 +55,7 @@ namespace AIRadio.Server.Services.Radio
             _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
             _queue = new AsyncWorkQueue<ConversationRequest>();
             _queue.Start(ProcessRequestAsync);
+            _audioManager.PlaybackCompleted += OnAudioPlaybackCompleted;
         }
 
         public Task ProcessAsync(string text, CancellationToken cancellationToken = default)
@@ -111,28 +117,23 @@ namespace AIRadio.Server.Services.Radio
                 TaskCreationOptions.RunContinuationsAsynchronously);
             var conversationId = Guid.Empty;
 
-            EventHandler<ConversationStateChangedEventArgs>? handler = null;
+            EventHandler<ConversationCompletedEventArgs>? handler = null;
             handler = (_, args) =>
             {
-                if (args.Current == ConversationState.Complete &&
-                    args.ConversationId == conversationId)
+                if (args.ConversationId == conversationId)
                     completion.TrySetResult(true);
             };
 
-            StateChanged += handler;
+            ConversationCompleted += handler;
             try
             {
                 conversationId = await StartAlarmAsync(text, cancellationToken);
-
-                if (State == ConversationState.Complete &&
-                    _conversationId == conversationId)
-                    completion.TrySetResult(true);
 
                 await completion.Task.WaitAsync(cancellationToken);
             }
             finally
             {
-                StateChanged -= handler;
+                ConversationCompleted -= handler;
             }
         }
 
@@ -434,10 +435,9 @@ namespace AIRadio.Server.Services.Radio
                 // complete the action before the alarm continues to its next action.
                 if (conversationComplete)
                 {
-                    // Audio playback is intentionally independent of the
-                    // conversation state boundary. The final speech may still be
-                    // playing when the conversation becomes Idle; AudioManager
-                    // will notify the radio manager when playback actually ends.
+                    // Conversation state becomes Idle when command processing is
+                    // finished. ConversationCompleted is raised separately once
+                    // the final PipeWire playback callback has also arrived.
                     SetState(ConversationState.Complete, conversationId);
                     SetState(ConversationState.Idle, conversationId);
                 }
@@ -464,10 +464,6 @@ namespace AIRadio.Server.Services.Radio
             {
                 if (conversationComplete)
                 {
-                    // Do not wait for PipeWire here. Conversation completion and
-                    // audio playback completion are separate state boundaries.
-                    // The normal path may already have transitioned to Idle, so
-                    // do not cycle Idle -> Complete -> Idle again in finally.
                     if (_state != ConversationState.Idle)
                     {
                         if (_state != ConversationState.Complete)
@@ -734,7 +730,61 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
-        public ValueTask DisposeAsync() => _queue.DisposeAsync();
+        private void OnAudioPlaybackCompleted(object? sender, EventArgs e)
+        {
+            _playbackCompletedConversationId = _conversationId;
+
+            _logger.LogDebug(
+                "Conversation {ConversationId} playback completed.",
+                _conversationId);
+
+            _ = TryCompleteConversationAsync(_conversationId);
+        }
+
+        private async Task TryCompleteConversationAsync(Guid conversationId)
+        {
+            if (conversationId == Guid.Empty ||
+                _state != ConversationState.Idle ||
+                _idleConversationId != conversationId ||
+                _playbackCompletedConversationId != conversationId ||
+                _completedEventConversationId == conversationId)
+                return;
+
+            _completedEventConversationId = conversationId;
+
+            try
+            {
+                if (_audioManager.IsDucked)
+                    await _audioManager.UnduckAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to restore radio volume after conversation {ConversationId}.",
+                    conversationId);
+            }
+
+            _logger.LogInformation(
+                "Conversation {ConversationId} completely finished: idle and playback complete.",
+                conversationId);
+
+            ConversationCompleted?.Invoke(
+                this,
+                new ConversationCompletedEventArgs(conversationId));
+        }
+
+        private void OnConversationStateIdle(Guid conversationId)
+        {
+            _idleConversationId = conversationId;
+            _ = TryCompleteConversationAsync(conversationId);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _audioManager.PlaybackCompleted -= OnAudioPlaybackCompleted;
+            return _queue.DisposeAsync();
+        }
 
         private void SetState(ConversationState state, Guid conversationId)
         {
@@ -753,6 +803,9 @@ namespace AIRadio.Server.Services.Radio
             StateChanged?.Invoke(
                 this,
                 new ConversationStateChangedEventArgs(previous, state, conversationId));
+
+            if (state == ConversationState.Idle)
+                OnConversationStateIdle(conversationId);
         }
 
         private sealed record ConversationRequest(
