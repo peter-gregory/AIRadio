@@ -9,9 +9,6 @@ public interface IPipeWireAudioClient : IAsyncDisposable
 {
     event EventHandler? PlaybackCompleted;
     bool IsInitialized { get; }
-    ulong QueuedFrameCount { get; }
-    ulong OutstandingFrameCount { get; }
-
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task QueueWavAsync(
         ReadOnlyMemory<byte> wavData,
@@ -25,7 +22,6 @@ public interface IPipeWireAudioClient : IAsyncDisposable
     Task EndUtteranceAsync(
         bool cancel = false,
         CancellationToken cancellationToken = default);
-    Task WaitForPlaybackCompleteAsync(CancellationToken cancellationToken = default);
     Task ClearQueueAsync(CancellationToken cancellationToken = default);
     Task StopPlaybackAsync(CancellationToken cancellationToken = default);
     Task SetMasterVolumeAsync(int volume, CancellationToken cancellationToken = default);
