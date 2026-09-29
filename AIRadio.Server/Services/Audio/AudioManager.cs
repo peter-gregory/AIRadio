@@ -303,6 +303,17 @@ namespace AIRadio.Server.Services.Audio
         private async Task RunSoundLoopAsync(string tag, CancellationTokenSource loopCts)
         {
             var cancellationToken = loopCts.Token;
+            var sound = _soundEffectManager.GetRandomLoopSound(tag);
+
+            if (sound is null)
+            {
+                _logger.LogWarning("No sound loop found for tag '{Tag}'.", tag);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Selected sound loop {Tag} ({FileName}) with {Bytes} bytes.",
+                tag, sound.FileName, sound.WavData.Length);
 
             try
             {
@@ -325,13 +336,6 @@ namespace AIRadio.Server.Services.Audio
                     {
                         await WaitForPlaybackCompletionAsync(cancellationToken);
                         continue;
-                    }
-
-                    var sound = _soundEffectManager.GetRandomLoopSound(tag);
-                    if (sound is null)
-                    {
-                        _logger.LogWarning("No sound loop found for tag '{Tag}'.", tag);
-                        break;
                     }
 
                     if (!IsSoundLoopActive())
@@ -367,6 +371,9 @@ namespace AIRadio.Server.Services.Audio
 
                     if (!IsSoundLoopActive() || Volatile.Read(ref _pendingSpeechRequests) > 0)
                         break;
+
+                    // Reuse the same WAV. The loop is a repeat of the selected
+                    // sound, not a new random selection on each iteration.
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
