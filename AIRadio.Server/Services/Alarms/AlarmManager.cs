@@ -97,5 +97,17 @@ namespace AIRadio.Server.Services.Alarms
             }
         }
 
+        private static string AppendWakeUpSound(string action)
+        {
+            if (string.IsNullOrWhiteSpace(action) ||
+                action.Contains("{sound:alarm-wakeup}", StringComparison.OrdinalIgnoreCase) ||
+                !Regex.IsMatch(action, @"\bwake\s+up\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                return action;
+            }
+
+            return $"{action.TrimEnd()} {{sound:alarm-wakeup}}";
+        }
+
     }
 }
