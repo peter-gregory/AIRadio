@@ -319,9 +319,6 @@ namespace AIRadio.Server.Services.Audio
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (Volatile.Read(ref _pendingSpeechRequests) > 0)
-                        break;
-
                     if (!_queue.IsIdle)
                     {
                         if (Volatile.Read(ref _hasPendingPlayback))
@@ -369,7 +366,7 @@ namespace AIRadio.Server.Services.Audio
                             _soundLoopPlaybackActive = false;
                     }
 
-                    if (!IsSoundLoopActive() || Volatile.Read(ref _pendingSpeechRequests) > 0)
+                    if (!IsSoundLoopActive())
                         break;
 
                     // Reuse the same WAV. The loop is a repeat of the selected
