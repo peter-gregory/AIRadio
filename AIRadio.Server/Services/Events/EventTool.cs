@@ -112,7 +112,9 @@ EVENTS REPORT RESPONSE
                     ? string.Empty
                     : $"{{sound:{eventItem.SpecialSound}}}";
 
-                return $"{{sound:event-button}}{specialSound}{eventItem.Type}{timeText}: {eventItem.Content}";
+                return eventItem.IsStatic
+                    ? $"{{sound:event-button}}{specialSound}{eventItem.Content}"
+                    : $"{{sound:event-button}}{specialSound}{eventItem.Type}{timeText}: {eventItem.Content}";
             }));
 
         var completionPrompt = result.Date == DateTime.Now.Date
@@ -165,7 +167,13 @@ EVENTS REPORT RESPONSE
 
     private static string BuildStaticSpeech(string category, string content)
     {
-        if (category is "awarenessMonth" or "awarenessWeek" or "seasonal")
+        if (category == "awarenessMonth")
+            return $"Today is {content}. It is a chance to learn more, raise awareness, and take part in the conversation.";
+
+        if (category == "awarenessWeek")
+            return $"This week is {content}. It is a chance to learn more and recognize the people and ideas that make the week meaningful.";
+
+        if (category == "seasonal")
             return content;
 
         if (StaticSpeech.TryGetValue(content, out var speech))
