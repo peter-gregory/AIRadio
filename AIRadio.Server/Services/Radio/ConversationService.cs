@@ -32,6 +32,7 @@ namespace AIRadio.Server.Services.Radio
         private readonly ILogger<ConversationService> _logger;
         private readonly IConversationLlamaClient _llama;
         private readonly IAudioManager _audioManager;
+        private readonly IPreLlmIntentParser _preLlmIntentParser;
         private readonly IReadOnlyDictionary<string, ITool> _tools;
         private readonly object _commandSync = new();
         private readonly Queue<ConversationRequest> _utteranceCommands = new();
@@ -59,11 +60,17 @@ namespace AIRadio.Server.Services.Radio
         public event EventHandler<ConversationCompletedEventArgs>? ConversationCompleted;
         public event EventHandler<ConversationCancelledEventArgs>? ConversationCancelled;
 
-        public ConversationService(ILogger<ConversationService> logger, IConversationLlamaClient llama, IAudioManager audioManager, IEnumerable<ITool> tools)
+        public ConversationService(
+            ILogger<ConversationService> logger,
+            IConversationLlamaClient llama,
+            IAudioManager audioManager,
+            IPreLlmIntentParser preLlmIntentParser,
+            IEnumerable<ITool> tools)
         {
             _logger = logger;
             _llama = llama;
             _audioManager = audioManager;
+            _preLlmIntentParser = preLlmIntentParser;
             ArgumentNullException.ThrowIfNull(tools);
             _tools = tools.ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
             _commandWorkerTask = ProcessCommandQueueAsync();
@@ -140,8 +147,17 @@ namespace AIRadio.Server.Services.Radio
 
                 foreach (var text in commandList)
                 {
+                    // Alarm actions that are simple deterministic commands can
+                    // execute directly without starting another LLM round.
+                    var initialToolRequest = _preLlmIntentParser.TryParse(text);
+
                     _utteranceCommands.Enqueue(
-                        new ConversationRequest(Guid.NewGuid(), text, true, null, false));
+                        new ConversationRequest(
+                            Guid.NewGuid(),
+                            text,
+                            true,
+                            initialToolRequest,
+                            false));
                 }
             }
 
