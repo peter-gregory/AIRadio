@@ -158,7 +158,8 @@ EVENTS REPORT RESPONSE
                 Id = x.Id,
                 Type = FormatCategory(x.Category),
                 Content = BuildStaticSpeech(x.Category, x.Content),
-                SpecialSound = x.Sound
+                SpecialSound = x.Sound,
+                IsStatic = true
             }));
     }
 
@@ -258,4 +259,5 @@ public sealed class EventReportItem
     public string Content { get; init; } = string.Empty;
     public TimeSpan? Time { get; init; }
     public string? SpecialSound { get; init; }
+    public bool IsStatic { get; init; }
 }
