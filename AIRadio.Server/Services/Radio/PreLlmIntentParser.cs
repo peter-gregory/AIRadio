@@ -25,6 +25,9 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
         if (TryParseVolume(normalized, out var volume))
             return Request("radioVolume", new JObject { ["volume"] = volume });
 
+        if (IsGreetingCommand(normalized))
+            return Request("greeting");
+
         if (IsNewsCommand(normalized))
             return Request("news");
 
@@ -76,6 +79,16 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
 
         return volume is >= 0 and <= 100;
     }
+
+    private static bool IsGreetingCommand(string text) =>
+        text is
+            "greeting" or
+            "a greeting" or
+            "play a greeting" or
+            "speak a greeting" or
+            "say a greeting" or
+            "give me a greeting" or
+            "give me the greeting";
 
     private static bool IsNewsCommand(string text) =>
         text is
