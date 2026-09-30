@@ -168,7 +168,17 @@ EVENTS REPORT RESPONSE
     private static string BuildStaticSpeech(string category, string content)
     {
         if (category == "awarenessMonth")
-            return $"Today is {content}. It is a chance to learn more, raise awareness, and take part in the conversation.";
+        {
+            var separator = content.IndexOf(" is ", StringComparison.OrdinalIgnoreCase);
+            if (separator > 0)
+            {
+                var month = content[..separator];
+                var observance = content[(separator + 4)..].TrimEnd('.');
+                return $"The month of {month} is {observance}. It is a chance to learn more, raise awareness, and take part in the conversation.";
+            }
+
+            return $"The month is {content}. It is a chance to learn more, raise awareness, and take part in the conversation.";
+        }
 
         if (category == "awarenessWeek")
             return $"This week is {content}. It is a chance to learn more and recognize the people and ideas that make the week meaningful.";
