@@ -714,6 +714,15 @@ namespace AIRadio.Server.Services.Radio
                     if (result.PendingRequest is not null)
                     {
                         _pendingToolRequest = result.PendingRequest;
+
+                        // The tool has asked the user for input. Do not accept
+                        // interactive input until the prompt has finished
+                        // playing; SetState will defer this transition while
+                        // audio is still pending.
+                        SetState(
+                            ConversationState.WaitingForInput,
+                            _conversationId);
+
                         return (true, null);
                     }
 
