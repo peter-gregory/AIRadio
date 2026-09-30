@@ -72,7 +72,7 @@ EVENTS REPORT RESPONSE
                 (includeReminders && x.Type == ScheduledEventType.Reminder)).Select(MapEvent).ToList()
         };
 
-        AddHolidayEvent(result, DateTime.Now.Date);
+        AddHolidayEvents(result);
         
         if (result.Events.Count == 0)
         {
@@ -136,12 +136,15 @@ EVENTS REPORT RESPONSE
         };
     }
 
-    private static void AddHolidayEvent(EventReportData result, DateTime currentDate)
+    private static void AddHolidayEvents(EventReportData result)
     {
-        if (result.Date != currentDate.Date)
-            return;
+        var holiday = HolidayDefinitions.FirstOrDefault(x =>
+        {
+            var range = x.GetRange(result.Date.Year);
+            return result.Date.Date >= range.Start.ToDateTime(TimeOnly.MinValue).Date &&
+                   result.Date.Date <= range.End.ToDateTime(TimeOnly.MinValue).Date;
+        });
 
-        var holiday = HolidayDefinitions.FirstOrDefault(x => x.IsMatch(currentDate));
         if (holiday is null)
             return;
 
@@ -153,37 +156,86 @@ EVENTS REPORT RESPONSE
         });
     }
 
+    private sealed record DateRange(DateOnly Start, DateOnly End);
+
     private sealed record HolidayDefinition(
         string Text,
         string SoundTag,
-        Func<DateTime, bool> IsMatch);
+        Func<int, DateRange> GetRange);
 
     private static readonly HolidayDefinition[] HolidayDefinitions =
     [
-        new("New Year's Day", "event-new-year", date => date.Month == 1 && date.Day == 1),
-        new("Martin Luther King Jr. Day", "event-special", date => IsNthWeekday(date, 1, DayOfWeek.Monday, 3)),
-        new("Presidents' Day", "event-special", date => IsNthWeekday(date, 2, DayOfWeek.Monday, 3)),
-        new("Memorial Day", "event-special", date => IsLastWeekday(date, 5, DayOfWeek.Monday)),
-        new("Juneteenth", "event-special", date => date.Month == 6 && date.Day == 19),
-        new("Independence Day", "event-fourth-july", date => date.Month == 7 && date.Day == 4),
-        new("Labor Day", "event-special", date => IsNthWeekday(date, 9, DayOfWeek.Monday, 1)),
-        new("Columbus Day", "event-special", date => IsNthWeekday(date, 10, DayOfWeek.Monday, 2)),
-        new("Veterans Day", "event-special", date => date.Month == 11 && date.Day == 11),
-        new("Thanksgiving Day", "event-special", date => IsNthWeekday(date, 11, DayOfWeek.Thursday, 4)),
-        new("Christmas Day", "event-christmas", date => date.Month == 12 && date.Day == 25)
+        new("New Year's Day", "event-new-year", year => SingleDay(year, 1, 1)),
+        new("Martin Luther King Jr. Day", "event-special", year => NthWeekday(year, 1, DayOfWeek.Monday, 3)),
+        new("Presidents' Day", "event-special", year => NthWeekday(year, 2, DayOfWeek.Monday, 3)),
+        new("Memorial Day", "event-special", year => LastWeekday(year, 5, DayOfWeek.Monday)),
+        new("Juneteenth", "event-special", year => SingleDay(year, 6, 19)),
+        new("Independence Day", "event-fourth-july", year => SingleDay(year, 7, 4)),
+        new("Labor Day", "event-special", year => NthWeekday(year, 9, DayOfWeek.Monday, 1)),
+        new("Columbus Day", "event-special", year => NthWeekday(year, 10, DayOfWeek.Monday, 2)),
+        new("Veterans Day", "event-special", year => SingleDay(year, 11, 11)),
+        new("Thanksgiving Day", "event-special", year => NthWeekday(year, 11, DayOfWeek.Thursday, 4)),
+        new("Christmas Day", "event-christmas", year => SingleDay(year, 12, 25)),
+
+        new(
+            "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
+            "event-special",
+            year => OffsetRange(DaylightSavingStart(year), -1)),
+
+        new(
+            "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
+            "event-special",
+            year => SingleDayRange(DaylightSavingStart(year))),
+
+        new(
+            "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
+            "event-special",
+            year => OffsetRange(DaylightSavingEnd(year), -1)),
+
+        new(
+            "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
+            "event-special",
+            year => SingleDayRange(DaylightSavingEnd(year)))
     ];
 
-    private static bool IsNthWeekday(DateTime date, int month, DayOfWeek day, int occurrence) =>
-        date.Month == month &&
-        date.DayOfWeek == day &&
-        ((date.Day - 1) / 7) + 1 == occurrence;
+    private static DateRange SingleDay(int year, int month, int day) =>
+        new(new DateOnly(year, month, day), new DateOnly(year, month, day));
 
-    private static bool IsLastWeekday(DateTime date, int month, DayOfWeek day)
+    private static DateRange SingleDayRange(DateOnly date) => new(date, date);
+
+    private static DateRange OffsetRange(DateOnly date, int offsetDays)
     {
-        if (date.Month != month || date.DayOfWeek != day)
-            return false;
+        var adjusted = date.AddDays(offsetDays);
+        return new(adjusted, adjusted);
+    }
 
-        return date.AddDays(7).Month != month;
+    private static DateRange NthWeekday(int year, int month, DayOfWeek day, int occurrence)
+    {
+        var first = new DateOnly(year, month, 1);
+        var offset = ((int)day - (int)first.DayOfWeek + 7) % 7;
+        var date = first.AddDays(offset + ((occurrence - 1) * 7));
+        return SingleDayRange(date);
+    }
+
+    private static DateRange LastWeekday(int year, int month, DayOfWeek day)
+    {
+        var last = new DateOnly(year, month, DateTime.DaysInMonth(year, month));
+        var offset = ((int)last.DayOfWeek - (int)day + 7) % 7;
+        return SingleDayRange(last.AddDays(-offset));
+    }
+
+    private static DateOnly DaylightSavingStart(int year)
+    {
+        var date = new DateOnly(year, 3, 1);
+        var offset = ((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7;
+        return date.AddDays(offset + 7);
+    }
+
+    private static DateOnly DaylightSavingEnd(int year)
+    {
+        var date = new DateOnly(year, 11, 1);
+        var offset = ((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7;
+        return date.AddDays(offset);
     }
 }
 
