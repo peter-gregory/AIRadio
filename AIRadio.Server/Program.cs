@@ -55,6 +55,7 @@ builder.Services.AddHttpClient<IPiperClient, PiperClient>();
 builder.Services.AddSingleton<ILocationService, LocationService>();
 builder.Services.AddSingleton<ITimeService, TimeService>();
 builder.Services.AddSingleton<IAlarmService, AlarmService>();
+builder.Services.AddSingleton<IStaticEventCalendar, StaticEventCalendar>();
 
 builder.Services.AddSingleton<ITool, RadioPlayTool>();
 builder.Services.AddSingleton<ITool, RadioStopTool>();
@@ -114,6 +115,7 @@ await app.Services.GetRequiredService<ILocationService>().InitializeAsync();
 await app.Services.GetRequiredService<IMpvManager>().InitializeAsync();
 await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
 await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
+app.Services.GetRequiredService<IStaticEventCalendar>();
 
 app.UseDefaultFiles();
 app.MapStaticAssets();
