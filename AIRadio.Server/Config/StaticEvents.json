@@ -37,6 +37,7 @@
     { "category": "nationalDay", "content": "National Read a Book Day", "rule": { "type": "fixedDate", "month": 9, "day": 6 } },
     { "category": "nationalDay", "content": "National Family Day", "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 4 } },
     { "category": "nationalDay", "content": "National Aviation Day", "rule": { "type": "fixedDate", "month": 8, "day": 19 } },
+    { "category": "nationalDay", "content": "National Women’s Day", "rule": { "type": "fixedDate", "month": 8, "day": 20 } },
 
     { "category": "awarenessMonth", "content": "January is National Mentoring Month.", "rule": { "type": "month", "month": 1 } },
     { "category": "awarenessMonth", "content": "February is Black History Month.", "rule": { "type": "month", "month": 2 } },
