@@ -1,99 +1,924 @@
 {
   "events": [
-    { "category": "holiday", "content": "New Year's Day", "sound": "event-new-year", "rule": { "type": "fixedDate", "month": 1, "day": 1 } },
-    { "category": "holiday", "content": "Martin Luther King Jr. Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 1, "weekday": "Monday", "occurrence": 3 } },
-    { "category": "holiday", "content": "Presidents' Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 2, "weekday": "Monday", "occurrence": 3 } },
-    { "category": "holiday", "content": "Memorial Day", "sound": "event-special", "rule": { "type": "lastWeekday", "month": 5, "weekday": "Monday" } },
-    { "category": "holiday", "content": "Juneteenth", "sound": "event-special", "rule": { "type": "fixedDate", "month": 6, "day": 19 } },
-    { "category": "holiday", "content": "Independence Day", "sound": "event-fourth-july", "rule": { "type": "fixedDate", "month": 7, "day": 4 } },
-    { "category": "holiday", "content": "Labor Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 1 } },
-    { "category": "holiday", "content": "Columbus Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 10, "weekday": "Monday", "occurrence": 2 } },
-    { "category": "holiday", "content": "Veterans Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 11, "day": 11 } },
-    { "category": "holiday", "content": "Thanksgiving Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 11, "weekday": "Thursday", "occurrence": 4 } },
-    { "category": "holiday", "content": "Christmas Day", "sound": "event-christmas", "rule": { "type": "fixedDate", "month": 12, "day": 25 } },
-
-    { "category": "traditional", "content": "New Year's Eve", "sound": "event-special", "rule": { "type": "fixedDate", "month": 12, "day": 31 } },
-    { "category": "traditional", "content": "Groundhog Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 2, "day": 2 } },
-    { "category": "traditional", "content": "Valentine's Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 2, "day": 14 } },
-    { "category": "traditional", "content": "St. Patrick's Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 3, "day": 17 } },
-    { "category": "traditional", "content": "April Fools' Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 4, "day": 1 } },
-    { "category": "traditional", "content": "Cinco de Mayo", "sound": "event-special", "rule": { "type": "fixedDate", "month": 5, "day": 5 } },
-    { "category": "traditional", "content": "Flag Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 6, "day": 14 } },
-    { "category": "traditional", "content": "Halloween", "sound": "event-special", "rule": { "type": "fixedDate", "month": 10, "day": 31 } },
-    { "category": "traditional", "content": "Easter Sunday", "sound": "event-special", "rule": { "type": "easter" } },
-    { "category": "traditional", "content": "Good Friday", "sound": "event-special", "rule": { "type": "easterOffset", "days": -2 } },
-    { "category": "traditional", "content": "Palm Sunday", "sound": "event-special", "rule": { "type": "easterOffset", "days": -7 } },
-    { "category": "traditional", "content": "Mother's Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 5, "weekday": "Sunday", "occurrence": 2 } },
-    { "category": "traditional", "content": "Father's Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 6, "weekday": "Sunday", "occurrence": 3 } },
-
-    { "category": "nationalDay", "content": "National Hot Dog Day", "rule": { "type": "nthWeekday", "month": 7, "weekday": "Wednesday", "occurrence": 3 } },
-    { "category": "nationalDay", "content": "National Ice Cream Day", "rule": { "type": "nthWeekday", "month": 7, "weekday": "Sunday", "occurrence": 3 } },
-    { "category": "nationalDay", "content": "National Doughnut Day", "rule": { "type": "nthWeekday", "month": 6, "weekday": "Friday", "occurrence": 1 } },
-    { "category": "nationalDay", "content": "National Coffee Day", "rule": { "type": "fixedDate", "month": 9, "day": 29 } },
-    { "category": "nationalDay", "content": "National Pizza Day", "rule": { "type": "fixedDate", "month": 2, "day": 9 } },
-    { "category": "nationalDay", "content": "National Popcorn Day", "rule": { "type": "fixedDate", "month": 1, "day": 19 } },
-    { "category": "nationalDay", "content": "National Chocolate Chip Cookie Day", "rule": { "type": "fixedDate", "month": 8, "day": 4 } },
-    { "category": "nationalDay", "content": "National Ice Cream Sandwich Day", "rule": { "type": "fixedDate", "month": 8, "day": 2 } },
-    { "category": "nationalDay", "content": "National Read a Book Day", "rule": { "type": "fixedDate", "month": 9, "day": 6 } },
-    { "category": "nationalDay", "content": "National Family Day", "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 4 } },
-    { "category": "nationalDay", "content": "National Aviation Day", "rule": { "type": "fixedDate", "month": 8, "day": 19 } },
-    { "category": "nationalDay", "content": "National Women's Day", "rule": { "type": "fixedDate", "month": 8, "day": 20 } },
-
-    { "category": "awarenessMonth", "content": "January is National Mentoring Month.", "rule": { "type": "month", "month": 1 } },
-    { "category": "awarenessMonth", "content": "February is Black History Month.", "rule": { "type": "month", "month": 2 } },
-    { "category": "awarenessMonth", "content": "March is Women's History Month.", "rule": { "type": "month", "month": 3 } },
-    { "category": "awarenessMonth", "content": "April is Autism Acceptance Month.", "rule": { "type": "month", "month": 4 } },
-    { "category": "awarenessMonth", "content": "May is Mental Health Awareness Month.", "rule": { "type": "month", "month": 5 } },
-    { "category": "awarenessMonth", "content": "June is Pride Month.", "rule": { "type": "month", "month": 6 } },
-    { "category": "awarenessMonth", "content": "September is National Preparedness Month.", "rule": { "type": "month", "month": 9 } },
-    { "category": "awarenessMonth", "content": "October is Breast Cancer Awareness Month.", "rule": { "type": "month", "month": 10 } },
-    { "category": "awarenessMonth", "content": "November is National Diabetes Month.", "rule": { "type": "month", "month": 11 } },
-    { "category": "awarenessMonth", "content": "December is Universal Human Rights Month.", "rule": { "type": "month", "month": 12 } },
-
-    { "category": "awarenessWeek", "content": "National Nurses Week", "rule": { "type": "dateRange", "start": { "month": 5, "day": 6 }, "end": { "month": 5, "day": 12 } } },
-    { "category": "awarenessWeek", "content": "National Library Week", "rule": { "type": "nthWeekdayRange", "month": 4, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 } },
-    { "category": "awarenessWeek", "content": "Teacher Appreciation Week", "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Monday", "occurrence": 1, "lengthDays": 5 } },
-    { "category": "awarenessWeek", "content": "National Fire Prevention Week", "rule": { "type": "nthWeekdayRange", "month": 10, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 } },
-    { "category": "awarenessWeek", "content": "National Police Week", "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Sunday", "occurrence": 3, "lengthDays": 7 } },
-
-    { "category": "international", "content": "International Day of Women and Girls in Science", "rule": { "type": "fixedDate", "month": 2, "day": 11 } },
-    { "category": "international", "content": "International Day of Mathematics", "rule": { "type": "fixedDate", "month": 3, "day": 14 } },
-    { "category": "international", "content": "World Water Day", "rule": { "type": "fixedDate", "month": 3, "day": 22 } },
-    { "category": "international", "content": "World Health Day", "rule": { "type": "fixedDate", "month": 4, "day": 7 } },
-    { "category": "international", "content": "World Book and Copyright Day", "rule": { "type": "fixedDate", "month": 4, "day": 23 } },
-    { "category": "international", "content": "World Press Freedom Day", "rule": { "type": "fixedDate", "month": 5, "day": 3 } },
-    { "category": "international", "content": "International Day of Families", "rule": { "type": "fixedDate", "month": 5, "day": 15 } },
-    { "category": "international", "content": "World Environment Day", "rule": { "type": "fixedDate", "month": 6, "day": 5 } },
-    { "category": "international", "content": "World Oceans Day", "rule": { "type": "fixedDate", "month": 6, "day": 8 } },
-    { "category": "international", "content": "World Refugee Day", "rule": { "type": "fixedDate", "month": 6, "day": 20 } },
-    { "category": "international", "content": "International Day of Friendship", "rule": { "type": "fixedDate", "month": 7, "day": 30 } },
-    { "category": "international", "content": "International Youth Day", "rule": { "type": "fixedDate", "month": 8, "day": 12 } },
-    { "category": "international", "content": "World Humanitarian Day", "rule": { "type": "fixedDate", "month": 8, "day": 19 } },
-    { "category": "international", "content": "International Literacy Day", "rule": { "type": "fixedDate", "month": 9, "day": 8 } },
-    { "category": "international", "content": "International Day of Democracy", "rule": { "type": "fixedDate", "month": 9, "day": 15 } },
-    { "category": "international", "content": "International Day of Peace", "rule": { "type": "fixedDate", "month": 9, "day": 21 } },
-    { "category": "international", "content": "World Maritime Day", "rule": { "type": "lastWeekday", "month": 9, "weekday": "Thursday" } },
-    { "category": "international", "content": "International Day for Universal Access to Information", "rule": { "type": "fixedDate", "month": 9, "day": 28 } },
-    { "category": "international", "content": "International Day of Awareness of Food Loss and Waste", "rule": { "type": "fixedDate", "month": 9, "day": 29 } },
-    { "category": "international", "content": "International Translation Day", "rule": { "type": "fixedDate", "month": 9, "day": 30 } },
-    { "category": "international", "content": "International Day of Older Persons", "rule": { "type": "fixedDate", "month": 10, "day": 1 } },
-    { "category": "international", "content": "International Day of Non-Violence", "rule": { "type": "fixedDate", "month": 10, "day": 2 } },
-    { "category": "international", "content": "World Teachers' Day", "rule": { "type": "fixedDate", "month": 10, "day": 5 } },
-    { "category": "international", "content": "World Habitat Day", "rule": { "type": "nthWeekday", "month": 10, "weekday": "Monday", "occurrence": 1 } },
-    { "category": "international", "content": "World Mental Health Day", "rule": { "type": "fixedDate", "month": 10, "day": 10 } },
-    { "category": "international", "content": "International Day of the Girl Child", "rule": { "type": "fixedDate", "month": 10, "day": 11 } },
-    { "category": "international", "content": "World Food Day", "rule": { "type": "fixedDate", "month": 10, "day": 16 } },
-    { "category": "international", "content": "International Day for the Eradication of Poverty", "rule": { "type": "fixedDate", "month": 10, "day": 17 } },
-    { "category": "international", "content": "United Nations Day", "rule": { "type": "fixedDate", "month": 10, "day": 24 } },
-    { "category": "international", "content": "World Cities Day", "rule": { "type": "fixedDate", "month": 10, "day": 31 } },
-    { "category": "international", "content": "World AIDS Day", "rule": { "type": "fixedDate", "month": 12, "day": 1 } },
-    { "category": "international", "content": "International Day of Persons with Disabilities", "rule": { "type": "fixedDate", "month": 12, "day": 3 } },
-    { "category": "international", "content": "Human Rights Day", "rule": { "type": "fixedDate", "month": 12, "day": 10 } },
-    { "category": "international", "content": "International Migrants Day", "rule": { "type": "fixedDate", "month": 12, "day": 18 } },
-
-    { "category": "seasonal", "content": "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.", "rule": { "type": "dstStartOffset", "days": -1 } },
-    { "category": "seasonal", "content": "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.", "rule": { "type": "dstStart" } },
-    { "category": "seasonal", "content": "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.", "rule": { "type": "dstEndOffset", "days": -1 } },
-    { "category": "seasonal", "content": "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.", "rule": { "type": "dstEnd" } }
+    {
+      "category": "holiday",
+      "content": "New Year's Day",
+      "sound": "event-new-year",
+      "rule": {
+        "type": "fixedDate",
+        "month": 1,
+        "day": 1
+      },
+      "speech": "Today is New Year's Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Martin Luther King Jr. Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 1,
+        "weekday": "Monday",
+        "occurrence": 3
+      },
+      "speech": "Today is Martin Luther King Jr. Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Presidents' Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 2,
+        "weekday": "Monday",
+        "occurrence": 3
+      },
+      "speech": "Today is Presidents' Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Memorial Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "lastWeekday",
+        "month": 5,
+        "weekday": "Monday"
+      },
+      "speech": "Today is Memorial Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Juneteenth",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 6,
+        "day": 19
+      },
+      "speech": "Today is Juneteenth. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Independence Day",
+      "sound": "event-fourth-july",
+      "rule": {
+        "type": "fixedDate",
+        "month": 7,
+        "day": 4
+      },
+      "speech": "Today is Independence Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Labor Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 9,
+        "weekday": "Monday",
+        "occurrence": 1
+      },
+      "speech": "Today is Labor Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Columbus Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 10,
+        "weekday": "Monday",
+        "occurrence": 2
+      },
+      "speech": "Today is Columbus Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Veterans Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 11,
+        "day": 11
+      },
+      "speech": "Today is Veterans Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Thanksgiving Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 11,
+        "weekday": "Thursday",
+        "occurrence": 4
+      },
+      "speech": "Today is Thanksgiving Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "holiday",
+      "content": "Christmas Day",
+      "sound": "event-christmas",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 25
+      },
+      "speech": "Today is Christmas Day. It is a time to pause, celebrate, and reflect on what the day represents."
+    },
+    {
+      "category": "traditional",
+      "content": "New Year's Eve",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 31
+      },
+      "speech": "Today is New Year's Eve. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Groundhog Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 2,
+        "day": 2
+      },
+      "speech": "Today is Groundhog Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Valentine's Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 2,
+        "day": 14
+      },
+      "speech": "Today is Valentine's Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "St. Patrick's Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 3,
+        "day": 17
+      },
+      "speech": "Today is St. Patrick's Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "April Fools' Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 4,
+        "day": 1
+      },
+      "speech": "Today is April Fools' Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Cinco de Mayo",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 5,
+        "day": 5
+      },
+      "speech": "Today is Cinco de Mayo. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Flag Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 6,
+        "day": 14
+      },
+      "speech": "Today is Flag Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Halloween",
+      "sound": "event-special",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 31
+      },
+      "speech": "Today is Halloween. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Easter Sunday",
+      "sound": "event-special",
+      "rule": {
+        "type": "easter"
+      },
+      "speech": "Today is Easter Sunday. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Good Friday",
+      "sound": "event-special",
+      "rule": {
+        "type": "easterOffset",
+        "days": -2
+      },
+      "speech": "Today is Good Friday. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Palm Sunday",
+      "sound": "event-special",
+      "rule": {
+        "type": "easterOffset",
+        "days": -7
+      },
+      "speech": "Today is Palm Sunday. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Mother's Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 5,
+        "weekday": "Sunday",
+        "occurrence": 2
+      },
+      "speech": "Today is Mother's Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "traditional",
+      "content": "Father's Day",
+      "sound": "event-special",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 6,
+        "weekday": "Sunday",
+        "occurrence": 3
+      },
+      "speech": "Today is Father's Day. It is a tradition that gives us a chance to celebrate and enjoy the day."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Hot Dog Day",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 7,
+        "weekday": "Wednesday",
+        "occurrence": 3
+      },
+      "speech": "Today is National Hot Dog Day. Celebrate with a classic hot dog and enjoy one of America's favorite summer foods."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Ice Cream Day",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 7,
+        "weekday": "Sunday",
+        "occurrence": 3
+      },
+      "speech": "Today is National Ice Cream Day. Celebrate with a scoop of your favorite ice cream and make the day a little sweeter."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Doughnut Day",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 6,
+        "weekday": "Friday",
+        "occurrence": 1
+      },
+      "speech": "Today is National Doughnut Day. Treat yourself to a doughnut and enjoy this fun celebration of a classic favorite."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Coffee Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 29
+      },
+      "speech": "Today is National Coffee Day. Celebrate with a hot cup of coffee and enjoy a moment to savor one of the world's favorite drinks."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Pizza Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 2,
+        "day": 9
+      },
+      "speech": "Today is National Pizza Day. Celebrate with a slice of your favorite pizza and enjoy a simple meal that brings people together."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Popcorn Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 1,
+        "day": 19
+      },
+      "speech": "Today is National Popcorn Day. Grab some popcorn and enjoy a movie, a game, or just a tasty snack."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Chocolate Chip Cookie Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 4
+      },
+      "speech": "Today is National Chocolate Chip Cookie Day. Celebrate with a warm chocolate chip cookie and enjoy a classic sweet treat."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Ice Cream Sandwich Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 2
+      },
+      "speech": "Today is National Ice Cream Sandwich Day. Cool off with an ice cream sandwich and enjoy a fun combination of cookies and ice cream."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Read a Book Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 6
+      },
+      "speech": "Today is National Read a Book Day. Take some time to pick up a good book and enjoy a few quiet moments of reading."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Family Day",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 9,
+        "weekday": "Monday",
+        "occurrence": 4
+      },
+      "speech": "Today is National Family Day. Take a little time to connect with the people you care about and enjoy being together."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Aviation Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 19
+      },
+      "speech": "Today is National Aviation Day. It is a chance to appreciate the history of flight and the people who helped make modern aviation possible."
+    },
+    {
+      "category": "nationalDay",
+      "content": "National Women's Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 20
+      },
+      "speech": "Today is National Women's Day. It is a chance to recognize the contributions and achievements of women and celebrate the women who make a difference every day."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "January is National Mentoring Month.",
+      "rule": {
+        "type": "month",
+        "month": 1
+      },
+      "speech": "The month of January is National Mentoring Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "February is Black History Month.",
+      "rule": {
+        "type": "month",
+        "month": 2
+      },
+      "speech": "The month of February is Black History Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "March is Women's History Month.",
+      "rule": {
+        "type": "month",
+        "month": 3
+      },
+      "speech": "The month of March is Women's History Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "April is Autism Acceptance Month.",
+      "rule": {
+        "type": "month",
+        "month": 4
+      },
+      "speech": "The month of April is Autism Acceptance Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "May is Mental Health Awareness Month.",
+      "rule": {
+        "type": "month",
+        "month": 5
+      },
+      "speech": "The month of May is Mental Health Awareness Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "June is Pride Month.",
+      "rule": {
+        "type": "month",
+        "month": 6
+      },
+      "speech": "The month of June is Pride Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "September is National Preparedness Month.",
+      "rule": {
+        "type": "month",
+        "month": 9
+      },
+      "speech": "The month of September is National Preparedness Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "October is Breast Cancer Awareness Month.",
+      "rule": {
+        "type": "month",
+        "month": 10
+      },
+      "speech": "The month of October is Breast Cancer Awareness Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "November is National Diabetes Month.",
+      "rule": {
+        "type": "month",
+        "month": 11
+      },
+      "speech": "The month of November is National Diabetes Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessMonth",
+      "content": "December is Universal Human Rights Month.",
+      "rule": {
+        "type": "month",
+        "month": 12
+      },
+      "speech": "The month of December is Universal Human Rights Month. It is a chance to learn more, raise awareness, and take part in the conversation."
+    },
+    {
+      "category": "awarenessWeek",
+      "content": "National Nurses Week",
+      "rule": {
+        "type": "dateRange",
+        "start": {
+          "month": 5,
+          "day": 6
+        },
+        "end": {
+          "month": 5,
+          "day": 12
+        }
+      },
+      "speech": "This week is National Nurses Week. It is a chance to learn more and recognize the people and ideas that make the week meaningful."
+    },
+    {
+      "category": "awarenessWeek",
+      "content": "National Library Week",
+      "rule": {
+        "type": "nthWeekdayRange",
+        "month": 4,
+        "weekday": "Sunday",
+        "occurrence": 2,
+        "lengthDays": 7
+      },
+      "speech": "This week is National Library Week. It is a chance to learn more and recognize the people and ideas that make the week meaningful."
+    },
+    {
+      "category": "awarenessWeek",
+      "content": "Teacher Appreciation Week",
+      "rule": {
+        "type": "nthWeekdayRange",
+        "month": 5,
+        "weekday": "Monday",
+        "occurrence": 1,
+        "lengthDays": 5
+      },
+      "speech": "This week is Teacher Appreciation Week. It is a chance to learn more and recognize the people and ideas that make the week meaningful."
+    },
+    {
+      "category": "awarenessWeek",
+      "content": "National Fire Prevention Week",
+      "rule": {
+        "type": "nthWeekdayRange",
+        "month": 10,
+        "weekday": "Sunday",
+        "occurrence": 2,
+        "lengthDays": 7
+      },
+      "speech": "This week is National Fire Prevention Week. It is a chance to learn more and recognize the people and ideas that make the week meaningful."
+    },
+    {
+      "category": "awarenessWeek",
+      "content": "National Police Week",
+      "rule": {
+        "type": "nthWeekdayRange",
+        "month": 5,
+        "weekday": "Sunday",
+        "occurrence": 3,
+        "lengthDays": 7
+      },
+      "speech": "This week is National Police Week. It is a chance to learn more and recognize the people and ideas that make the week meaningful."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Women and Girls in Science",
+      "rule": {
+        "type": "fixedDate",
+        "month": 2,
+        "day": 11
+      },
+      "speech": "Today is International Day of Women and Girls in Science. It highlights the contributions of women and girls in science and encourages more opportunities to explore STEM."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Mathematics",
+      "rule": {
+        "type": "fixedDate",
+        "month": 3,
+        "day": 14
+      },
+      "speech": "Today is International Day of Mathematics. It celebrates mathematics and the many ways it helps us understand and solve problems in the world around us."
+    },
+    {
+      "category": "international",
+      "content": "World Water Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 3,
+        "day": 22
+      },
+      "speech": "Today is World Water Day. It reminds us how important clean and accessible water is to people, communities, and the environment."
+    },
+    {
+      "category": "international",
+      "content": "World Health Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 4,
+        "day": 7
+      },
+      "speech": "Today is World Health Day. It is an opportunity to reflect on health and the importance of making good health accessible to everyone."
+    },
+    {
+      "category": "international",
+      "content": "World Book and Copyright Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 4,
+        "day": 23
+      },
+      "speech": "Today is World Book and Copyright Day. It celebrates books, reading, and the creativity of authors and other people who bring ideas to life."
+    },
+    {
+      "category": "international",
+      "content": "World Press Freedom Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 5,
+        "day": 3
+      },
+      "speech": "Today is World Press Freedom Day. It highlights the importance of independent journalism and the ability to seek and share information."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Families",
+      "rule": {
+        "type": "fixedDate",
+        "month": 5,
+        "day": 15
+      },
+      "speech": "Today is International Day of Families. It celebrates families and the important role they play in our communities and everyday lives."
+    },
+    {
+      "category": "international",
+      "content": "World Environment Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 6,
+        "day": 5
+      },
+      "speech": "Today is World Environment Day. It is a chance to think about the environment and the small things we can do to take care of our planet."
+    },
+    {
+      "category": "international",
+      "content": "World Oceans Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 6,
+        "day": 8
+      },
+      "speech": "Today is World Oceans Day. It reminds us how important the oceans are and encourages us to help protect marine life and ocean ecosystems."
+    },
+    {
+      "category": "international",
+      "content": "World Refugee Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 6,
+        "day": 20
+      },
+      "speech": "Today is World Refugee Day. It recognizes refugees around the world and highlights the importance of safety, dignity, and support for people forced to flee their homes."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Friendship",
+      "rule": {
+        "type": "fixedDate",
+        "month": 7,
+        "day": 30
+      },
+      "speech": "Today is International Day of Friendship. It is a day to appreciate friendship and the connections that bring people and communities together."
+    },
+    {
+      "category": "international",
+      "content": "International Youth Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 12
+      },
+      "speech": "Today is International Youth Day. It highlights the ideas, energy, and contributions of young people around the world."
+    },
+    {
+      "category": "international",
+      "content": "World Humanitarian Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 8,
+        "day": 19
+      },
+      "speech": "Today is World Humanitarian Day. It recognizes humanitarian workers and the people who help communities facing crises and emergencies."
+    },
+    {
+      "category": "international",
+      "content": "International Literacy Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 8
+      },
+      "speech": "Today is International Literacy Day. It celebrates the importance of reading and writing and the opportunities that literacy can open for people."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Democracy",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 15
+      },
+      "speech": "Today is International Day of Democracy. It highlights the importance of participation, representation, and the principles that support democratic societies."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Peace",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 21
+      },
+      "speech": "Today is International Day of Peace. It is a day to reflect on peace and the importance of resolving differences without violence."
+    },
+    {
+      "category": "international",
+      "content": "World Maritime Day",
+      "rule": {
+        "type": "lastWeekday",
+        "month": 9,
+        "weekday": "Thursday"
+      },
+      "speech": "Today is World Maritime Day. It highlights the importance of shipping and the people who keep the world's maritime transportation moving."
+    },
+    {
+      "category": "international",
+      "content": "International Day for Universal Access to Information",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 28
+      },
+      "speech": "Today is International Day for Universal Access to Information. It recognizes the importance of being able to find and access information and understand the world around us."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Awareness of Food Loss and Waste",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 29
+      },
+      "speech": "Today is International Day of Awareness of Food Loss and Waste. It reminds us that reducing food loss and waste can help conserve resources and make better use of the food we produce."
+    },
+    {
+      "category": "international",
+      "content": "International Translation Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 9,
+        "day": 30
+      },
+      "speech": "Today is International Translation Day. It recognizes the important role translation plays in bringing languages, cultures, and people together."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Older Persons",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 1
+      },
+      "speech": "Today is International Day of Older Persons. It celebrates older people and highlights their contributions, experiences, and place in our communities."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Non-Violence",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 2
+      },
+      "speech": "Today is International Day of Non-Violence. It encourages peaceful ways of resolving differences and reflects on the value of non-violence."
+    },
+    {
+      "category": "international",
+      "content": "World Teachers' Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 5
+      },
+      "speech": "Today is World Teachers' Day. It is a chance to appreciate teachers and the important role they play in helping people learn and grow."
+    },
+    {
+      "category": "international",
+      "content": "World Habitat Day",
+      "rule": {
+        "type": "nthWeekday",
+        "month": 10,
+        "weekday": "Monday",
+        "occurrence": 1
+      },
+      "speech": "Today is World Habitat Day. It reminds us of the importance of safe, healthy, and sustainable places for people to live."
+    },
+    {
+      "category": "international",
+      "content": "World Mental Health Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 10
+      },
+      "speech": "Today is World Mental Health Day. It encourages conversations about mental health and reminds us that emotional well-being is an important part of overall health."
+    },
+    {
+      "category": "international",
+      "content": "International Day of the Girl Child",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 11
+      },
+      "speech": "Today is International Day of the Girl Child. It highlights the rights, opportunities, and potential of girls around the world."
+    },
+    {
+      "category": "international",
+      "content": "World Food Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 16
+      },
+      "speech": "Today is World Food Day. It reminds us of the importance of food security and access to nutritious food for everyone."
+    },
+    {
+      "category": "international",
+      "content": "International Day for the Eradication of Poverty",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 17
+      },
+      "speech": "Today is International Day for the Eradication of Poverty. It draws attention to poverty and the importance of creating opportunities for people to build secure and productive lives."
+    },
+    {
+      "category": "international",
+      "content": "United Nations Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 24
+      },
+      "speech": "Today is United Nations Day. It marks the anniversary of the United Nations and highlights international cooperation on shared global challenges."
+    },
+    {
+      "category": "international",
+      "content": "World Cities Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 10,
+        "day": 31
+      },
+      "speech": "Today is World Cities Day. It is a chance to think about how cities can become more inclusive, resilient, and sustainable places to live."
+    },
+    {
+      "category": "international",
+      "content": "World AIDS Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 1
+      },
+      "speech": "Today is World AIDS Day. It raises awareness about HIV and AIDS, remembers people affected by the disease, and encourages continued support and education."
+    },
+    {
+      "category": "international",
+      "content": "International Day of Persons with Disabilities",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 3
+      },
+      "speech": "Today is International Day of Persons with Disabilities. It highlights inclusion, accessibility, and the contributions of people with disabilities."
+    },
+    {
+      "category": "international",
+      "content": "Human Rights Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 10
+      },
+      "speech": "Today is Human Rights Day. It reminds us of the importance of dignity, equality, and fundamental rights for every person."
+    },
+    {
+      "category": "international",
+      "content": "International Migrants Day",
+      "rule": {
+        "type": "fixedDate",
+        "month": 12,
+        "day": 18
+      },
+      "speech": "Today is International Migrants Day. It recognizes the contributions of migrants and the experiences of people who move across borders in search of safety or opportunity."
+    },
+    {
+      "category": "seasonal",
+      "content": "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
+      "rule": {
+        "type": "dstStartOffset",
+        "days": -1
+      },
+      "speech": "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead."
+    },
+    {
+      "category": "seasonal",
+      "content": "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
+      "rule": {
+        "type": "dstStart"
+      },
+      "speech": "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead."
+    },
+    {
+      "category": "seasonal",
+      "content": "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
+      "rule": {
+        "type": "dstEndOffset",
+        "days": -1
+      },
+      "speech": "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back."
+    },
+    {
+      "category": "seasonal",
+      "content": "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
+      "rule": {
+        "type": "dstEnd"
+      },
+      "speech": "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back."
+    }
   ]
 }
