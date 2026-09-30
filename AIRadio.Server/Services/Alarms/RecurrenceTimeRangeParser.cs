@@ -381,14 +381,14 @@ public static partial class RecurrenceTimeRangeParser
     private static bool IsWholeMonth(string text) =>
         Regex.IsMatch(
             text,
-            @"^(?:the\\s+)?(?:whole\\s+|entire\\s+)?month(?:\\s+of|\\s+in)?\\s+[a-z]+$",
+            @"^(?:the\s+)?(?:whole\s+|entire\s+)?month(?:\s+of|\s+in)?\s+[a-z]+$",
             RegexOptions.IgnoreCase);
 
     private static bool TryParseWeekOfMonth(string text, out int week)
     {
         var match = Regex.Match(
             text,
-            @"^(?:the\\s+)?(?<week>first|second|third|fourth|fifth|last)\\s+week\\s+(?:of|in)\\s+[a-z]+$",
+            @"^(?:the\s+)?(?<week>first|second|third|fourth|fifth|last)\s+week\s+(?:of|in)\s+[a-z]+$",
             RegexOptions.IgnoreCase);
 
         if (!match.Success)
@@ -473,9 +473,9 @@ public static partial class RecurrenceTimeRangeParser
         return candidate;
     }
 
-    [GeneratedRegex(@"\\b(?<sm>[a-z]+)\\s+(?<sd>\\d{1,2})(?:st|nd|rd|th)?\\s+(?:through|to|-)\\s*(?<em>[a-z]+)\\s+(?<ed>\\d{1,2})(?:st|nd|rd|th)?\\b")]
+    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\\b")]
     private static partial Regex DateRangeRegex();
 
-    [GeneratedRegex(@"^(?:the\\s+)?day\\s+(?<direction>before|after)\\s+(?<date>.+)$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?:the\s+)?day\s+(?<direction>before|after)\s+(?<date>.+)$", RegexOptions.IgnoreCase)]
     private static partial Regex DayOffsetRegex();
 }
