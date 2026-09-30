@@ -422,8 +422,8 @@ public static partial class RecurrenceTimeRangeParser
         if (week == -1)
         {
             var end = new DateOnly(year, month, daysInMonth);
-            var startDay = Math.Max(1, daysInMonth - 6);
-            return (new DateOnly(year, month, startDay), end);
+            var newStartDay = Math.Max(1, daysInMonth - 6);
+            return (new DateOnly(year, month, newStartDay), end);
         }
 
         var startDay = ((week - 1) * 7) + 1;
