@@ -76,8 +76,15 @@ Examples:
         }
         else
         {
+            var normalizedCityName = NormalizeCityState(cityName.Trim());
+
+            _logger.LogInformation(
+                "Normalized weather location '{Location}' to '{NormalizedLocation}'.",
+                cityName,
+                normalizedCityName);
+
             var requestedLocation =
-                _locationService.BuildLocation(cityName.Trim());
+                _locationService.BuildLocation(normalizedCityName);
 
             if (request.State == ToolRequestState.AwaitingCurrentLocation)
             {
@@ -167,6 +174,41 @@ Examples:
                 "{sound:weather-static} I'm sorry, I couldn't retrieve the current weather right now.",
                 complete: true);
         }
+    }
+
+    private static string NormalizeCityState(string location)
+    {
+        if (string.IsNullOrWhiteSpace(location) || location.Contains(','))
+            return location;
+
+        var states = new[]
+        {
+            "Alabama", "Alaska", "Arizona", "Arkansas", "California",
+            "Colorado", "Connecticut", "Delaware", "Florida", "Georgia",
+            "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
+            "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland",
+            "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri",
+            "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
+            "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio",
+            "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
+            "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah",
+            "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin",
+            "Wyoming"
+        };
+
+        foreach (var state in states.OrderByDescending(s => s.Length))
+        {
+            if (!location.EndsWith(state, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var city = location[..^state.Length].Trim();
+            if (string.IsNullOrWhiteSpace(city))
+                return location;
+
+            return $"{city}, {state}";
+        }
+
+        return location;
     }
 
     private static string GetDisplayLocation(RadioLocation location)
