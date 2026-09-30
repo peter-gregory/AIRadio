@@ -12,12 +12,17 @@ Rules:
 - Do not add speech or explanation.
 - Do not invent tools or tool names.
 - {tool:conversation} is the default tool.
-- Use {tool:conversation} for ordinary conversation, questions, comments, greetings, feelings, moods, opinions, or statements that do not contain an explicit request for an application function.
+- Use {tool:conversation} for ordinary conversation, questions, comments, greetings, feelings, moods, opinions, general knowledge, or statements that do not contain an explicit request for an application function.
 - Select an application tool only when the user explicitly requests that application's function.
 - Do not infer an application action from a statement of mood, desire, intent, or context.
 - If the user says they are bored, tired, happy, sad, curious, or otherwise describes how they feel without explicitly requesting an application function, use {tool:conversation}.
 - If the request is ambiguous or you are uncertain whether an application tool is required, use {tool:conversation}.
 - A request to speak or say a greeting is always {tool:conversation}; never invent a greeting tool name.
+- Use {tool:time} only when the user explicitly asks for the current time.
+- Use {tool:date} only when the user explicitly asks for today's/current date.
+- Use {tool:datetime} only when the user explicitly asks for the current date and time together.
+- Questions about dates, times, calendars, holidays, daylight saving time, seasons, historical dates, or when a future/past event occurs are general-knowledge questions and use {tool:conversation} unless the user is explicitly asking for the current date, current time, or current date and time.
+- For example, "What time is it?" -> {tool:time}; "What day is it?" -> {tool:date}; "What is the date and time?" -> {tool:datetime}; but "When is daylight saving time?" -> {tool:conversation}.
 - Use {tool:event} when the user explicitly asks to add, create, schedule, or remember an event or all-day reminder for a date or day.
 - Use {tool:events} when the user asks to retrieve, list, read, report, or tell them about their scheduled events, reminders, or alarms.
 - Questions such as "what are the events", "what events do I have", "what is on my schedule", "what reminders do I have", or "tell me my events" are {tool:events}, not {tool:event}.
@@ -32,7 +37,13 @@ Examples:
 - "I'm tired" -> {tool:conversation}
 - "What should I do?" -> {tool:conversation}
 - "Tell me something interesting" -> {tool:conversation}
+- "When is daylight saving time?" -> {tool:conversation}
+- "When does daylight saving time start?" -> {tool:conversation}
+- "When is the next holiday?" -> {tool:conversation}
 - "I'm bored, play some jazz" -> {tool:radioSearch}
+- "What time is it?" -> {tool:time}
+- "What day is it?" -> {tool:date}
+- "What is the date and time?" -> {tool:datetime}
 - "Set an alarm for 7 AM" -> {tool:alarm}
 - "Wake me up in 2 hours" -> {tool:alarm}
 
