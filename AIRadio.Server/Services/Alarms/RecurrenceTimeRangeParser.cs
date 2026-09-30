@@ -310,31 +310,172 @@ public static partial class RecurrenceTimeRangeParser
 
     private static (DateOnly Start, DateOnly End)? ParseDateRange(string text, DateTime reference)
     {
-        var match = DateRangeRegex().Match(text);
-        if (!match.Success)
-            return null;
+        var explicitRange = DateRangeRegex().Match(text);
+        if (explicitRange.Success)
+        {
+            var start = ParseMonthDay(
+                explicitRange.Groups["sm"].Value,
+                explicitRange.Groups["sd"].Value,
+                reference);
 
-        var start = ParseMonthDay(match.Groups["sm"].Value, match.Groups["sd"].Value, reference);
-        var end = ParseMonthDay(match.Groups["em"].Value, match.Groups["ed"].Value, reference, start.Year);
-        if (end < start)
-            end = end.AddYears(1);
+            var end = ParseMonthDay(
+                explicitRange.Groups["em"].Value,
+                explicitRange.Groups["ed"].Value,
+                reference,
+                start.Year);
 
-        return (start, end);
+            if (end < start)
+                end = end.AddYears(1);
+
+            return (start, end);
+        }
+
+        var month = ParseMonth(text);
+        if (month.HasValue && IsWholeMonth(text))
+        {
+            var year = reference.Year;
+            var start = new DateOnly(year, month.Value, 1);
+
+            if (start < DateOnly.FromDateTime(reference.Date))
+                start = start.AddYears(1);
+
+            return (start, new DateOnly(
+                start.Year,
+                start.Month,
+                DateTime.DaysInMonth(start.Year, start.Month)));
+        }
+
+        if (month.HasValue && TryParseWeekOfMonth(text, out var week))
+        {
+            var year = reference.Year;
+            var (start, end) = GetWeekOfMonth(year, month.Value, week);
+
+            if (end < DateOnly.FromDateTime(reference.Date))
+            {
+                year++;
+                (start, end) = GetWeekOfMonth(year, month.Value, week);
+            }
+
+            return (start, end);
+        }
+
+        var offsetMatch = DayOffsetRegex().Match(text);
+        if (offsetMatch.Success)
+        {
+            var offset = offsetMatch.Groups["direction"].Value == "before" ? -1 : 1;
+            var baseText = offsetMatch.Groups["date"].Value.Trim();
+            var baseDate = ParseRelativeDate(baseText, reference)
+                           ?? ParseExplicitDate(baseText, reference);
+
+            if (!baseDate.HasValue)
+                throw new ArgumentException(
+                    $"Could not understand the date in '{text}'.");
+
+            var date = baseDate.Value.AddDays(offset);
+            return (date, date);
+        }
+
+        return null;
     }
 
-    private static DateOnly ParseMonthDay(string monthText, string dayText, DateTime reference, int? preferredYear = null)
+    private static bool IsWholeMonth(string text) =>
+        Regex.IsMatch(
+            text,
+            @"^(?:the\\s+)?(?:whole\\s+|entire\\s+)?month(?:\\s+of|\\s+in)?\\s+[a-z]+$",
+            RegexOptions.IgnoreCase);
+
+    private static bool TryParseWeekOfMonth(string text, out int week)
     {
-        var month = Array.FindIndex(MonthNames, x => x.Equals(monthText, StringComparison.OrdinalIgnoreCase)) + 1;
+        var match = Regex.Match(
+            text,
+            @"^(?:the\\s+)?(?<week>first|second|third|fourth|fifth|last)\\s+week\\s+(?:of|in)\\s+[a-z]+$",
+            RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+        {
+            week = 0;
+            return false;
+        }
+
+        week = match.Groups["week"].Value switch
+        {
+            "first" => 1,
+            "second" => 2,
+            "third" => 3,
+            "fourth" => 4,
+            "fifth" => 5,
+            "last" => -1,
+            _ => throw new InvalidOperationException()
+        };
+
+        return true;
+    }
+
+    private static (DateOnly Start, DateOnly End) GetWeekOfMonth(
+        int year,
+        int month,
+        int week)
+    {
+        var first = new DateOnly(year, month, 1);
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+
+        if (week == -1)
+        {
+            var end = new DateOnly(year, month, daysInMonth);
+            var startDay = Math.Max(1, daysInMonth - 6);
+            return (new DateOnly(year, month, startDay), end);
+        }
+
+        var startDay = ((week - 1) * 7) + 1;
+        if (startDay > daysInMonth)
+            throw new ArgumentException(
+                $"The {FormatOrdinal(week)} week does not exist in {first:MMMM}.");
+
+        var endDay = Math.Min(startDay + 6, daysInMonth);
+        return (
+            new DateOnly(year, month, startDay),
+            new DateOnly(year, month, endDay));
+    }
+
+    private static string FormatOrdinal(int value) => value switch
+    {
+        1 => "first",
+        2 => "second",
+        3 => "third",
+        4 => "fourth",
+        5 => "fifth",
+        _ => value.ToString(CultureInfo.InvariantCulture)
+    };
+
+    private static DateOnly ParseMonthDay(
+        string monthText,
+        string dayText,
+        DateTime reference,
+        int? preferredYear = null)
+    {
+        var month = Array.FindIndex(
+            MonthNames,
+            x => x.Equals(monthText, StringComparison.OrdinalIgnoreCase)) + 1;
+
         var day = int.Parse(dayText, CultureInfo.InvariantCulture);
-        if (month < 1 || day < 1 || day > DateTime.DaysInMonth(preferredYear ?? reference.Year, month))
+
+        if (month < 1 ||
+            day < 1 ||
+            day > DateTime.DaysInMonth(preferredYear ?? reference.Year, month))
             throw new ArgumentException("Invalid date in date/time expression.");
 
         var candidate = new DateOnly(preferredYear ?? reference.Year, month, day);
-        if (!preferredYear.HasValue && candidate < DateOnly.FromDateTime(reference.Date))
+
+        if (!preferredYear.HasValue &&
+            candidate < DateOnly.FromDateTime(reference.Date))
             candidate = candidate.AddYears(1);
+
         return candidate;
     }
 
-    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\b")]
+    [GeneratedRegex(@"\\b(?<sm>[a-z]+)\\s+(?<sd>\\d{1,2})(?:st|nd|rd|th)?\\s+(?:through|to|-)\\s*(?<em>[a-z]+)\\s+(?<ed>\\d{1,2})(?:st|nd|rd|th)?\\b")]
     private static partial Regex DateRangeRegex();
+
+    [GeneratedRegex(@"^(?:the\\s+)?day\\s+(?<direction>before|after)\\s+(?<date>.+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex DayOffsetRegex();
 }
