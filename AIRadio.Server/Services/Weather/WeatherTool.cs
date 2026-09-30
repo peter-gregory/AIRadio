@@ -112,6 +112,18 @@ Examples:
                     await _locationService.UpdateCurrentLocationAsync(
                         requestedLocation,
                         cancellationToken);
+
+                // Carry the normalized location into the continuation request.
+                // The user's original answer can be an unqualified phrase such
+                // as "PALM CITY FLORIDA", which is intentionally normalized for
+                // validation. The next tool state must use that normalized value
+                // rather than resolving the original raw phrase again.
+                request = new ToolRequest
+                {
+                    Name = Name,
+                    Arguments = new JObject { ["City"] = normalizedCityName },
+                    State = ToolRequestState.AwaitingCurrentLocation
+                };
             }
             else
             {
