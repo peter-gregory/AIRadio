@@ -989,7 +989,8 @@ namespace AIRadio.Server.Services.Radio
                         {
                             command = _inputCommands.Dequeue();
                         }
-                        else if ((_state == ConversationState.Idle ||
+                        else if (_waitingForInputConversationId == Guid.Empty &&
+                                 (_state == ConversationState.Idle ||
                                   _state == ConversationState.Processing) &&
                                  _utteranceCommands.Count > 0)
                         {
