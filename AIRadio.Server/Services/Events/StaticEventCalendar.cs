@@ -32,21 +32,13 @@ public sealed class StaticEventCalendar : IStaticEventCalendar
         if (string.IsNullOrWhiteSpace(configDirectory))
             throw new InvalidOperationException("Application:ConfigDirectory is not configured.");
 
-        var runtimeFile = Path.GetFullPath(Path.Combine(configDirectory, FileName));
-        var seedFile = Path.Combine(environment.ContentRootPath, "Config", FileName);
+        _configFile = Path.GetFullPath(Path.Combine(
+            environment.ContentRootPath,
+            "Config",
+            FileName));
 
-        Directory.CreateDirectory(Path.GetDirectoryName(runtimeFile)!);
-
-        if (!File.Exists(runtimeFile))
-        {
-            if (!File.Exists(seedFile))
-                throw new FileNotFoundException($"Static event configuration was not found: {seedFile}");
-
-            File.Copy(seedFile, runtimeFile);
-            _logger.LogInformation("Installed static event configuration at {Path}.", runtimeFile);
-        }
-
-        _configFile = runtimeFile;
+        if (!File.Exists(_configFile))
+            throw new FileNotFoundException($"Static event configuration was not found: {_configFile}");
         _definitions = Load();
 
         _logger.LogInformation(
