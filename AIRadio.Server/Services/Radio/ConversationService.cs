@@ -855,7 +855,17 @@ namespace AIRadio.Server.Services.Radio
                 // pending question.
                 lock (_commandSync)
                 {
+                    // Preserve queued alarm actions. Only unsolicited/background
+                    // utterances should be discarded before opening the input
+                    // window for a pending alarm tool.
+                    var alarmCommands = _utteranceCommands
+                        .Where(command => command.IsAlarm)
+                        .ToArray();
+
                     _utteranceCommands.Clear();
+
+                    foreach (var command in alarmCommands)
+                        _utteranceCommands.Enqueue(command);
                 }
 
                 _waitingForInputConversationId = Guid.Empty;
@@ -1057,6 +1067,16 @@ namespace AIRadio.Server.Services.Radio
                         {
                             _commandSignal.Release();
                             _ = TryCompleteConversationAsync(command.ConversationId);
+                        }
+                        else if (_state == ConversationState.Processing &&
+                                 HasQueuedUtteranceCommands())
+                        {
+                            // A completed alarm action may have left the
+                            // conversation in Processing specifically because
+                            // another alarm action is queued. Advance the worker
+                            // without forcing an Idle transition (which would
+                            // incorrectly restore radio volume between actions).
+                            _commandSignal.Release();
                         }
                     }
                 }
