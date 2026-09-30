@@ -169,6 +169,7 @@ EVENTS REPORT RESPONSE
             "nationalDay" => "National Day",
             "awarenessMonth" => "Awareness Month",
             "awarenessWeek" => "Awareness Week",
+            "international" => "International Observance",
             "seasonal" => "Seasonal Observance",
             _ => category
         };
