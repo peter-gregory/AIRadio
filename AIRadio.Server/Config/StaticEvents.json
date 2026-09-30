@@ -1,333 +1,98 @@
 {
   "events": [
-    {
-      "category": "holiday",
-      "content": "New Year's Day",
-      "sound": "event-new-year",
-      "rule": { "type": "fixedDate", "month": 1, "day": 1 }
-    },
-    {
-      "category": "holiday",
-      "content": "Martin Luther King Jr. Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 1, "weekday": "Monday", "occurrence": 3 }
-    },
-    {
-      "category": "holiday",
-      "content": "Presidents' Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 2, "weekday": "Monday", "occurrence": 3 }
-    },
-    {
-      "category": "holiday",
-      "content": "Memorial Day",
-      "sound": "event-special",
-      "rule": { "type": "lastWeekday", "month": 5, "weekday": "Monday" }
-    },
-    {
-      "category": "holiday",
-      "content": "Juneteenth",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 6, "day": 19 }
-    },
-    {
-      "category": "holiday",
-      "content": "Independence Day",
-      "sound": "event-fourth-july",
-      "rule": { "type": "fixedDate", "month": 7, "day": 4 }
-    },
-    {
-      "category": "holiday",
-      "content": "Labor Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 1 }
-    },
-    {
-      "category": "holiday",
-      "content": "Columbus Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 10, "weekday": "Monday", "occurrence": 2 }
-    },
-    {
-      "category": "holiday",
-      "content": "Veterans Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 11, "day": 11 }
-    },
-    {
-      "category": "holiday",
-      "content": "Thanksgiving Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 11, "weekday": "Thursday", "occurrence": 4 }
-    },
-    {
-      "category": "holiday",
-      "content": "Christmas Day",
-      "sound": "event-christmas",
-      "rule": { "type": "fixedDate", "month": 12, "day": 25 }
-    },
+    { "category": "holiday", "content": "New Year's Day", "sound": "event-new-year", "rule": { "type": "fixedDate", "month": 1, "day": 1 } },
+    { "category": "holiday", "content": "Martin Luther King Jr. Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 1, "weekday": "Monday", "occurrence": 3 } },
+    { "category": "holiday", "content": "Presidents' Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 2, "weekday": "Monday", "occurrence": 3 } },
+    { "category": "holiday", "content": "Memorial Day", "sound": "event-special", "rule": { "type": "lastWeekday", "month": 5, "weekday": "Monday" } },
+    { "category": "holiday", "content": "Juneteenth", "sound": "event-special", "rule": { "type": "fixedDate", "month": 6, "day": 19 } },
+    { "category": "holiday", "content": "Independence Day", "sound": "event-fourth-july", "rule": { "type": "fixedDate", "month": 7, "day": 4 } },
+    { "category": "holiday", "content": "Labor Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 1 } },
+    { "category": "holiday", "content": "Columbus Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 10, "weekday": "Monday", "occurrence": 2 } },
+    { "category": "holiday", "content": "Veterans Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 11, "day": 11 } },
+    { "category": "holiday", "content": "Thanksgiving Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 11, "weekday": "Thursday", "occurrence": 4 } },
+    { "category": "holiday", "content": "Christmas Day", "sound": "event-christmas", "rule": { "type": "fixedDate", "month": 12, "day": 25 } },
 
-    {
-      "category": "traditional",
-      "content": "New Year's Eve",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 12, "day": 31 }
-    },
-    {
-      "category": "traditional",
-      "content": "Groundhog Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 2, "day": 2 }
-    },
-    {
-      "category": "traditional",
-      "content": "Valentine's Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 2, "day": 14 }
-    },
-    {
-      "category": "traditional",
-      "content": "St. Patrick's Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 3, "day": 17 }
-    },
-    {
-      "category": "traditional",
-      "content": "April Fools' Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 4, "day": 1 }
-    },
-    {
-      "category": "traditional",
-      "content": "Cinco de Mayo",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 5, "day": 5 }
-    },
-    {
-      "category": "traditional",
-      "content": "Flag Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 6, "day": 14 }
-    },
-    {
-      "category": "traditional",
-      "content": "Halloween",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 10, "day": 31 }
-    },
-    {
-      "category": "traditional",
-      "content": "Easter Sunday",
-      "sound": "event-special",
-      "rule": { "type": "easter" }
-    },
-    {
-      "category": "traditional",
-      "content": "Good Friday",
-      "sound": "event-special",
-      "rule": { "type": "easterOffset", "days": -2 }
-    },
-    {
-      "category": "traditional",
-      "content": "Palm Sunday",
-      "sound": "event-special",
-      "rule": { "type": "easterOffset", "days": -7 }
-    },
-    {
-      "category": "traditional",
-      "content": "Mother's Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 5, "weekday": "Sunday", "occurrence": 2 }
-    },
-    {
-      "category": "traditional",
-      "content": "Father's Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 6, "weekday": "Sunday", "occurrence": 3 }
-    },
+    { "category": "traditional", "content": "New Year's Eve", "sound": "event-special", "rule": { "type": "fixedDate", "month": 12, "day": 31 } },
+    { "category": "traditional", "content": "Groundhog Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 2, "day": 2 } },
+    { "category": "traditional", "content": "Valentine's Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 2, "day": 14 } },
+    { "category": "traditional", "content": "St. Patrick's Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 3, "day": 17 } },
+    { "category": "traditional", "content": "April Fools' Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 4, "day": 1 } },
+    { "category": "traditional", "content": "Cinco de Mayo", "sound": "event-special", "rule": { "type": "fixedDate", "month": 5, "day": 5 } },
+    { "category": "traditional", "content": "Flag Day", "sound": "event-special", "rule": { "type": "fixedDate", "month": 6, "day": 14 } },
+    { "category": "traditional", "content": "Halloween", "sound": "event-special", "rule": { "type": "fixedDate", "month": 10, "day": 31 } },
+    { "category": "traditional", "content": "Easter Sunday", "sound": "event-special", "rule": { "type": "easter" } },
+    { "category": "traditional", "content": "Good Friday", "sound": "event-special", "rule": { "type": "easterOffset", "days": -2 } },
+    { "category": "traditional", "content": "Palm Sunday", "sound": "event-special", "rule": { "type": "easterOffset", "days": -7 } },
+    { "category": "traditional", "content": "Mother's Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 5, "weekday": "Sunday", "occurrence": 2 } },
+    { "category": "traditional", "content": "Father's Day", "sound": "event-special", "rule": { "type": "nthWeekday", "month": 6, "weekday": "Sunday", "occurrence": 3 } },
 
-    {
-      "category": "nationalDay",
-      "content": "National Hot Dog Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 7, "weekday": "Wednesday", "occurrence": 3 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Ice Cream Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 7, "weekday": "Sunday", "occurrence": 3 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Doughnut Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 6, "weekday": "Friday", "occurrence": 1 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Coffee Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 9, "day": 29 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Pizza Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 2, "day": 9 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Popcorn Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 1, "day": 19 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Chocolate Chip Cookie Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 8, "day": 4 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Ice Cream Sandwich Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 8, "day": 2 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Read a Book Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 9, "day": 6 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Family Day",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 4 }
-    },
-    {
-      "category": "nationalDay",
-      "content": "National Aviation Day",
-      "sound": "event-special",
-      "rule": { "type": "fixedDate", "month": 8, "day": 19 }
-    },
+    { "category": "nationalDay", "content": "National Hot Dog Day", "rule": { "type": "nthWeekday", "month": 7, "weekday": "Wednesday", "occurrence": 3 } },
+    { "category": "nationalDay", "content": "National Ice Cream Day", "rule": { "type": "nthWeekday", "month": 7, "weekday": "Sunday", "occurrence": 3 } },
+    { "category": "nationalDay", "content": "National Doughnut Day", "rule": { "type": "nthWeekday", "month": 6, "weekday": "Friday", "occurrence": 1 } },
+    { "category": "nationalDay", "content": "National Coffee Day", "rule": { "type": "fixedDate", "month": 9, "day": 29 } },
+    { "category": "nationalDay", "content": "National Pizza Day", "rule": { "type": "fixedDate", "month": 2, "day": 9 } },
+    { "category": "nationalDay", "content": "National Popcorn Day", "rule": { "type": "fixedDate", "month": 1, "day": 19 } },
+    { "category": "nationalDay", "content": "National Chocolate Chip Cookie Day", "rule": { "type": "fixedDate", "month": 8, "day": 4 } },
+    { "category": "nationalDay", "content": "National Ice Cream Sandwich Day", "rule": { "type": "fixedDate", "month": 8, "day": 2 } },
+    { "category": "nationalDay", "content": "National Read a Book Day", "rule": { "type": "fixedDate", "month": 9, "day": 6 } },
+    { "category": "nationalDay", "content": "National Family Day", "rule": { "type": "nthWeekday", "month": 9, "weekday": "Monday", "occurrence": 4 } },
+    { "category": "nationalDay", "content": "National Aviation Day", "rule": { "type": "fixedDate", "month": 8, "day": 19 } },
 
-    {
-      "category": "awarenessMonth",
-      "content": "January is National Mentoring Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 1 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "February is Black History Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 2 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "March is Women's History Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 3 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "April is Autism Acceptance Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 4 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "May is Mental Health Awareness Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 5 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "June is Pride Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 6 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "September is National Preparedness Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 9 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "October is Breast Cancer Awareness Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 10 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "November is National Diabetes Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 11 }
-    },
-    {
-      "category": "awarenessMonth",
-      "content": "December is Universal Human Rights Month.",
-      "sound": "event-special",
-      "rule": { "type": "month", "month": 12 }
-    },
+    { "category": "awarenessMonth", "content": "January is National Mentoring Month.", "rule": { "type": "month", "month": 1 } },
+    { "category": "awarenessMonth", "content": "February is Black History Month.", "rule": { "type": "month", "month": 2 } },
+    { "category": "awarenessMonth", "content": "March is Women's History Month.", "rule": { "type": "month", "month": 3 } },
+    { "category": "awarenessMonth", "content": "April is Autism Acceptance Month.", "rule": { "type": "month", "month": 4 } },
+    { "category": "awarenessMonth", "content": "May is Mental Health Awareness Month.", "rule": { "type": "month", "month": 5 } },
+    { "category": "awarenessMonth", "content": "June is Pride Month.", "rule": { "type": "month", "month": 6 } },
+    { "category": "awarenessMonth", "content": "September is National Preparedness Month.", "rule": { "type": "month", "month": 9 } },
+    { "category": "awarenessMonth", "content": "October is Breast Cancer Awareness Month.", "rule": { "type": "month", "month": 10 } },
+    { "category": "awarenessMonth", "content": "November is National Diabetes Month.", "rule": { "type": "month", "month": 11 } },
+    { "category": "awarenessMonth", "content": "December is Universal Human Rights Month.", "rule": { "type": "month", "month": 12 } },
 
-    {
-      "category": "awarenessWeek",
-      "content": "National Nurses Week",
-      "sound": "event-special",
-      "rule": { "type": "dateRange", "start": { "month": 5, "day": 6 }, "end": { "month": 5, "day": 12 } }
-    },
-    {
-      "category": "awarenessWeek",
-      "content": "National Library Week",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekdayRange", "month": 4, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 }
-    },
-    {
-      "category": "awarenessWeek",
-      "content": "Teacher Appreciation Week",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Monday", "occurrence": 1, "lengthDays": 5 }
-    },
-    {
-      "category": "awarenessWeek",
-      "content": "National Fire Prevention Week",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekdayRange", "month": 10, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 }
-    },
-    {
-      "category": "awarenessWeek",
-      "content": "National Police Week",
-      "sound": "event-special",
-      "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Sunday", "occurrence": 3, "lengthDays": 7 }
-    },
+    { "category": "awarenessWeek", "content": "National Nurses Week", "rule": { "type": "dateRange", "start": { "month": 5, "day": 6 }, "end": { "month": 5, "day": 12 } },
+    { "category": "awarenessWeek", "content": "National Library Week", "rule": { "type": "nthWeekdayRange", "month": 4, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 } },
+    { "category": "awarenessWeek", "content": "Teacher Appreciation Week", "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Monday", "occurrence": 1, "lengthDays": 5 } },
+    { "category": "awarenessWeek", "content": "National Fire Prevention Week", "rule": { "type": "nthWeekdayRange", "month": 10, "weekday": "Sunday", "occurrence": 2, "lengthDays": 7 } },
+    { "category": "awarenessWeek", "content": "National Police Week", "rule": { "type": "nthWeekdayRange", "month": 5, "weekday": "Sunday", "occurrence": 3, "lengthDays": 7 } },
 
-    {
-      "category": "seasonal",
-      "content": "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
-      "sound": "event-special",
-      "rule": { "type": "dstStartOffset", "days": -1 }
-    },
-    {
-      "category": "seasonal",
-      "content": "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.",
-      "sound": "event-special",
-      "rule": { "type": "dstStart" }
-    },
-    {
-      "category": "seasonal",
-      "content": "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
-      "sound": "event-special",
-      "rule": { "type": "dstEndOffset", "days": -1 }
-    },
-    {
-      "category": "seasonal",
-      "content": "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.",
-      "sound": "event-special",
-      "rule": { "type": "dstEnd" }
-    }
+    { "category": "international", "content": "International Day of Women and Girls in Science", "rule": { "type": "fixedDate", "month": 2, "day": 11 } },
+    { "category": "international", "content": "International Day of Mathematics", "rule": { "type": "fixedDate", "month": 3, "day": 14 } },
+    { "category": "international", "content": "World Water Day", "rule": { "type": "fixedDate", "month": 3, "day": 22 } },
+    { "category": "international", "content": "World Health Day", "rule": { "type": "fixedDate", "month": 4, "day": 7 } },
+    { "category": "international", "content": "World Book and Copyright Day", "rule": { "type": "fixedDate", "month": 4, "day": 23 } },
+    { "category": "international", "content": "World Press Freedom Day", "rule": { "type": "fixedDate", "month": 5, "day": 3 } },
+    { "category": "international", "content": "International Day of Families", "rule": { "type": "fixedDate", "month": 5, "day": 15 } },
+    { "category": "international", "content": "World Environment Day", "rule": { "type": "fixedDate", "month": 6, "day": 5 } },
+    { "category": "international", "content": "World Oceans Day", "rule": { "type": "fixedDate", "month": 6, "day": 8 } },
+    { "category": "international", "content": "World Refugee Day", "rule": { "type": "fixedDate", "month": 6, "day": 20 } },
+    { "category": "international", "content": "International Day of Friendship", "rule": { "type": "fixedDate", "month": 7, "day": 30 } },
+    { "category": "international", "content": "International Youth Day", "rule": { "type": "fixedDate", "month": 8, "day": 12 } },
+    { "category": "international", "content": "World Humanitarian Day", "rule": { "type": "fixedDate", "month": 8, "day": 19 } },
+    { "category": "international", "content": "International Literacy Day", "rule": { "type": "fixedDate", "month": 9, "day": 8 } },
+    { "category": "international", "content": "International Day of Democracy", "rule": { "type": "fixedDate", "month": 9, "day": 15 } },
+    { "category": "international", "content": "International Day of Peace", "rule": { "type": "fixedDate", "month": 9, "day": 21 } },
+    { "category": "international", "content": "World Maritime Day", "rule": { "type": "lastWeekday", "month": 9, "weekday": "Thursday" } },
+    { "category": "international", "content": "International Day for Universal Access to Information", "rule": { "type": "fixedDate", "month": 9, "day": 28 } },
+    { "category": "international", "content": "International Day of Awareness of Food Loss and Waste", "rule": { "type": "fixedDate", "month": 9, "day": 29 } },
+    { "category": "international", "content": "International Translation Day", "rule": { "type": "fixedDate", "month": 9, "day": 30 } },
+    { "category": "international", "content": "International Day of Older Persons", "rule": { "type": "fixedDate", "month": 10, "day": 1 } },
+    { "category": "international", "content": "International Day of Non-Violence", "rule": { "type": "fixedDate", "month": 10, "day": 2 } },
+    { "category": "international", "content": "World Teachers' Day", "rule": { "type": "fixedDate", "month": 10, "day": 5 } },
+    { "category": "international", "content": "World Habitat Day", "rule": { "type": "nthWeekday", "month": 10, "weekday": "Monday", "occurrence": 1 } },
+    { "category": "international", "content": "World Mental Health Day", "rule": { "type": "fixedDate", "month": 10, "day": 10 } },
+    { "category": "international", "content": "International Day of the Girl Child", "rule": { "type": "fixedDate", "month": 10, "day": 11 } },
+    { "category": "international", "content": "World Food Day", "rule": { "type": "fixedDate", "month": 10, "day": 16 } },
+    { "category": "international", "content": "International Day for the Eradication of Poverty", "rule": { "type": "fixedDate", "month": 10, "day": 17 } },
+    { "category": "international", "content": "United Nations Day", "rule": { "type": "fixedDate", "month": 10, "day": 24 } },
+    { "category": "international", "content": "World Cities Day", "rule": { "type": "fixedDate", "month": 10, "day": 31 } },
+    { "category": "international", "content": "World AIDS Day", "rule": { "type": "fixedDate", "month": 12, "day": 1 } },
+    { "category": "international", "content": "International Day of Persons with Disabilities", "rule": { "type": "fixedDate", "month": 12, "day": 3 } },
+    { "category": "international", "content": "Human Rights Day", "rule": { "type": "fixedDate", "month": 12, "day": 10 } },
+    { "category": "international", "content": "International Migrants Day", "rule": { "type": "fixedDate", "month": 12, "day": 18 } },
+
+    { "category": "seasonal", "content": "Tomorrow starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.", "rule": { "type": "dstStartOffset", "days": -1 } },
+    { "category": "seasonal", "content": "Today starts Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour ahead.", "rule": { "type": "dstStart" } },
+    { "category": "seasonal", "content": "Tomorrow ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.", "rule": { "type": "dstEndOffset", "days": -1 } },
+    { "category": "seasonal", "content": "Today ends Daylight Saving Time in the US. If you are in a state that observes Daylight Saving Time, be sure to move your clocks one hour back.", "rule": { "type": "dstEnd" } }
   ]
 }
