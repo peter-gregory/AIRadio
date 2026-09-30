@@ -65,6 +65,7 @@ public sealed class StaticEventCalendar : IStaticEventCalendar
                 Id = CreateStableId(definition),
                 Category = definition.Category,
                 Content = definition.Content,
+                Speech = definition.Speech,
                 Sound = definition.Sound
             });
         }
@@ -231,6 +232,7 @@ public sealed class StaticCalendarEventDefinition
     public bool Enabled { get; set; } = true;
     public string Category { get; set; } = "observance";
     public string Content { get; set; } = string.Empty;
+    public string Speech { get; set; } = string.Empty;
     public string? Sound { get; set; }
     public StaticEventRule Rule { get; set; } = new();
 }
@@ -261,5 +263,6 @@ public sealed class StaticCalendarEvent
     public Guid Id { get; init; }
     public string Category { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
+    public string Speech { get; init; } = string.Empty;
     public string? Sound { get; init; }
 }
