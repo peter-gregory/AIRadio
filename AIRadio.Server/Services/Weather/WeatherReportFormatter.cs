@@ -18,23 +18,38 @@ public static class WeatherReportFormatter
 
         var sentences = new List<string>
         {
-            $"Here's the weather for {weather.Location}.",
-            $"It's {Temperature(current.Temperature)} out right now"
+            $"Here's the weather for {weather.Location}."
         };
 
-        if (today is not null)
-            sentences[^1] += $" with a low of {Temperature(today.Low)} tonight.";
-        else
-            sentences[^1] += ".";
+        // Current weather_code is the authoritative overall description of
+        // what is happening right now. Keep it separate from the daily
+        // forecast, whose weather code describes the most severe condition
+        // expected during the day.
+        var currentCondition = GetConditionSpeech(current.Condition);
+        var currentSentence =
+            $"Right now, it's {currentCondition} and {Temperature(current.Temperature)} degrees";
 
         if (Math.Abs(current.FeelsLike - current.Temperature) >= 3)
-            sentences.Add(
-                $"It feels like {Temperature(current.FeelsLike)}.");
+            currentSentence += $", feeling like {Temperature(current.FeelsLike)}";
+
+        if (today is not null)
+            currentSentence += $", with a low of {Temperature(today.Low)} tonight.";
+
+        else
+            currentSentence += ".";
+
+        var conditionTag = GetConditionSoundTag(current.Condition);
+        if (!string.IsNullOrWhiteSpace(conditionTag))
+            currentSentence += $" {conditionTag}";
+
+        sentences.Add(currentSentence);
 
         if (today is not null)
         {
+            var forecastCondition = GetConditionSpeech(today.Condition);
+
             sentences.Add(
-                $"Today's high will be {Temperature(today.High)}.");
+                $"Today's forecast is {forecastCondition}, with a high of {Temperature(today.High)}.");
 
             sentences.Add(
                 today.RainChance <= LowRainChanceThreshold
@@ -63,13 +78,31 @@ public static class WeatherReportFormatter
         if (current.Precipitation > 0)
             sentences.Add($"There's currently {Precipitation(current.Precipitation)} of precipitation.");
 
-        var conditionTag = GetConditionSoundTag(current.Condition);
-        if (!string.IsNullOrWhiteSpace(conditionTag))
-            sentences[1] += $" {conditionTag}";
-
         sentences.Add($"And that's the local weather for {weather.Location}.");
 
         return string.Join(" ", sentences);
+    }
+
+    private static string GetConditionSpeech(string condition)
+    {
+        return condition.Trim().ToLowerInvariant() switch
+        {
+            "clear" => "clear",
+            "mostly clear" => "mostly clear",
+            "partly cloudy" => "partly cloudy",
+            "overcast" => "overcast",
+            "foggy" => "foggy",
+            "drizzle" => "drizzling",
+            "freezing drizzle" => "freezing drizzle",
+            "rain" => "raining",
+            "freezing rain" => "freezing rain",
+            "snow" => "snowing",
+            "rain showers" => "rain showers",
+            "snow showers" => "snow showers",
+            "thunderstorms" => "thunderstorms",
+            "thunderstorms with hail" => "thunderstorms with hail",
+            _ => string.IsNullOrWhiteSpace(condition) ? "experiencing mixed conditions" : condition.ToLowerInvariant()
+        };
     }
 
     private static string Temperature(double value) =>
