@@ -106,38 +106,29 @@ namespace AIRadio.Server.Services.Radio
 
             try
             {
-                using var request =
-                    new HttpRequestMessage(
-                        HttpMethod.Get,
-                        requestUri);
+                var results = await SendSearchAsync(
+                    requestUri,
+                    cancellationToken);
 
-                request.Headers.UserAgent.ParseAdd(
-                    _userAgent);
+                if (results.Count == 0 &&
+                    ShouldUseFallback(criteria, query))
+                {
+                    var fallbackQuery = BuildQuery(criteria, useFallback: true);
+                    var fallbackUri =
+                        $"{_baseUrl.TrimEnd('/')}/" +
+                        $"{_searchPath.TrimStart('/')}?" +
+                        fallbackQuery;
 
-                using var response =
-                    await _httpClient.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
+                    _logger.LogDebug(
+                        "Primary radio search returned no stations; trying broader station search: {RequestUri}",
+                        fallbackUri);
+
+                    results = await SendSearchAsync(
+                        fallbackUri,
                         cancellationToken);
+                }
 
-                response.EnsureSuccessStatusCode();
-                var rawResult = await response.Content.ReadAsStringAsync(cancellationToken);
-
-                _logger.LogDebug(
-                    "Radio Browser response: HTTP {StatusCode}, {Length} bytes.",
-                    (int)response.StatusCode,
-                    rawResult.Length);
-
-                _logger.LogDebug(
-                    "Radio Browser raw response: {RawResult}",
-                    rawResult);
-
-                var results =
-                    JsonConvert.DeserializeObject<List<RadioBrowserStation>>(
-                        rawResult);
-
-                if (results is null ||
-                    results.Count == 0)
+                if (results.Count == 0)
                 {
                     _logger.LogDebug("Radio Browser returned no stations.");
                     return [];
@@ -198,8 +189,59 @@ namespace AIRadio.Server.Services.Radio
             }
         }
 
+        private async Task<List<RadioBrowserStation>> SendSearchAsync(
+            string requestUri,
+            CancellationToken cancellationToken)
+        {
+            using var request =
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    requestUri);
+
+            request.Headers.UserAgent.ParseAdd(
+                _userAgent);
+
+            using var response =
+                await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+
+            var rawResult =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
+
+            _logger.LogDebug(
+                "Radio Browser response: HTTP {StatusCode}, {Length} bytes.",
+                (int)response.StatusCode,
+                rawResult.Length);
+
+            _logger.LogDebug(
+                "Radio Browser raw response: {RawResult}",
+                rawResult);
+
+            return
+                JsonConvert.DeserializeObject<List<RadioBrowserStation>>(
+                    rawResult)
+                ?? [];
+        }
+
+        private static bool ShouldUseFallback(
+            RadioSearchCriteria criteria,
+            string query)
+        {
+            return
+                !string.IsNullOrWhiteSpace(criteria.Query) &&
+                string.IsNullOrWhiteSpace(criteria.Tag) &&
+                (query.Contains("tag=", StringComparison.OrdinalIgnoreCase) ||
+                 query.Contains("tagList=", StringComparison.OrdinalIgnoreCase));
+        }
+
         private string BuildQuery(
-            RadioSearchCriteria criteria)
+            RadioSearchCriteria criteria,
+            bool useFallback = false)
         {
             var parameters =
                 new List<string>();
@@ -264,7 +306,9 @@ namespace AIRadio.Server.Services.Radio
                     criteria.Query) &&
                 string.IsNullOrWhiteSpace(criteria.Tag))
             {
-                var parsed = RadioSearchParser.Parse(criteria.Query);
+                var parsed = useFallback
+                    ? RadioSearchParser.ParseFallback(criteria.Query)
+                    : RadioSearchParser.Parse(criteria.Query);
 
                 if (!string.IsNullOrWhiteSpace(parsed))
                 {
