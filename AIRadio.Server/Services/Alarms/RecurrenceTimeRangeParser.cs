@@ -474,7 +474,7 @@ public static partial class RecurrenceTimeRangeParser
         return candidate;
     }
 
-    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\\b")]
+    [GeneratedRegex(@"\b(?<sm>[a-z]+)\s+(?<sd>\d{1,2})(?:st|nd|rd|th)?\s+(?:through|to|-)\s*(?<em>[a-z]+)\s+(?<ed>\d{1,2})(?:st|nd|rd|th)?\b")]
     private static partial Regex DateRangeRegex();
 
     [GeneratedRegex(@"^(?:the\s+)?day\s+(?<direction>before|after)\s+(?<date>.+)$", RegexOptions.IgnoreCase)]
