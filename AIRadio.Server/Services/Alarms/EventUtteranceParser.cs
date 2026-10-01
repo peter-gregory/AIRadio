@@ -1,0 +1,162 @@
+using System.Text.RegularExpressions;
+
+namespace AIRadio.Server.Services.Alarms;
+
+public sealed record EventUtterance(
+    string? WhenExpression,
+    string? Content);
+
+public static class EventUtteranceParser
+{
+    private static readonly string MonthPattern =
+        @"(?:january|february|march|april|may|june|july|august|september|october|november|december)";
+
+    private static readonly string WeekdayPattern =
+        @"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)";
+
+    public static EventUtterance Parse(string text, DateTime? now = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+
+        var input = StripWakePhrase(Normalize(text));
+        input = StripCommandPrefix(input);
+
+        if (string.IsNullOrWhiteSpace(input))
+            return new(null, null);
+
+        var date = FindDateExpression(input, now);
+        if (date is null)
+            return new(null, CleanContent(input));
+
+        var content = ExtractContent(input, date.Value);
+        return new(date.Value.Expression, content);
+    }
+
+    public static string? TryExtractWhen(string text, DateTime? now = null)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        var input = StripWakePhrase(Normalize(text));
+        var date = FindDateExpression(input, now);
+
+        if (date is not null)
+            return date.Value.Expression;
+
+        try
+        {
+            RecurrenceTimeRangeParser.Parse(input, now);
+            return input;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static (string Expression, int Start, int Length)? FindDateExpression(
+        string text,
+        DateTime? now)
+    {
+        var patterns = new[]
+        {
+            $@"\b(?:the\s+)?(?:first|second|third|fourth|fifth|last)\s+{WeekdayPattern}\s+of\s+(?:every|each)\s+month\b",
+            $@"\b(?:every|each)\s+{WeekdayPattern}(?:\s+(?:and\s+)?{WeekdayPattern})+(?:\s+and\s+{WeekdayPattern})?\b",
+            $@"\b(?:every|each)\s+(?:weekday|weekend|day|daily|weekly)\b",
+            $@"\b(?:every|each)\s+{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s+\d{{4}})?\b",
+            $@"\b{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s+\d{{4}})?\b",
+            @"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b",
+            @"\bday after tomorrow\b",
+            @"\btomorrow\b",
+            @"\btoday\b",
+            $@"\b(?:(?:this|next)\s+)?{WeekdayPattern}\b"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            foreach (Match match in Regex.Matches(text, pattern, RegexOptions.IgnoreCase))
+            {
+                var expression = TrimDateExpression(match.Value);
+
+                try
+                {
+                    RecurrenceTimeRangeParser.Parse(expression, now);
+                    return (expression, match.Index, match.Length);
+                }
+                catch (ArgumentException)
+                {
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string ExtractContent(
+        string input,
+        (string Expression, int Start, int Length) date)
+    {
+        var before = input[..date.Start].Trim();
+        var after = input[(date.Start + date.Length)..].Trim();
+
+        var afterContent = CleanContent(after);
+        if (!string.IsNullOrWhiteSpace(afterContent))
+            return afterContent;
+
+        return CleanContent(before);
+    }
+
+    private static string CleanContent(string text)
+    {
+        var value = text.Trim().Trim(',', '.', ':', ';', '-', ' ');
+
+        value = Regex.Replace(
+            value,
+            @"^(?:and\s+)?(?:tell\s+me|say\s+to\s+me)\s+",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        value = Regex.Replace(
+            value,
+            @"^(?:and\s+)?to\s+",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        return value.Trim();
+    }
+
+    private static string StripCommandPrefix(string text)
+    {
+        var value = text.Trim();
+
+        value = Regex.Replace(
+            value,
+            @"^(?:please\s+)?(?:(?:add|create|schedule)\s+(?:an?\s+)?event\s*(?:for)?|remember(?:\s+this)?|remind\s+me)\s*",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        return value.Trim();
+    }
+
+    private static string StripWakePhrase(string text)
+    {
+        var value = text.Trim();
+
+        value = Regex.Replace(
+            value,
+            @"^(?:hey|hello|okay|ok)\s+radio\b[\s,:-]*",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        return value.Trim();
+    }
+
+    private static string Normalize(string value) =>
+        Regex.Replace(value.Trim(), @"\s+", " ");
+
+    private static string TrimDateExpression(string expression)
+    {
+        var value = expression.Trim().Trim(',', '.', ':', ';', ' ');
+        return Regex.Replace(value, @"\s+", " ");
+    }
+}
