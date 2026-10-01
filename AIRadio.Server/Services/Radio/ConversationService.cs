@@ -414,6 +414,35 @@ namespace AIRadio.Server.Services.Radio
                                         $"Tool '{selected.Name}' did not return its expected preamble state.");
                                 }
                             }
+                            // Event creation is fully deterministic. Parse the original
+                            // utterance into the schedule expression and the text to speak.
+                            // Never send event argument extraction through the LLM.
+                            if (string.Equals(selected.Name, "event", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parsed = EventUtteranceParser.Parse(request.Text);
+
+                                _logger.LogInformation(
+                                    "Tool {ToolName} parsed deterministically: When={When}, Content={Content}.",
+                                    selected.Name,
+                                    parsed.WhenExpression,
+                                    parsed.Content);
+
+                                response.ToolRequests.Clear();
+                                response.ToolRequests.Add(new ToolRequest
+                                {
+                                    Name = selected.Name,
+                                    Arguments = new JObject
+                                    {
+                                        ["when"] = string.IsNullOrWhiteSpace(parsed.WhenExpression)
+                                            ? ToolRequest.RequiredValue
+                                            : parsed.WhenExpression,
+                                        ["content"] = string.IsNullOrWhiteSpace(parsed.Content)
+                                            ? ToolRequest.RequiredValue
+                                            : parsed.Content
+                                    },
+                                    State = ToolRequestState.Initial
+                                });
+                            }
                             // Events have a deterministic parser. The request contains
                             // only a date/category selection, so there is no reason to
                             // spend another LLM round extracting arguments.
@@ -636,7 +665,27 @@ namespace AIRadio.Server.Services.Radio
             if (missing is null)
                 throw new InvalidOperationException("The pending tool request has no missing parameter.");
 
-            arguments[missing.Name] = text.Trim();
+            if (string.Equals(_pendingToolRequest.Name, "event", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(missing.Name, "when", StringComparison.OrdinalIgnoreCase))
+                {
+                    var when = EventUtteranceParser.TryExtractWhen(text);
+                    if (!string.IsNullOrWhiteSpace(when))
+                        arguments[missing.Name] = when;
+                }
+                else if (string.Equals(missing.Name, "content", StringComparison.OrdinalIgnoreCase))
+                {
+                    arguments[missing.Name] = text.Trim();
+                }
+                else
+                {
+                    arguments[missing.Name] = text.Trim();
+                }
+            }
+            else
+            {
+                arguments[missing.Name] = text.Trim();
+            }
 
             return new ToolRequest
             {
