@@ -379,8 +379,7 @@ namespace AIRadio.Server.Services.Radio
                     streamUrl,
 
                 Name =
-                    station.Name?.Trim() ??
-                    string.Empty,
+                    RadioStationNameNormalizer.Normalize(station.Name),
 
                 StreamUrl =
                     streamUrl,
