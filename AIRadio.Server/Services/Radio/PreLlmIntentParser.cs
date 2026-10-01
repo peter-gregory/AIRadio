@@ -58,6 +58,10 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
         if (IsSavedRadioPlaybackCommand(normalized))
             return Request("radioPlay");
 
+        var radioRequest = TryParseRadioCommand(text);
+        if (radioRequest is not null)
+            return radioRequest;
+
         return null;
     }
 
@@ -203,6 +207,96 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
             "play my saved stations" or
             "play my saved radio stations";
 
+    /// <summary>
+    /// Deterministically separates station-name requests from radio searches.
+    /// Explicit search verbs always produce radioSearch. A play request is a
+    /// station name when it has station-name structure (FM/AM/radio/network,
+    /// a numeric group, or an uppercase call sign). Otherwise known
+    /// descriptive music terms produce radioSearch.
+    /// </summary>
+    private static ToolRequest? TryParseRadioCommand(string text)
+    {
+        var command = CleanCommand(text);
+
+        var searchMatch = SearchRadioRegex().Match(command);
+        if (searchMatch.Success)
+        {
+            var query = CleanArgument(searchMatch.Groups["query"].Value);
+            return string.IsNullOrWhiteSpace(query)
+                ? null
+                : Request("radioSearch", new JObject { ["query"] = query });
+        }
+
+        var playMatch = PlayRadioRegex().Match(command);
+        if (!playMatch.Success)
+            return null;
+
+        var value = CleanArgument(playMatch.Groups["query"].Value);
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (LooksLikeStationName(value) || !ContainsRadioSearchTerm(value))
+            return Request("radioPlay", new JObject { ["stationName"] = value });
+
+        return Request("radioSearch", new JObject { ["query"] = value });
+    }
+
+    private static bool LooksLikeStationName(string value)
+    {
+        if (Regex.IsMatch(value, @"(?:fm|am|radio|network)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return true;
+
+        if (Regex.IsMatch(value, @"(?<![A-Za-z0-9])d+(?:.d+)?(?![A-Za-z0-9])"))
+            return true;
+
+        return Regex.IsMatch(value, @"(?<![A-Za-z])(?:[A-Z]{3,5})(?![A-Za-z])");
+    }
+
+    private static bool ContainsRadioSearchTerm(string value)
+    {
+        foreach (var term in RadioSearchTerms)
+        {
+            if (Regex.IsMatch(
+                    value,
+                    $@"(?<![A-Za-z0-9]){Regex.Escape(term)}(?![A-Za-z0-9])",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string CleanCommand(string text) =>
+        Regex.Replace(
+            text.Trim().TrimEnd('.', '!', '?'),
+            @"s+",
+            " ")
+            .Trim();
+
+    private static string CleanArgument(string text) =>
+        Regex.Replace(
+            text.Trim().TrimEnd('.', '!', '?'),
+            @"s+",
+            " ")
+            .Trim(' ', ',', ';', ':', '-');
+
+    private static readonly string[] RadioSearchTerms =
+    [
+        "unplugged", "smooth", "classic", "soft", "hard", "light",
+        "easy listening", "ambient", "chill", "chillout", "lounge",
+        "acoustic", "rock", "alternative", "indie", "jazz", "blues",
+        "country", "folk", "pop", "rap", "hip hop", "hip-hop", "r&b",
+        "soul", "funk", "disco", "dance", "electronic", "edm", "house",
+        "techno", "trance", "metal", "punk", "reggae", "ska", "gospel",
+        "christian", "latin", "salsa", "reggaeton", "oldies", "hits",
+        "music", "news", "sports", "talk", "comedy", "podcast",
+        "spanish", "english", "french", "german", "italian", "portuguese",
+        "dutch", "russian", "ukrainian", "polish", "turkish", "arabic",
+        "hebrew", "greek", "hindi", "tamil", "telugu", "bengali",
+        "punjabi", "japanese", "korean", "chinese"
+    ];
+
     private static string NormalizeText(string text) =>
         Regex.Replace(
             text.Trim().TrimEnd('.', '!', '?'),
@@ -217,6 +311,14 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
             Arguments = arguments ?? new JObject(),
             State = ToolRequestState.Initial
         };
+
+    [GeneratedRegex(@"^(?:find|search(?: for)?|look for|look up|give me|show me)\s+(?:a\s+)?(?:radio\s+)?(?:station\s+)?(?<query>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex SearchRadioRegex();
+
+    [GeneratedRegex(@"^(?:play|listen to|tune to|turn on)\s+(?:the\s+)?(?:radio\s+)?(?<query>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PlayRadioRegex();
 
     [GeneratedRegex(@"^(?:set\s+(?:the\s+)?(?:radio\s+)?volume|(?:radio\s+)?volume|turn\s+(?:the\s+)?(?:radio\s+)?volume)\s*(?:to|at)?\s*(?<value>.+?)(?:\s+percent)?$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
