@@ -156,7 +156,8 @@ public static partial class RecurrenceTimeRangeParser
         Regex.IsMatch(text, @"\b(every|each|weekly|weekdays|weekends)\b", RegexOptions.IgnoreCase);
 
     private static bool IsYearly(string text) =>
-        Regex.IsMatch(text, @"\b(every|each)\s+(year|yearly)|\bannually\b", RegexOptions.IgnoreCase);
+        Regex.IsMatch(text, @"\b(every|each)\s+(year|yearly)|\bannually\b", RegexOptions.IgnoreCase) ||
+        Regex.IsMatch(text, @"\b(every|each)\s+" + string.Join("|", MonthNames.Select(Regex.Escape)) + @"\s+\d{1,2}(?:st|nd|rd|th)?\b", RegexOptions.IgnoreCase);
 
     private static bool IsMonthlyOrdinal(string text) =>
         Regex.IsMatch(text, @"\b(first|second|third|fourth|fifth|last)\b", RegexOptions.IgnoreCase) &&
