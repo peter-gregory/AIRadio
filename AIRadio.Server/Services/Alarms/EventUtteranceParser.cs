@@ -64,6 +64,7 @@ public static class EventUtteranceParser
             $@"\b(?:every|each)\s+{WeekdayPattern}(?:\s+(?:and\s+)?{WeekdayPattern})+(?:\s+and\s+{WeekdayPattern})?\b",
             $@"\b(?:every|each)\s+(?:weekday|weekend|day|daily|weekly)\b",
             $@"\b(?:every|each)\s+{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s+\d{{4}})?\b",
+            $@"\b{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?\s+(?:through|to|-)\s*{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?\b",
             $@"\b{MonthPattern}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:\s+\d{{4}})?\b",
             @"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b",
             @"\bday after tomorrow\b",
@@ -81,7 +82,20 @@ public static class EventUtteranceParser
                 try
                 {
                     RecurrenceTimeRangeParser.Parse(expression, now);
-                    return (expression, match.Index, match.Length);
+                    var length = match.Length;
+                    var remainder = text[(match.Index + length)..];
+                    var time = Regex.Match(
+                        remainder,
+                        @"^\s+at\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b",
+                        RegexOptions.IgnoreCase);
+
+                    if (time.Success)
+                    {
+                        length += time.Length;
+                        expression = TrimDateExpression(text.Substring(match.Index, length));
+                    }
+
+                    return (expression, match.Index, length);
                 }
                 catch (ArgumentException)
                 {
