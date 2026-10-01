@@ -29,7 +29,7 @@ struct Options {
   // command line and apply to the active daemon session.
   int sid = 0;
   float speed = 1.0f;
-  float silence_scale = 0.2f;
+  float silence_scale = 0.5f;
 };
 
 struct TtsEngine {
