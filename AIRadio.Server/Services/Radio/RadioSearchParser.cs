@@ -102,6 +102,60 @@ public static class RadioSearchParser
         return string.Join("&", parameters);
     }
 
+    /// <summary>
+    /// Builds a broader station-name search for a descriptive query.
+    /// This is used only after a tag/tagList search returns no stations.
+    /// Location and language constraints are preserved when present.
+    /// </summary>
+    public static string ParseFallback(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+
+        var request = RemovePrefix(Clean(text));
+
+        if (request.Length == 0)
+            return string.Empty;
+
+        var parameters = new List<string>();
+
+        var location = Regex.Match(
+            request,
+            @"\b(?:in|from|near|around)\s+(.+)$",
+            RegexOptions.IgnoreCase);
+
+        if (location.Success)
+        {
+            var value = Clean(location.Groups[1].Value);
+
+            if (!value.Equals("news", StringComparison.OrdinalIgnoreCase) &&
+                !value.Equals("the news", StringComparison.OrdinalIgnoreCase))
+            {
+                Add(parameters, "city", value);
+                request = Clean(request[..location.Index]);
+            }
+        }
+
+        foreach (var language in Languages)
+        {
+            var match = Regex.Match(
+                request,
+                $@"\b{Regex.Escape(language)}\b",
+                RegexOptions.IgnoreCase);
+
+            if (!match.Success)
+                continue;
+
+            Add(parameters, "language", language);
+            request = Clean(request.Remove(match.Index, match.Length));
+            break;
+        }
+
+        if (request.Length > 0)
+            Add(parameters, "name", request);
+
+        return string.Join("&", parameters);
+    }
+
     private static string RemovePrefix(string value)
     {
         string[] prefixes =
