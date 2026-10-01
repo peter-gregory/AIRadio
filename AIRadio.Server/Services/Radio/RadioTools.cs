@@ -296,7 +296,19 @@ User: "Go to the next station"
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
-        Validate(request, cancellationToken); var station = State.RadioPlaylist[(State.RadioPlaylistIndex + 1) % State.RadioPlaylist.Count];
+        Validate(request, cancellationToken);
+
+        if (State.RadioPlaylist.Count == 0)
+        {
+            const string speech = "There are no other radio stations available right now.";
+            return ToolResult.Failed(
+                Name,
+                "The current radio playlist is empty.",
+                speech,
+                complete: true);
+        }
+
+        var station = State.RadioPlaylist[(State.RadioPlaylistIndex + 1) % State.RadioPlaylist.Count];
         await Audio.PlayStationAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
@@ -331,7 +343,19 @@ User: "Play the previous station"
 """;
     public override async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
-        Validate(request, cancellationToken); var station = State.RadioPlaylist[(State.RadioPlaylistIndex - 1 + State.RadioPlaylist.Count) % State.RadioPlaylist.Count];
+        Validate(request, cancellationToken);
+
+        if (State.RadioPlaylist.Count == 0)
+        {
+            const string speech = "There are no other radio stations available right now.";
+            return ToolResult.Failed(
+                Name,
+                "The current radio playlist is empty.",
+                speech,
+                complete: true);
+        }
+
+        var station = State.RadioPlaylist[(State.RadioPlaylistIndex - 1 + State.RadioPlaylist.Count) % State.RadioPlaylist.Count];
         await Audio.PlayStationAsync(station, cancellationToken);
         return ToolResult.Successful(
             Name,
