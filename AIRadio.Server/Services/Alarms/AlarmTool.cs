@@ -58,25 +58,24 @@ Confirm only when the alarm will activate.
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Collect required arguments one at a time. Preserve all remaining
-        // !required! values in the pending request so a multi-turn collection
-        // can resume without losing previously requested arguments.
+        // Collect required arguments in a fixed order: when first, then actions.
+        // Preserve every other !required! value in the pending request.
         var missing = request.MissingRequiredArguments;
-
-        if (missing.Contains("actions", StringComparer.OrdinalIgnoreCase))
-            return Task.FromResult(Missing(request, "actions", "What should the alarm do?"));
 
         if (missing.Contains("when", StringComparer.OrdinalIgnoreCase))
             return Task.FromResult(Missing(request, "when", "When should the alarm go off?"));
 
+        if (missing.Contains("actions", StringComparer.OrdinalIgnoreCase))
+            return Task.FromResult(Missing(request, "actions", "What should the alarm do?"));
+
         var actionsText = request.GetString("actions");
         var when = request.GetString("when");
 
-        if (string.IsNullOrWhiteSpace(actionsText))
-            return Task.FromResult(Missing(request, "actions", "What should the alarm do?"));
-
         if (string.IsNullOrWhiteSpace(when))
             return Task.FromResult(Missing(request, "when", "When should the alarm go off?"));
+
+        if (string.IsNullOrWhiteSpace(actionsText))
+            return Task.FromResult(Missing(request, "actions", "What should the alarm do?"));
 
         try
         {
@@ -126,38 +125,29 @@ Confirm only when the alarm will activate.
         {
             SchedulePatternType.Once when range.DueAt.HasValue =>
                 $"Okay, your alarm is set for {TimeSpeechFormatter.Format(range.DueAt.Value)}.",
-
             SchedulePatternType.Once when range.StartDate.HasValue &&
                                          range.StartDate.Value == DateOnly.FromDateTime(DateTime.Now) &&
                                          !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for {time}.",
-
             SchedulePatternType.Once when range.StartDate.HasValue && !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for {range.StartDate.Value:MMMM d} at {time}.",
-
             SchedulePatternType.Once when range.StartDate.HasValue =>
                 $"Okay, your alarm is set for {range.StartDate.Value:MMMM d}.",
-
             SchedulePatternType.Daily when !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for every day at {time}.",
-
             SchedulePatternType.Weekly when !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for every {FormatDays(range.DaysOfWeek)} at {time}.",
-
             SchedulePatternType.Monthly when range.WeekOfMonth.HasValue &&
                                              range.WeekdayOfMonth.HasValue &&
                                              !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for {FormatOrdinal(range.WeekOfMonth.Value)} {range.WeekdayOfMonth.Value} of every month at {time}.",
-
             SchedulePatternType.Monthly when range.DayOfMonth.HasValue &&
                                              !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for the {FormatOrdinal(range.DayOfMonth.Value)} of every month at {time}.",
-
             SchedulePatternType.Yearly when range.Month.HasValue &&
                                             range.DayOfMonth.HasValue &&
                                             !string.IsNullOrEmpty(time) =>
                 $"Okay, your alarm is set for {new DateTime(2000, range.Month.Value, range.DayOfMonth.Value):MMMM d} every year at {time}.",
-
             _ => "Okay, your alarm is set."
         };
     }
