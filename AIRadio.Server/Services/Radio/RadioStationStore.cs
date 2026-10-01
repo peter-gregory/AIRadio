@@ -57,6 +57,7 @@ public sealed class RadioStationStore : IRadioStationStore
         {
             if (Find(_data.SavedStations, station.Id) is not null) return;
             var saved = station.Clone();
+            saved.Name = RadioStationNameNormalizer.Normalize(saved.Name);
             saved.IsFavorite = false;
             _data.SavedStations.Add(saved);
         }
@@ -89,6 +90,7 @@ public sealed class RadioStationStore : IRadioStationStore
             if (existing is null)
             {
                 existing = station.Clone();
+                existing.Name = RadioStationNameNormalizer.Normalize(existing.Name);
                 _data.SavedStations.Add(existing);
             }
             existing.IsFavorite = true;
@@ -129,6 +131,9 @@ public sealed class RadioStationStore : IRadioStationStore
             _data = JsonSerializer.Deserialize<StoreData>(
                 File.ReadAllText(_dataFile),
                 _jsonOptions) ?? new StoreData();
+
+            foreach (var station in _data.SavedStations)
+                station.Name = RadioStationNameNormalizer.Normalize(station.Name);
         }
         catch (JsonException ex)
         {
