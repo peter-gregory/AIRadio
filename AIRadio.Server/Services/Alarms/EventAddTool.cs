@@ -115,7 +115,7 @@ Confirm only that the event was added and when it will occur.
             SchedulePatternType.Daily =>
                 "Okay, I'll remember that every day.",
 
-            SchedulePatternType.Weekly when range.DaysOfWeek.Count > 0 =>
+            SchedulePatternType.Weekly when range.DaysOfWeek.Count() > 0 =>
                 $"Okay, I'll remember that every {FormatDays(range.DaysOfWeek)}.",
 
             SchedulePatternType.Monthly when range.WeekOfMonth.HasValue &&
