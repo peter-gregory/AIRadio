@@ -93,11 +93,22 @@ public static class RadioSearchParser
         request = Clean(request);
 
         if (tags.Count == 1)
+        {
             Add(parameters, "tag", tags[0]);
+        }
         else if (tags.Count > 1)
+        {
             Add(parameters, "tagList", string.Join(",", tags));
+        }
         else if (request.Length > 0)
-            Add(parameters, "tag", request);
+        {
+            var genre = FindGenre(request);
+
+            Add(
+                parameters,
+                "tag",
+                genre ?? request);
+        }
 
         return string.Join("&", parameters);
     }
@@ -154,6 +165,120 @@ public static class RadioSearchParser
             Add(parameters, "name", request);
 
         return string.Join("&", parameters);
+    }
+
+    private static string? FindGenre(string request)
+    {
+        var normalizedRequest = Normalize(request);
+
+        if (normalizedRequest.Length == 0)
+            return null;
+
+        var bestGenre = default(string);
+        var bestScore = 0.0;
+
+        foreach (var genre in Tags)
+        {
+            var score = GenreSimilarity(normalizedRequest, Normalize(genre));
+
+            if (score <= bestScore)
+                continue;
+
+            bestScore = score;
+            bestGenre = genre;
+        }
+
+        return bestScore >= 0.55 ? bestGenre : null;
+    }
+
+    private static double GenreSimilarity(string request, string genre)
+    {
+        if (request.Equals(genre, StringComparison.OrdinalIgnoreCase))
+            return 1.0;
+
+        var requestWords = request.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var genreWords = genre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        var wordScores =
+            requestWords
+                .Select(requestWord =>
+                    genreWords.Max(genreWord =>
+                        Similarity(requestWord, genreWord)))
+                .ToArray();
+
+        var averageWordScore =
+            wordScores.Length == 0
+                ? 0.0
+                : wordScores.Average();
+
+        var matchedWords =
+            wordScores.Count(score => score >= 0.72);
+
+        var tokenCoverage =
+            genreWords.Length == 0
+                ? 0.0
+                : (double)matchedWords / genreWords.Length;
+
+        var wholePhraseScore =
+            Similarity(request, genre);
+
+        return Math.Max(
+            wholePhraseScore,
+            (averageWordScore * 0.65) + (tokenCoverage * 0.35));
+    }
+
+    private static double Similarity(string left, string right)
+    {
+        if (left.Equals(right, StringComparison.OrdinalIgnoreCase))
+            return 1.0;
+
+        var longest = Math.Max(left.Length, right.Length);
+
+        if (longest == 0)
+            return 1.0;
+
+        return 1.0 - ((double)LevenshteinDistance(left, right) / longest);
+    }
+
+    private static int LevenshteinDistance(string left, string right)
+    {
+        var previous = new int[right.Length + 1];
+
+        for (var j = 0; j <= right.Length; j++)
+            previous[j] = j;
+
+        for (var i = 1; i <= left.Length; i++)
+        {
+            var current = new int[right.Length + 1];
+            current[0] = i;
+
+            for (var j = 1; j <= right.Length; j++)
+            {
+                var substitutionCost =
+                    char.ToLowerInvariant(left[i - 1]) ==
+                    char.ToLowerInvariant(right[j - 1])
+                        ? 0
+                        : 1;
+
+                current[j] = Math.Min(
+                    Math.Min(
+                        current[j - 1] + 1,
+                        previous[j] + 1),
+                    previous[j - 1] + substitutionCost);
+            }
+
+            previous = current;
+        }
+
+        return previous[right.Length];
+    }
+
+    private static string Normalize(string value)
+    {
+        value = value.ToLowerInvariant();
+        value = Regex.Replace(value, @"[^a-z0-9]+", " ");
+        value = Regex.Replace(value, @"\s+", " ");
+        return value.Trim();
     }
 
     private static string RemovePrefix(string value)
