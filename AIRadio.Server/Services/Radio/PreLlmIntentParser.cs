@@ -316,7 +316,7 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SearchRadioRegex();
 
-    [GeneratedRegex(@"^(?:play|listen to|tune to|turn on)\s+(?:the\s+)?(?:radio\s+)?(?<query>.+)$",
+    [GeneratedRegex(@"^(?:play|listen to|tune to|turn on)\s+(?:the\s+)?(?:radio\s+)?(?:station\s+)?(?:some\s+)?(?<query>.+)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PlayRadioRegex();
 
