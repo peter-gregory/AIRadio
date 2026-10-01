@@ -58,6 +58,17 @@ Confirm only when the alarm will activate.
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Collect required arguments one at a time. Preserve all remaining
+        // !required! values in the pending request so a multi-turn collection
+        // can resume without losing previously requested arguments.
+        var missing = request.MissingRequiredArguments;
+
+        if (missing.Contains("actions", StringComparer.OrdinalIgnoreCase))
+            return Task.FromResult(Missing(request, "actions", "What should the alarm do?"));
+
+        if (missing.Contains("when", StringComparer.OrdinalIgnoreCase))
+            return Task.FromResult(Missing(request, "when", "When should the alarm go off?"));
+
         var actionsText = request.GetString("actions");
         var when = request.GetString("when");
 
@@ -184,7 +195,8 @@ Confirm only when the alarm will activate.
         var pending = new ToolRequest
         {
             Name = Name,
-            Arguments = (JObject)request.Arguments.DeepClone()
+            Arguments = (JObject)request.Arguments.DeepClone(),
+            State = ToolRequestState.ArgumentParsing
         };
 
         pending.Arguments[parameter] = ToolRequest.RequiredValue;
