@@ -1,5 +1,6 @@
 ﻿using AIRadio.Server.Models.Radio;
 using Newtonsoft.Json;
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace AIRadio.Server.Services.Radio
@@ -48,7 +49,7 @@ namespace AIRadio.Server.Services.Radio
                 GetConfigurationInt(
                     configuration,
                     "RadioBrowser:DefaultLimit",
-                    25);
+                    50);
 
             _maxLimit =
                 GetConfigurationInt(
@@ -132,6 +133,26 @@ namespace AIRadio.Server.Services.Radio
                 {
                     _logger.LogDebug("Radio Browser returned no stations.");
                     return [];
+                }
+
+                var preferredLanguage =
+                    string.IsNullOrWhiteSpace(criteria.Language)
+                        ? GetInstalledLanguage()
+                        : null;
+
+                if (!string.IsNullOrWhiteSpace(preferredLanguage))
+                {
+                    results = results
+                        .Select((station, index) => new { Station = station, Index = index })
+                        .OrderByDescending(x => HasLanguage(x.Station, preferredLanguage))
+                        .ThenByDescending(x => x.Station.ClickCount)
+                        .ThenBy(x => x.Index)
+                        .Select(x => x.Station)
+                        .ToList();
+
+                    _logger.LogDebug(
+                        "Preferring installed radio language '{Language}' before popularity ranking.",
+                        preferredLanguage);
                 }
 
                 var usable =
@@ -353,6 +374,46 @@ namespace AIRadio.Server.Services.Radio
             return query;
         }
 
+        private static string? GetInstalledLanguage()
+        {
+            try
+            {
+                var installedCulture = CultureInfo.InstalledUICulture;
+                var languageCode = installedCulture.TwoLetterISOLanguageName;
+
+                if (string.IsNullOrWhiteSpace(languageCode) ||
+                    languageCode.Equals("iv", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                return CultureInfo.GetCultureInfo(languageCode).EnglishName;
+            }
+            catch (CultureNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        private static bool HasLanguage(
+            RadioBrowserStation station,
+            string preferredLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(station.Language))
+                return false;
+
+            var preferred = NormalizeLanguage(preferredLanguage);
+
+            return station.Language
+                .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(language => NormalizeLanguage(language).Equals(preferred, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string NormalizeLanguage(string language)
+        {
+            return language.Trim().ToLowerInvariant();
+        }
+
         private static bool IsUsableStation(
             RadioBrowserStation station)
         {
@@ -540,6 +601,9 @@ namespace AIRadio.Server.Services.Radio
 
             [JsonPropertyName("votes")]
             public int Votes { get; set; }
+
+            [JsonPropertyName("clickcount")]
+            public int ClickCount { get; set; }
 
             [JsonPropertyName("geo_lat")]
             public double? Latitude { get; set; }
