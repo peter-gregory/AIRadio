@@ -52,10 +52,22 @@ Confirm only that the event was added and when it will occur.
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Keep the complete collection of missing arguments in the pending
+        // request. Ask for one value at a time in a deterministic order.
+        // The remaining !required! values survive each continuation.
+        var missing = request.MissingRequiredArguments;
+
+        if (missing.Contains("when", StringComparer.OrdinalIgnoreCase))
+            return Task.FromResult(Missing(request, "when", "When should I remember it?"));
+
+        if (missing.Contains("content", StringComparer.OrdinalIgnoreCase))
+            return Task.FromResult(Missing(request, "content", "What should I say?"));
+
         var content = request.GetString("content");
         var when = request.GetString("when");
 
-        // Collect the schedule first so the next voice response supplies the date.
+        // Also handle missing values represented as null/empty rather than
+        // !required!, which can occur after a continuation has been parsed.
         if (string.IsNullOrWhiteSpace(when))
             return Task.FromResult(Missing(request, "when", "When should I remember it?"));
 
@@ -158,10 +170,14 @@ Confirm only that the event was added and when it will occur.
         string parameter,
         string prompt)
     {
+        // Preserve every missing argument. Only the selected parameter is
+        // requested on this turn; the continuation retains the complete
+        // collection for subsequent turns.
         var pending = new ToolRequest
         {
             Name = Name,
-            Arguments = (JObject)request.Arguments.DeepClone()
+            Arguments = (JObject)request.Arguments.DeepClone(),
+            State = ToolRequestState.ArgumentParsing
         };
 
         pending.Arguments[parameter] = ToolRequest.RequiredValue;
