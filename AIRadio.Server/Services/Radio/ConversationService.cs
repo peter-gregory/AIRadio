@@ -882,7 +882,11 @@ namespace AIRadio.Server.Services.Radio
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Tool {ToolName} failed.", request.Name);
-                return ToolResult.Failed(request.Name, ex.Message);
+                return ToolResult.Failed(
+                    request.Name,
+                    ex.Message,
+                    "I'm sorry, I couldn't complete that request.",
+                    complete: true);
             }
         }
 
