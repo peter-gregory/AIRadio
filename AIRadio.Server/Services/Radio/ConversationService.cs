@@ -667,20 +667,24 @@ namespace AIRadio.Server.Services.Radio
 
             if (string.Equals(_pendingToolRequest.Name, "event", StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(missing.Name, "when", StringComparison.OrdinalIgnoreCase))
+                var parsed = EventUtteranceParser.Parse(text);
+
+                if (!string.IsNullOrWhiteSpace(parsed.WhenExpression))
+                    arguments["when"] = parsed.WhenExpression;
+
+                if (!string.IsNullOrWhiteSpace(parsed.Content))
+                    arguments["content"] = parsed.Content;
+
+                // A content-only continuation has no date expression, so preserve
+                // the user's exact text as the event content.
+                if (string.IsNullOrWhiteSpace(parsed.WhenExpression) &&
+                    string.Equals(missing.Name, "content", StringComparison.OrdinalIgnoreCase))
                 {
-                    var when = EventUtteranceParser.TryExtractWhen(text);
-                    if (!string.IsNullOrWhiteSpace(when))
-                        arguments[missing.Name] = when;
+                    arguments["content"] = text.Trim();
                 }
-                else if (string.Equals(missing.Name, "content", StringComparison.OrdinalIgnoreCase))
-                {
-                    arguments[missing.Name] = text.Trim();
-                }
-                else
-                {
-                    arguments[missing.Name] = text.Trim();
-                }
+
+                // A date-only continuation that the parser cannot recognize stays
+                // required so EventAddTool will ask for the date again.
             }
             else
             {
