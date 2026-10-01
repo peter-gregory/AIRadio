@@ -446,7 +446,7 @@ namespace AIRadio.Server.Services.Radio
                             // Events have a deterministic parser. The request contains
                             // only a date/category selection, so there is no reason to
                             // spend another LLM round extracting arguments.
-                            if (string.Equals(selected.Name, "events", StringComparison.OrdinalIgnoreCase))
+                            else if (string.Equals(selected.Name, "events", StringComparison.OrdinalIgnoreCase))
                             {
                                 var parsed = EventsParser.Parse(request.Text);
 
