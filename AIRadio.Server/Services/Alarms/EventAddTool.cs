@@ -18,13 +18,31 @@ public sealed class EventAddTool : ITool
     public string GetLlmInstructions() => """
 EVENT TOOL
 Create a scheduled event or reminder.
-The when value is the complete human date/time or recurrence expression.
-Format: {tool:event,content=<what to remember>,when=<complete date/time expression>}
+
+ARGUMENTS
+- content: the complete human-language text describing what AIRadio should remember or say when the event occurs. Preserve the user's wording.
+- when: the complete human date/time or recurrence expression. Keep it intact.
+
+Format: {tool:event,content=<complete content expression>,when=<complete date/time expression>}
+
 Examples:
+{tool:event,content="It's your birthday, celebrate",when="October ninth"}
 {tool:event,content="Take out the trash",when="tomorrow"}
 {tool:event,content="Check the pool",when="every Monday Wednesday and Friday"}
 {tool:event,content="Check the meter",when="the first Thursday of every month"}
-Do not split when into date, time, recurrence, weekday, or other fields.
+
+The content value is the event's speech/reminder text. Do not replace it with words such as "add an event" or "remind me".
+The when value is not a set of date/time fields. Do not split it into date, time, recurrence, weekday, or other fields.
+Relative expressions must remain complete.
+""";
+
+    public string GetLlmResponseInstructions() => """
+EVENT RESPONSE
+Confirm only that the event was added and when it will occur.
+
+- Do not repeat or describe the event content unless necessary.
+- Use the event's When structure to express the scheduled date or recurrence naturally.
+- Keep the response to one short sentence.
 """;
 
     public Task<ToolResult> ExecuteAsync(
@@ -37,11 +55,12 @@ Do not split when into date, time, recurrence, weekday, or other fields.
         var content = request.GetString("content");
         var when = request.GetString("when");
 
-        if (string.IsNullOrWhiteSpace(content))
-            return Task.FromResult(Missing(request, "content", "What should I remember?"));
-
+        // Collect the schedule first so the next voice response supplies the date.
         if (string.IsNullOrWhiteSpace(when))
             return Task.FromResult(Missing(request, "when", "When should I remember it?"));
+
+        if (string.IsNullOrWhiteSpace(content))
+            return Task.FromResult(Missing(request, "content", "What should I say?"));
 
         try
         {
@@ -58,12 +77,80 @@ Do not split when into date, time, recurrence, weekday, or other fields.
             };
 
             var added = _alarmService.AddEvent(scheduled);
-            return Task.FromResult(ToolResult.Successful(Name, "Event added.", added));
+            var confirmation = FormatConfirmation(range);
+
+            return Task.FromResult(
+                ToolResult.Successful(
+                    Name,
+                    "Event added.",
+                    added,
+                    exactPrompt: confirmation,
+                    complete: true));
         }
         catch (Exception ex)
         {
             return Task.FromResult(ToolResult.Failed(Name, ex.Message));
         }
+    }
+
+    private static string FormatConfirmation(RecurrenceTimeRange range)
+    {
+        return range.Type switch
+        {
+            SchedulePatternType.Once when range.StartDate.HasValue =>
+                $"Okay, I'll remember that on {FormatDate(range.StartDate.Value)}.",
+
+            SchedulePatternType.Daily =>
+                "Okay, I'll remember that every day.",
+
+            SchedulePatternType.Weekly when range.DaysOfWeek.Count > 0 =>
+                $"Okay, I'll remember that every {FormatDays(range.DaysOfWeek)}.",
+
+            SchedulePatternType.Monthly when range.WeekOfMonth.HasValue &&
+                                             range.WeekdayOfMonth.HasValue =>
+                $"Okay, I'll remember that on the {FormatOrdinal(range.WeekOfMonth.Value)} {range.WeekdayOfMonth.Value} of every month.",
+
+            SchedulePatternType.Monthly when range.DayOfMonth.HasValue =>
+                $"Okay, I'll remember that on the {FormatOrdinal(range.DayOfMonth.Value)} of every month.",
+
+            SchedulePatternType.Yearly when range.Month.HasValue &&
+                                            range.DayOfMonth.HasValue =>
+                $"Okay, I'll remember that on {new DateTime(2000, range.Month.Value, range.DayOfMonth.Value):MMMM d} every year.",
+
+            _ => "Okay, I'll remember that."
+        };
+    }
+
+    private static string FormatDate(DateOnly date)
+    {
+        return $"{date:MMMM} {date.Day}";
+    }
+
+    private static string FormatDays(IReadOnlyList<DayOfWeek> days)
+    {
+        var names = days.Select(x => x.ToString()).ToArray();
+
+        return names.Length switch
+        {
+            0 => "the scheduled days",
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => string.Join(", ", names[..^1]) + $", and {names[^1]}"
+        };
+    }
+
+    private static string FormatOrdinal(int value)
+    {
+        if (value == -1)
+            return "last";
+
+        return value switch
+        {
+            1 => "1st",
+            2 => "2nd",
+            3 => "3rd",
+            _ => $"{value}th"
+        };
     }
 
     private ToolResult Missing(
