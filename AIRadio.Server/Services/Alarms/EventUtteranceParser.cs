@@ -118,6 +118,12 @@ public static class EventUtteranceParser
 
         value = Regex.Replace(
             value,
+            @"^and\s+",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        value = Regex.Replace(
+            value,
             @"^(?:and\s+)?to\s+",
             string.Empty,
             RegexOptions.IgnoreCase);
