@@ -135,6 +135,19 @@ namespace AIRadio.Server.Services.Radio
                     return [];
                 }
 
+                var uniqueResults =
+                    results
+                        .GroupBy(GetStationDeduplicationKey, StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
+                        .ToList();
+
+                _logger.LogDebug(
+                    "Radio Browser returned {RawCount} stations; {UniqueCount} unique stations after deduplication.",
+                    results.Count,
+                    uniqueResults.Count);
+
+                results = uniqueResults;
+
                 var preferredLanguage =
                     string.IsNullOrWhiteSpace(criteria.Language)
                         ? GetInstalledLanguage()
@@ -412,6 +425,35 @@ namespace AIRadio.Server.Services.Radio
         private static string NormalizeLanguage(string language)
         {
             return language.Trim().ToLowerInvariant();
+        }
+
+        private static string GetStationDeduplicationKey(
+            RadioBrowserStation station)
+        {
+            var streamUrl = GetStreamUrl(station);
+
+            if (!string.IsNullOrWhiteSpace(streamUrl))
+            {
+                return $"url:{NormalizeDeduplicationValue(streamUrl)}";
+            }
+
+            var name = RadioStationNameNormalizer.Normalize(station.Name);
+            var homepage = NormalizeDeduplicationValue(station.Homepage);
+
+            if (!string.IsNullOrWhiteSpace(name) &&
+                !string.IsNullOrWhiteSpace(homepage))
+            {
+                return $"station:{NormalizeDeduplicationValue(name)}|{homepage}";
+            }
+
+            return $"uuid:{station.StationUuid}";
+        }
+
+        private static string NormalizeDeduplicationValue(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : value.Trim().TrimEnd('/').ToLowerInvariant();
         }
 
         private static bool IsUsableStation(
