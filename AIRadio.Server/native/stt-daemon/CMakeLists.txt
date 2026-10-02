@@ -15,7 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ============================================================================
 
 set(SHERPA_ONNX_ROOT
-    "/home/radio/sherpa-onnx"
+    "/mnt/linux-data/sherpa-onnx"
     CACHE PATH "Sherpa-ONNX source directory"
 )
 
