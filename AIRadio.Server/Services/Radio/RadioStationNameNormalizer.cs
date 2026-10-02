@@ -27,10 +27,10 @@ internal static partial class RadioStationNameNormalizer
         return canonicalName;
     }
 
-    [GeneratedRegex(@"[\\p{Cc}\\p{Cf}]+")]
+    [GeneratedRegex(@"[\p{Cc}\p{Cf}]+")]
     private static partial Regex ControlCharacterRegex();
 
-    [GeneratedRegex(@"\\s+")]
+    [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
 
     [GeneratedRegex(@"^[A-Z]{3,5}$")]
