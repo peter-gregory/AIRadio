@@ -829,6 +829,16 @@ class PipeWireCapture {
       return false;
     }
 
+    events_ = {};
+    events_.version =
+        PW_VERSION_STREAM_EVENTS;
+
+    events_.state_changed =
+        &PipeWireCapture::OnStateChanged;
+
+    events_.process =
+        &PipeWireCapture::OnProcess;
+
     props_ = pw_properties_new(
         PW_KEY_MEDIA_TYPE,
         "Audio",
@@ -864,56 +874,13 @@ class PipeWireCapture {
 
     // pw_stream_new_simple takes ownership
     // of props_ on success.
-    props_ = nullptr;
+    if (stream_) {
+      props_ = nullptr;
+    }
 
     if (!stream_) {
       std::cerr
           << "Failed to create PipeWire simple stream\n";
-
-      Cleanup();
-      return false;
-    }
-
-    events_ = {};
-    events_.version =
-        PW_VERSION_STREAM_EVENTS;
-
-    events_.state_changed =
-        &PipeWireCapture::OnStateChanged;
-
-    events_.process =
-        &PipeWireCapture::OnProcess;
-
-    // Recreate stream with valid events.
-    pw_stream_destroy(stream_);
-
-    stream_ = pw_stream_new_simple(
-        pw_loop_,
-        "stt-daemon-capture",
-        pw_properties_new(
-            PW_KEY_MEDIA_TYPE,
-            "Audio",
-
-            PW_KEY_MEDIA_CATEGORY,
-            "Capture",
-
-            PW_KEY_MEDIA_ROLE,
-            "Communication",
-
-            PW_KEY_NODE_NAME,
-            "stt-daemon-capture",
-
-            PW_KEY_TARGET_OBJECT,
-            g_config.pipewire_source.c_str(),
-
-            nullptr),
-        &events_,
-        this);
-
-    if (!stream_) {
-      std::cerr
-          << "Failed to create PipeWire simple stream "
-             "with events\n";
 
       Cleanup();
       return false;
@@ -932,8 +899,8 @@ class PipeWireCapture {
 
     spa_pod_builder builder =
         SPA_POD_BUILDER_INIT(
-            buffer_,
-            sizeof(buffer_));
+            buffer_.data(),
+            buffer_.size());
 
     const spa_pod* params[] = {
       spa_format_audio_raw_build(
@@ -1118,16 +1085,12 @@ class PipeWireCapture {
       temp_samples_.resize(samples);
 
       for (size_t i = 0; i < samples; ++i) {
-        int16_t s = 0;
-
         std::memcpy(
-            &s,
+            &temp_samples_[i],
             raw +
                 offset +
                 i * sizeof(int16_t),
-            sizeof(s));
-
-        temp_samples_[i] = s;
+            sizeof(int16_t));
       }
 
       ring_->WriteSamplesS16(
@@ -1164,34 +1127,13 @@ class PipeWireCapture {
   }
 
  private:
-  static void OnStateChanged(
-      void* userdata,
-      enum pw_stream_state old_state,
-      enum pw_stream_state state,
-      const char* error) {
-    auto* self =
-        static_cast<PipeWireCapture*>(userdata);
-
-    self->HandleStateChanged(
-        old_state,
-        state,
-        error);
-  }
-
-  static void OnProcess(void* userdata) {
-    auto* self =
-        static_cast<PipeWireCapture*>(userdata);
-
-    self->Process();
-  }
-
   pw_main_loop* loop_ = nullptr;
   pw_loop* pw_loop_ = nullptr;
   pw_properties* props_ = nullptr;
   pw_stream* stream_ = nullptr;
   pw_stream_events events_{};
   std::array<uint8_t, 4096> buffer_{};
-  std::vector<float> temp_samples_;
+  std::vector<int16_t> temp_samples_;
   std::thread loop_thread_;
 
   PcmFrameRing* ring_ = nullptr;
@@ -1199,6 +1141,81 @@ class PipeWireCapture {
   bool pw_initialized_ = false;
   bool started_ = false;
 };
+
+// -----------------------------------------------------------------------------
+// Sherpa-ONNX model factories.
+// -----------------------------------------------------------------------------
+
+sherpa_onnx::cxx::OnlineRecognizer CreateRecognizer() {
+  using namespace sherpa_onnx::cxx;
+
+  OnlineRecognizerConfig config;
+
+  config.feat_config.sample_rate =
+      kRecognizerSampleRate;
+  config.feat_config.feature_dim = 80;
+
+  config.model_config.transducer.encoder =
+      ModelPath(g_config.encoder);
+  config.model_config.transducer.decoder =
+      ModelPath(g_config.decoder);
+  config.model_config.transducer.joiner =
+      ModelPath(g_config.joiner);
+  config.model_config.tokens =
+      ModelPath(g_config.tokens);
+
+  config.model_config.num_threads =
+      g_config.num_threads;
+  config.model_config.provider = "cpu";
+  config.model_config.debug = false;
+
+  config.decoding_method = "greedy_search";
+  config.enable_endpoint = false;
+
+  auto recognizer =
+      OnlineRecognizer::Create(config);
+
+  if (!recognizer.Get()) {
+    std::cerr
+        << "Failed to create Sherpa-ONNX recognizer\n";
+  }
+
+  return recognizer;
+}
+
+sherpa_onnx::cxx::VoiceActivityDetector CreateVad() {
+  using namespace sherpa_onnx::cxx;
+
+  VadModelConfig config;
+
+  config.silero_vad.model =
+      ModelPath("silero_vad.onnx");
+  config.silero_vad.threshold =
+      g_config.vad_threshold;
+  config.silero_vad.min_silence_duration =
+      g_config.vad_min_silence_duration;
+  config.silero_vad.min_speech_duration =
+      g_config.vad_min_speech_duration;
+  config.silero_vad.max_speech_duration =
+      g_config.vad_max_speech_duration;
+  config.sample_rate =
+      kRecognizerSampleRate;
+  config.debug = false;
+
+  auto vad =
+      VoiceActivityDetector::Create(
+          config,
+          20.0f);
+
+  if (!vad.Get()) {
+    std::cerr
+        << "Failed to create Sherpa-ONNX VAD\n";
+  }
+
+  return vad;
+}
+
+// -----------------------------------------------------------------------------
 
 class SpeechProcessor {
  public:
@@ -1751,8 +1768,17 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Default ASR model:\n"
       << "  Encoder: "
-      << kDefaultVadThreshold * 0
-      << "";
+      << g_config.encoder
+      << "\n"
+      << "  Decoder: "
+      << g_config.decoder
+      << "\n"
+      << "  Joiner:  "
+      << g_config.joiner
+      << "\n"
+      << "  Tokens:  "
+      << g_config.tokens
+      << "\n";
 }
 
 // -----------------------------------------------------------------------------
