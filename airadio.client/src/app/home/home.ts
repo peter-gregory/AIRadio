@@ -75,6 +75,31 @@ export class Home implements OnInit, OnDestroy {
     }
   }
 
+  get today(): Date {
+    return new Date();
+  }
+
+  get clockHour(): string {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      hour12: true
+    }).formatToParts(new Date()).find(part => part.type === 'hour')?.value ?? '';
+  }
+
+  get clockMinute(): string {
+    return new Intl.DateTimeFormat(undefined, {
+      minute: '2-digit',
+      hour12: true
+    }).formatToParts(new Date()).find(part => part.type === 'minute')?.value ?? '';
+  }
+
+  get clockPeriod(): string {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      hour12: true
+    }).formatToParts(new Date()).find(part => part.type === 'dayPeriod')?.value ?? '';
+  }
+
   get activeStation(): CarouselStation {
     return this.stations[this.selectedIndex] ?? this.emptyStation;
   }
