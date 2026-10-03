@@ -72,25 +72,27 @@ namespace AIRadio.Server.Services.AI
             }
 
             using (response)
-            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Llama request failed with HTTP {StatusCode}: {Response}", (int)response.StatusCode, responseJson);
-                throw new HttpRequestException($"Llama request failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {responseJson}");
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Llama request failed with HTTP {StatusCode}: {Response}", (int)response.StatusCode, responseJson);
+                    throw new HttpRequestException($"Llama request failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {responseJson}");
+                }
+
+                if (string.IsNullOrWhiteSpace(responseJson))
+                    throw new InvalidOperationException("Llama returned an empty HTTP response.");
+
+                _logger.LogInformation($"Received Llama completion result\n{responseJson}");
+
+                var result = LlamaJsonOptions.Deserialize<LlamaCompletionResponse>(responseJson);
+                if (result is null)
+                    throw new InvalidOperationException("Llama returned a null completion response.");
+
+                _logger.LogDebug("Llama completion completed successfully.");
+                return result;
             }
-
-            if (string.IsNullOrWhiteSpace(responseJson))
-                throw new InvalidOperationException("Llama returned an empty HTTP response.");
-
-            _logger.LogInformation($"Received Llama completion result\n{responseJson}");
-
-            var result = LlamaJsonOptions.Deserialize<LlamaCompletionResponse>(responseJson);
-            if (result is null)
-                throw new InvalidOperationException("Llama returned a null completion response.");
-
-            _logger.LogDebug("Llama completion completed successfully.");
-            return result;
         }
 
         private void EnsureInitialized()
