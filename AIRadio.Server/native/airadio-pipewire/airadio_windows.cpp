@@ -11,6 +11,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
