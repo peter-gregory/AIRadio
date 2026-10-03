@@ -14,6 +14,7 @@ namespace AIRadio.Server.Services.Radio
         Task PlayNextStationAsync(CancellationToken cancellationToken = default);
         Task PlayPreviousStationAsync(CancellationToken cancellationToken = default);
         Task StopRadioAsync(CancellationToken cancellationToken = default);
+        Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default);
         void SetRadioPlaylist(IReadOnlyList<RadioStation> stations, RadioPlaylistSource source);
         IMpvState GetRadioState();
     }
@@ -83,6 +84,9 @@ namespace AIRadio.Server.Services.Radio
 
         public Task StopRadioAsync(CancellationToken cancellationToken = default) =>
             _mpvManager.StopAsync(cancellationToken);
+
+        public Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default) =>
+            _mpvManager.SetVolumeAsync(volume, cancellationToken);
 
         public void SetRadioPlaylist(IReadOnlyList<RadioStation> stations, RadioPlaylistSource source) =>
             _mpvManager.SetRadioPlaylist(stations, source);
