@@ -59,7 +59,19 @@ namespace AIRadio.Server.Services.AI
             using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             _logger.LogInformation($"Sending Llama completion request to {endpoint}.\n{json}");
 
-            using var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+            HttpResponseMessage response;
+
+            try
+            {
+                response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Unable to reach Llama server at {Endpoint}. Continuing without a completion.", endpoint);
+                return new LlamaCompletionResponse();
+            }
+
+            using (response)
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
