@@ -1,4 +1,103 @@
-<div class="d-flex flex-column h-100">
-  <div class="container-responsive">
-  </div>
+<div
+  class="radio-page"
+  (touchstart)="onTouchStart($event)"
+  (touchend)="onTouchEnd($event)"
+  (click)="wake()">
+
+  @if (showScreensaver) {
+    <div class="screensaver">
+      <div class="screensaver-date">{{ today | date:'EEEE, MMMM d, y' }}</div>
+      <div class="flip-clock">
+        <span class="flip-digit">{{ clockHour }}</span>
+        <span class="flip-separator">:</span>
+        <span class="flip-digit">{{ clockMinute }}</span>
+        <span class="flip-period">{{ clockPeriod }}</span>
+      </div>
+    </div>
+  } @else if (loading) {
+    <div class="empty-state">
+      <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+    </div>
+  } @else {
+    <div class="carousel-viewport">
+
+      <button
+        type="button"
+        class="station-card station-card-previous"
+        (click)="selectPrevious(); $event.stopPropagation()"
+        aria-label="Previous station">
+        <span>{{ previousStation.name }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="station-card station-card-active"
+        [class.station-empty]="activeStation.isEmpty"
+        (click)="selectActiveStation(); $event.stopPropagation()">
+
+        @if (activeStation.isEmpty) {
+          <div class="empty-station-icon">
+            <i class="fa-solid fa-stop" aria-hidden="true"></i>
+          </div>
+          <div class="station-name">NO STATION</div>
+          <div class="station-subtitle">Radio stopped</div>
+        } @else {
+          @if (activeStation.favicon) {
+            <img
+              class="station-favicon"
+              [src]="activeStation.favicon"
+              [alt]="activeStation.name">
+          }
+
+          <div class="station-name">{{ activeStation.name }}</div>
+
+          @if (activeStation.favoriteNumber) {
+            <div class="station-subtitle">{{ activeStation.favoriteNumber }}</div>
+          }
+
+          @if (playing.playing && playing.stationId === activeStation.id) {
+            <div class="playing-indicator">
+              <span class="playing-dot"></span>
+              PLAYING
+            </div>
+
+            <div class="song-info">
+              @if (playing.artist) {
+                <div class="artist">{{ playing.artist }}</div>
+              }
+              <div class="song-title">
+                {{ playing.title || 'Now Playing' }}
+              </div>
+            </div>
+          } @else {
+            <div class="station-subtitle">Tap or swipe to play</div>
+          }
+        }
+      </button>
+
+      <button
+        type="button"
+        class="station-card station-card-next"
+        (click)="selectNext(); $event.stopPropagation()"
+        aria-label="Next station">
+        <span>{{ nextStation.name }}</span>
+      </button>
+    </div>
+
+    @if (showVolume) {
+      <div class="volume-overlay" (click)="$event.stopPropagation()">
+        <div class="volume-value">{{ volume }}</div>
+        <div class="volume-label">VOLUME</div>
+        <div class="progress volume-progress" role="progressbar" [attr.aria-valuenow]="volume" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar" [style.width.%]="volume"></div>
+        </div>
+      </div>
+    }
+
+    <div class="radio-status">
+      <span [class]="playing.playing ? 'status-dot playing' : 'status-dot'"></span>
+      <span>{{ playing.playing ? 'PLAYING' : 'STOPPED' }}</span>
+      <span class="volume-indicator"><i class="fa-solid fa-volume-high"></i> {{ volume }}</span>
+    </div>
+  }
 </div>
