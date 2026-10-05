@@ -420,22 +420,11 @@ namespace AIRadio.Server.Services.Mpv
                     update.CurrentUrl;
             }
 
-            if (update.Title is not null)
+            if (update.MetadataChanged)
             {
-                _title =
-                    update.Title;
-            }
-
-            if (update.Artist is not null)
-            {
-                _artist =
-                    update.Artist;
-            }
-
-            if (update.Album is not null)
-            {
-                _album =
-                    update.Album;
+                _title = update.Title;
+                _artist = update.Artist;
+                _album = update.Album;
             }
 
             if (update.Position.HasValue)
@@ -603,6 +592,8 @@ namespace AIRadio.Server.Services.Mpv
         public RadioPlaylistSource? RadioPlaylistSource { get; set; }
 
         public string? CurrentUrl { get; set; }
+
+        public bool MetadataChanged { get; set; }
 
         public string? Title { get; set; }
 
