@@ -33,6 +33,7 @@
   <ItemGroup>
     <Content Include="Data\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Remove="Config\IntentActions.json" />
+    <Content Remove="native\tts-daemon\data\en_GB-northern_english_male-medium.onnx.json" />
     <None Include="Config\IntentRegex.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="Config\StaticEvents.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
@@ -43,6 +44,7 @@
 
   <ItemGroup>
     <None Include="Config\IntentActions.json" />
+    <None Include="native\tts-daemon\data\en_GB-northern_english_male-medium.onnx.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -53,8 +55,7 @@
 
   <!-- Visual Studio publishes to its PubTmp staging directory. Copy Angular
        directly to the final ARM64 publish directory after the publish completes. -->
-  <Target Name="CopyAngularToFinalPublishDirectory"
-          AfterTargets="Publish">
+  <Target Name="CopyAngularToFinalPublishDirectory" AfterTargets="Publish">
 
     <ItemGroup>
       <AngularDistFiles Include="$(MSBuildProjectDirectory)\..\airadio.client\dist\airadio.client\browser\**\*" />
@@ -64,21 +65,14 @@
       <AngularFinalPublishDir>$(MSBuildProjectDirectory)\bin\Release\net10.0\linux-arm64\</AngularFinalPublishDir>
     </PropertyGroup>
 
-    <Message Importance="High"
-             Text="AIRADIO ANGULAR PUBLISH TARGET: PublishDir=$(PublishDir)" />
-    <Message Importance="High"
-             Text="AIRADIO ANGULAR PUBLISH TARGET: FinalPublishDir=$(AngularFinalPublishDir)" />
-    <Message Importance="High"
-             Text="AIRADIO ANGULAR PUBLISH TARGET: Source=$(MSBuildProjectDirectory)\..\airadio.client\dist\airadio.client\browser" />
-    <Message Importance="High"
-             Text="AIRADIO ANGULAR PUBLISH TARGET: Files found=@(AngularDistFiles)" />
+    <Message Importance="High" Text="AIRADIO ANGULAR PUBLISH TARGET: PublishDir=$(PublishDir)" />
+    <Message Importance="High" Text="AIRADIO ANGULAR PUBLISH TARGET: FinalPublishDir=$(AngularFinalPublishDir)" />
+    <Message Importance="High" Text="AIRADIO ANGULAR PUBLISH TARGET: Source=$(MSBuildProjectDirectory)\..\airadio.client\dist\airadio.client\browser" />
+    <Message Importance="High" Text="AIRADIO ANGULAR PUBLISH TARGET: Files found=@(AngularDistFiles)" />
 
     <MakeDir Directories="$(AngularFinalPublishDir)wwwroot" />
 
-    <Copy
-      SourceFiles="@(AngularDistFiles)"
-      DestinationFiles="@(AngularDistFiles->'$(AngularFinalPublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(AngularDistFiles)" DestinationFiles="@(AngularDistFiles->'$(AngularFinalPublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
