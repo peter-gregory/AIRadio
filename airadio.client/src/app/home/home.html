@@ -21,67 +21,60 @@
   } @else {
     <div class="carousel-viewport">
 
-      <button
-        type="button"
-        class="station-card station-card-previous"
-        (click)="selectPrevious(); $event.stopPropagation()"
-        aria-label="Previous station">
-        <span>{{ previousStation.name }}</span>
-      </button>
+      @for (station of stations; track station.id; let i = $index) {
+        <button
+          type="button"
+          class="station-card"
+          [class.station-card-far-previous]="getCarouselPosition(i) === 'far-previous'"
+          [class.station-card-previous]="getCarouselPosition(i) === 'previous'"
+          [class.station-card-active]="getCarouselPosition(i) === 'active'"
+          [class.station-card-next]="getCarouselPosition(i) === 'next'"
+          [class.station-card-far-next]="getCarouselPosition(i) === 'far-next'"
+          [class.station-card-hidden]="getCarouselPosition(i) === 'hidden'"
+          [class.station-empty]="station.isEmpty"
+          (click)="selectCard(i); $event.stopPropagation()"
+          [attr.aria-label]="'Select ' + station.name">
 
-      <button
-        type="button"
-        class="station-card station-card-active"
-        [class.station-empty]="activeStation.isEmpty"
-        (click)="selectActiveStation(); $event.stopPropagation()">
-
-        @if (activeStation.isEmpty) {
-          <div class="empty-station-icon">
-            <i class="fa-solid fa-stop" aria-hidden="true"></i>
-          </div>
-          <div class="station-name">NO STATION</div>
-          <div class="station-subtitle">Radio stopped</div>
-        } @else {
-          @if (activeStation.favicon) {
-            <img
-              class="station-favicon"
-              [src]="activeStation.favicon"
-              [alt]="activeStation.name">
-          }
-
-          <div class="station-name">{{ activeStation.name }}</div>
-
-          @if (activeStation.favoriteNumber) {
-            <div class="station-subtitle">{{ activeStation.favoriteNumber }}</div>
-          }
-
-          @if (playing.playing && playing.stationId === activeStation.id) {
-            <div class="playing-indicator">
-              <span class="playing-dot"></span>
-              PLAYING
+          @if (station.isEmpty) {
+            <div class="empty-station-icon">
+              <i class="fa-solid fa-stop" aria-hidden="true"></i>
             </div>
-
-            <div class="song-info">
-              @if (playing.artist) {
-                <div class="artist">{{ playing.artist }}</div>
-              }
-              <div class="song-title">
-                {{ playing.title || 'Now Playing' }}
-              </div>
-            </div>
+            <div class="station-name">NO STATION</div>
+            <div class="station-subtitle">Radio stopped</div>
           } @else {
-            <div class="station-subtitle">Tap or swipe to play</div>
-          }
-        }
-      </button>
+            @if (station.favicon) {
+              <img
+                class="station-favicon"
+                [src]="station.favicon"
+                [alt]="station.name">
+            }
 
-      <button
-        type="button"
-        class="station-card station-card-next"
-        (click)="selectNext(); $event.stopPropagation()"
-        aria-label="Next station">
-        <span>{{ nextStation.name }}</span>
-      </button>
+            <div class="station-name">{{ station.name }}</div>
+
+            @if (station.favoriteNumber) {
+              <div class="station-subtitle">{{ station.favoriteNumber }}</div>
+            }
+
+            @if (playing.playing && playing.stationId === station.id) {
+              <div class="playing-indicator">
+                <span class="playing-dot"></span>
+                PLAYING
+              </div>
+
+              <div class="song-info">
+                @if (playing.artist) {
+                  <div class="artist">{{ playing.artist }}</div>
+                }
+                <div class="song-title">
+                  {{ playing.title || 'Now Playing' }}
+                </div>
+              </div>
+            } @else {
+              <div class="station-subtitle">Tap or swipe to play</div>
+            }
+          }
+        </button>
+      }
     </div>
 
     @if (showVolume) {
