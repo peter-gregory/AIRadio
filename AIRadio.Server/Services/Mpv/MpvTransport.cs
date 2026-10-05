@@ -256,7 +256,7 @@ _logger.LogDebug(
                         break;
                     }
 
-                    _logger.LogDebug(
+                    _logger.LogInformation(
                         "Received raw MPV IPC JSON: {Json}",
                         line);
 
