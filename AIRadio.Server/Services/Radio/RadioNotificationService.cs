@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using AIRadio.Server.Services.Mpv;
+using AIRadio.Server.Models.Radio;
 
 namespace AIRadio.Server.Services.Radio;
 
@@ -125,13 +126,6 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
     private MpvStateSnapshot CreateSnapshot()
     {
         return _state.CreateSnapshot();
-    }
-
-    private static bool AreSameSnapshot(
-        MpvStateSnapshot left,
-        MpvStateSnapshot right)
-    {
-        return left.LastUpdated == right.LastUpdated;
     }
 
     private static IReadOnlyList<RadioNotification> BuildNotifications(
