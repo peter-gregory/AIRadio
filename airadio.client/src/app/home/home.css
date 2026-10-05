@@ -67,28 +67,28 @@
 .station-card-previous {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% - 76px)) translateZ(-38px) rotateY(30deg) scale(.88);
+  transform: translateX(calc(-50% - 84px)) translateZ(-38px) rotateY(30deg) scale(.88);
   transform-origin: right center;
 }
 
 .station-card-next {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% + 76px)) translateZ(-38px) rotateY(-30deg) scale(.88);
+  transform: translateX(calc(-50% + 84px)) translateZ(-38px) rotateY(-30deg) scale(.88);
   transform-origin: left center;
 }
 
 .station-card-far-previous {
   z-index: 2;
   opacity: .62;
-  transform: translateX(calc(-50% - 137px)) translateZ(-100px) rotateY(45deg) scale(.72);
+  transform: translateX(calc(-50% - 157px)) translateZ(-100px) rotateY(45deg) scale(.72);
   transform-origin: right center;
 }
 
 .station-card-far-next {
   z-index: 2;
   opacity: .62;
-  transform: translateX(calc(-50% + 137px)) translateZ(-100px) rotateY(-45deg) scale(.72);
+  transform: translateX(calc(-50% + 157px)) translateZ(-100px) rotateY(-45deg) scale(.72);
   transform-origin: left center;
 }
 
