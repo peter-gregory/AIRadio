@@ -51,4 +51,16 @@
     </None>
   </ItemGroup>
 
+  <!-- Inject Angular assets into the server publish output -->
+  <Target Name="AppendAngularToPublish" BeforeTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <AngularDistFiles Include="..\airadio.client\dist\airadio.client\browser\**\*" />
+
+      <ResolvedFileToPublish Include="@(AngularDistFiles)">
+        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>
