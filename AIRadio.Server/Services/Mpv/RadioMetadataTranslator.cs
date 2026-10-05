@@ -122,6 +122,7 @@ namespace AIRadio.Server.Services.Mpv
                 //
                 // Track Information (ICY / ID3)
                 //
+                case "icy-title":
                 case "streamtitle":
                 case "title":
                     SetTitle(value);
