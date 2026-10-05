@@ -64,6 +64,13 @@
   box-shadow: 0 7px 22px rgba(0, 0, 0, .38);
 }
 
+.station-card-previous,
+.station-card-next,
+.station-card-far-previous,
+.station-card-far-next {
+  background: #4a1d7f;
+}
+
 .station-card-previous {
   z-index: 4;
   opacity: .92;
