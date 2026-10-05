@@ -30,7 +30,7 @@
   position: absolute;
   left: 50%;
   top: 12px;
-  width: 100px;
+  width: 80px;
   height: 190px;
   border: 0;
   border-radius: 2px;
@@ -59,7 +59,7 @@
 .station-card-active {
   z-index: 5;
   opacity: 1;
-  width: 160px;
+  width: 192px;
   transform: translateX(-50%) translateZ(0) rotateY(0deg) scale(1);
   box-shadow: 0 7px 22px rgba(0, 0, 0, .38);
 }
