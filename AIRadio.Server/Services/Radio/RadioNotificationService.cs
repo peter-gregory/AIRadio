@@ -19,6 +19,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
     private readonly object _snapshotLock = new();
     private readonly SemaphoreSlim _broadcastLock = new(1, 1);
+    private readonly CancellationTokenSource _shutdownCts = new();
 
     private MpvStateSnapshot _previousSnapshot;
     private bool _disposed;
@@ -78,21 +79,30 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         {
             _clients.TryRemove(clientId, out _);
 
-            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            try
             {
-                try
+                // During application shutdown, abort immediately rather than waiting
+                // for a graceful WebSocket close to complete.
+                if (_shutdownCts.IsCancellationRequested || cancellationToken.IsCancellationRequested)
+                {
+                    socket.Abort();
+                }
+                else if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 {
                     await socket.CloseAsync(
                         WebSocketCloseStatus.NormalClosure,
                         "Closing",
                         CancellationToken.None);
                 }
-                catch
-                {
-                }
             }
-
-            socket.Dispose();
+            catch
+            {
+                socket.Abort();
+            }
+            finally
+            {
+                socket.Dispose();
+            }
 
             _logger.LogInformation(
                 "Radio WebSocket client disconnected. ClientId={ClientId}. Clients={ClientCount}.",
@@ -221,12 +231,21 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
     private async Task BroadcastAsync(
         RadioNotification notification)
     {
-        if (_clients.IsEmpty)
+        if (_disposed || _shutdownCts.IsCancellationRequested || _clients.IsEmpty)
         {
             return;
         }
 
-        await _broadcastLock.WaitAsync();
+        var shutdownToken = _shutdownCts.Token;
+
+        try
+        {
+            await _broadcastLock.WaitAsync(shutdownToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
 
         try
         {
@@ -254,7 +273,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
                         bytes,
                         WebSocketMessageType.Text,
                         endOfMessage: true,
-                        CancellationToken.None);
+                        shutdownToken);
                 }
                 catch (Exception ex) when (
                     ex is WebSocketException or ObjectDisposedException)
@@ -273,7 +292,10 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         }
         finally
         {
-            _broadcastLock.Release();
+            if (_broadcastLock.CurrentCount == 0)
+            {
+                _broadcastLock.Release();
+            }
         }
     }
 
@@ -287,14 +309,26 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         _disposed = true;
         _state.StateChanged -= OnStateChanged;
 
+        // Cancel all in-flight sends and tell active WebSocket handlers to abort
+        // rather than waiting for a graceful close during host shutdown.
+        _shutdownCts.Cancel();
+
         foreach (var socket in _clients.Values)
         {
-            socket.Dispose();
+            try
+            {
+                socket.Abort();
+            }
+            catch
+            {
+            }
         }
 
         _clients.Clear();
-        _broadcastLock.Dispose();
-    }
+        _shutdownCts.Dispose();
+
+        // Do not dispose _broadcastLock here. BroadcastAsync calls are intentionally
+        // fire-and-forget and may still be unwinding after cancellation.
 
     private sealed record RadioNotification(
         string Type,
