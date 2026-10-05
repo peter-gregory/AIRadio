@@ -153,6 +153,7 @@ namespace AIRadio.Server.Services.Mpv
                     update.Duration =
                         TimeSpan.Zero;
 
+                    update.MetadataChanged = true;
                     update.Title = null;
                     update.Artist = null;
                     update.Album = null;
@@ -317,6 +318,8 @@ namespace AIRadio.Server.Services.Mpv
 
                     update.Duration =
                         TimeSpan.Zero;
+
+                    update.MetadataChanged = true;
                 });
 
             _logger.LogInformation(
@@ -494,12 +497,38 @@ namespace AIRadio.Server.Services.Mpv
                 });
         }
 
-        private void OnMetadataChanged(
+        private async void OnMetadataChanged(
             object? sender,
             EventArgs e)
         {
-            _logger.LogDebug(
-                "MPV metadata changed.");
+            try
+            {
+                var metadata = await Task.WhenAll(
+                    _mpv.GetPropertyStringAsync("metadata/title"),
+                    _mpv.GetPropertyStringAsync("metadata/artist"),
+                    _mpv.GetPropertyStringAsync("metadata/album"));
+
+                _state.Update(
+                    update =>
+                    {
+                        update.MetadataChanged = true;
+                        update.Title = metadata[0];
+                        update.Artist = metadata[1];
+                        update.Album = metadata[2];
+                    });
+
+                _logger.LogDebug(
+                    "MPV metadata changed. Title={Title}, Artist={Artist}, Album={Album}.",
+                    metadata[0],
+                    metadata[1],
+                    metadata[2]);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Unable to read MPV radio metadata.");
+            }
         }
 
         private void OnPropertyChanged(
