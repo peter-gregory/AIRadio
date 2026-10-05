@@ -244,20 +244,32 @@ namespace AIRadio.Server.Services.Mpv
         {
             ThrowIfDisposed();
 
-            var result = await SendCommandAsync(
-                MpvCommand.GetProperty(property),
-                cancellationToken);
-
-            if (result is null ||
-                !result.Value.TryGetProperty("data", out var data) ||
-                data.ValueKind == JsonValueKind.Null)
+            try
             {
+                var result = await SendCommandAsync(
+                    MpvCommand.GetProperty(property),
+                    cancellationToken);
+
+                if (result is null ||
+                    !result.Value.TryGetProperty("data", out var data) ||
+                    data.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                return data.ValueKind == JsonValueKind.String
+                    ? data.GetString()
+                    : data.ToString();
+            }
+            catch (InvalidOperationException ex)
+                when (ex.Message.Contains(
+                    "property not found",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                // Metadata entries are optional. MPV reports an absent
+                // metadata key as "property not found"; treat that as null.
                 return null;
             }
-
-            return data.ValueKind == JsonValueKind.String
-                ? data.GetString()
-                : data.ToString();
         }
 
         public async Task<int> GetVolumeAsync(
