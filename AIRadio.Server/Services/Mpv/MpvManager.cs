@@ -504,9 +504,9 @@ namespace AIRadio.Server.Services.Mpv
             try
             {
                 var metadata = await Task.WhenAll(
-                    _mpv.GetPropertyStringAsync("metadata/title"),
-                    _mpv.GetPropertyStringAsync("metadata/artist"),
-                    _mpv.GetPropertyStringAsync("metadata/album"));
+                    _mpv.GetPropertyStringAsync("metadata/by-key/title"),
+                    _mpv.GetPropertyStringAsync("metadata/by-key/artist"),
+                    _mpv.GetPropertyStringAsync("metadata/by-key/album"));
 
                 _state.Update(
                     update =>
