@@ -45,6 +45,8 @@ namespace AIRadio.Server.Services.Mpv
 
         void Update(
             Action<MpvStateUpdate> configure);
+
+        MpvStateSnapshot CreateSnapshot();
     }
 
     public sealed class MpvState : IMpvState
