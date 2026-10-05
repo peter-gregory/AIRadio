@@ -121,6 +121,15 @@ namespace AIRadio.Server.Services.Mpv
 
             await _transport.ConnectAsync(
                 cancellationToken);
+
+            // Subscribe to MPV's metadata property so ICY title changes are
+            // reported as property-change events during a live stream.
+            await SendCommandAsync(
+                MpvCommand.Command(
+                    "observe_property",
+                    1,
+                    "metadata"),
+                cancellationToken);
         }
 
         public async Task DisconnectAsync(
@@ -404,6 +413,25 @@ namespace AIRadio.Server.Services.Mpv
                     MetadataChanged?.Invoke(
                         this,
                         EventArgs.Empty);
+
+                    break;
+
+                case "property-change":
+                    if (message.TryGetProperty(
+                            "name",
+                            out var propertyElement) &&
+                        string.Equals(
+                            propertyElement.GetString(),
+                            "metadata",
+                            StringComparison.Ordinal))
+                    {
+                        _logger.LogInformation(
+                            "MPV metadata property changed.");
+
+                        MetadataChanged?.Invoke(
+                            this,
+                            EventArgs.Empty);
+                    }
 
                     break;
 
