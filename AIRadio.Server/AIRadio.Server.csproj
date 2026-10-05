@@ -51,8 +51,10 @@
     </None>
   </ItemGroup>
 
-  <!-- Inject Angular assets into the server publish output -->
-  <Target Name="AppendAngularToPublish" BeforeTargets="ComputeFilesToPublish">
+  <!-- Inject Angular assets after the Angular project has built, before publish files are computed -->
+  <Target Name="AppendAngularToPublish"
+          AfterTargets="Build"
+          BeforeTargets="ComputeFilesToPublish">
     <ItemGroup>
       <AngularDistFiles Include="..\airadio.client\dist\airadio.client\browser\**\*" />
 
