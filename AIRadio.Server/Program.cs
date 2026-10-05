@@ -46,6 +46,7 @@ builder.Services.AddSingleton<IAudioManager, AudioManager>();
 builder.Services.AddSingleton<IToolExecutor, ToolExecutor>();
 builder.Services.AddSingleton<ILocationStore, JsonLocationStore>();
 builder.Services.AddSingleton<IMpvState, MpvState>();
+builder.Services.AddSingleton<IRadioNotificationService, RadioNotificationService>();
 builder.Services.AddSingleton<IWifiManager, WifiManager>();
 builder.Services.AddHttpClient<IWeatherLocationResolver, OpenMeteoLocationResolver>();
 builder.Services.AddHttpClient<IWeatherService, WeatherService>();
@@ -101,6 +102,23 @@ builder.Configuration["Application:SoundsDirectory"] = Path.GetFullPath(Path.Com
 builder.Configuration["Application:PromptsDirectory"] = Path.GetFullPath(Path.Combine(contentRoot, configuredPromptsDirectory));
 
 var app = builder.Build();
+
+app.UseWebSockets();
+app.Map("/ws/radio", async context =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+
+    var socket = await context.WebSockets.AcceptWebSocketAsync();
+    var notifications = context.RequestServices.GetRequiredService<IRadioNotificationService>();
+    await notifications.HandleWebSocketAsync(socket, context.RequestAborted);
+});
+// Resolve the notification service before radio initialization so it observes all state changes.
+app.Services.GetRequiredService<IRadioNotificationService>();
+
 var configuration = app.Services.GetRequiredService<IConfiguration>();
 foreach (var directory in new[] { configuration["Application:DataDirectory"], configuration["Application:ConfigDirectory"] })
     if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
