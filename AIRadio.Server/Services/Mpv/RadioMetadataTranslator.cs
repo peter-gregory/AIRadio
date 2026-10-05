@@ -190,8 +190,9 @@ namespace AIRadio.Server.Services.Mpv
                 return;
 
             //
-            // Common ICY format:
+            // Common ICY formats:
             //     Artist - Title
+            //     Title by Artist - Station Name
             //
             if (Artist == null && Title == null)
             {
@@ -199,8 +200,26 @@ namespace AIRadio.Server.Services.Mpv
 
                 if (separator > 0)
                 {
-                    Artist = Normalize(value[..separator]);
-                    Title = Normalize(value[(separator + 3)..]);
+                    var primary = Normalize(value[..separator]);
+                    var suffix = Normalize(value[(separator + 3)..]);
+
+                    if (primary is not null)
+                    {
+                        int bySeparator = primary.LastIndexOf(
+                            " by ",
+                            StringComparison.OrdinalIgnoreCase);
+
+                        if (bySeparator > 0 &&
+                            bySeparator + 4 < primary.Length)
+                        {
+                            Title = Normalize(primary[..bySeparator]);
+                            Artist = Normalize(primary[(bySeparator + 4)..]);
+                            return;
+                        }
+                    }
+
+                    Artist = primary;
+                    Title = suffix;
                     return;
                 }
             }
