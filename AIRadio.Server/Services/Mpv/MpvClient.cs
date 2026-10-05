@@ -351,6 +351,8 @@ namespace AIRadio.Server.Services.Mpv
             switch (eventName)
             {
                 case "start-file":
+                    _logger.LogInformation(
+                        "MPV start-file event received. A new radio stream is starting.");
                     IsPlaying = true;
                     break;
 
