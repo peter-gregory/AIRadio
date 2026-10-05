@@ -30,7 +30,7 @@
   position: absolute;
   left: 50%;
   top: 12px;
-  width: 150px;
+  width: 120px;
   height: 190px;
   border: 0;
   border-radius: 2px;
@@ -38,7 +38,7 @@
   color: #fff;
   background: #6f2dbd;
   box-shadow: 0 5px 18px rgba(0, 0, 0, .28);
-  padding: 8px;
+  padding: 7px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -66,28 +66,28 @@
 .station-card-previous {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% - 72px)) translateZ(-38px) rotateY(34deg) scale(.88);
+  transform: translateX(calc(-50% - 63px)) translateZ(-38px) rotateY(30deg) scale(.88);
   transform-origin: right center;
 }
 
 .station-card-next {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% + 72px)) translateZ(-38px) rotateY(-34deg) scale(.88);
+  transform: translateX(calc(-50% + 63px)) translateZ(-38px) rotateY(-30deg) scale(.88);
   transform-origin: left center;
 }
 
 .station-card-far-previous {
   z-index: 2;
   opacity: .62;
-  transform: translateX(calc(-50% - 143px)) translateZ(-100px) rotateY(51deg) scale(.72);
+  transform: translateX(calc(-50% - 122px)) translateZ(-100px) rotateY(45deg) scale(.72);
   transform-origin: right center;
 }
 
 .station-card-far-next {
   z-index: 2;
   opacity: .62;
-  transform: translateX(calc(-50% + 143px)) translateZ(-100px) rotateY(-51deg) scale(.72);
+  transform: translateX(calc(-50% + 122px)) translateZ(-100px) rotateY(-45deg) scale(.72);
   transform-origin: left center;
 }
 
@@ -103,34 +103,34 @@
 }
 
 .station-card-previous:active {
-  transform: translateX(calc(-50% - 72px)) translateZ(-38px) rotateY(34deg) scale(.86);
+  transform: translateX(calc(-50% - 63px)) translateZ(-38px) rotateY(30deg) scale(.86);
 }
 
 .station-card-next:active {
-  transform: translateX(calc(-50% + 72px)) translateZ(-38px) rotateY(-34deg) scale(.86);
+  transform: translateX(calc(-50% + 63px)) translateZ(-38px) rotateY(-30deg) scale(.86);
 }
 
 .station-favicon {
-  width: 42px;
-  height: 42px;
+  width: 92px;
+  height: 92px;
   object-fit: contain;
-  margin-bottom: 8px;
+  margin: 6px 0 7px;
   border-radius: 6px;
 }
 
 .station-name {
   width: 100%;
-  font-size: 22px;
+  font-size: 13px;
   line-height: 1.05;
   font-weight: 700;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .station-subtitle {
-  margin-top: 7px;
+  margin-top: 5px;
   font-size: 10px;
   opacity: .72;
 }
@@ -139,7 +139,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-top: 9px;
+  margin-top: 5px;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: .08em;
@@ -161,8 +161,8 @@
 }
 
 .song-info {
-  width: 90%;
-  margin-top: 10px;
+  width: 96%;
+  margin-top: 6px;
   overflow: hidden;
 }
 
@@ -174,13 +174,13 @@
 }
 
 .artist {
-  font-size: 10px;
+  font-size: 8px;
   opacity: .72;
 }
 
 .song-title {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -292,6 +292,7 @@
 }
 
 .flip-digit {
+  position: relative;
   min-width: 0;
   width: 108px;
   padding: 8px 3px;
@@ -310,9 +311,22 @@
   opacity: .8;
 }
 
+.minute-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.minute-value {
+  display: block;
+}
+
 .flip-period {
-  align-self: center;
-  margin: 0 0 0 2px;
-  font-size: 16px;
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  font-size: 13px;
+  line-height: 1;
   font-weight: 700;
+  opacity: .9;
 }
