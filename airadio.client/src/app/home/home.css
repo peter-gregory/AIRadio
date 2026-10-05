@@ -138,7 +138,7 @@
 .playing-indicator {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 12px;
   margin-top: 5px;
   font-size: 9px;
   font-weight: 700;
@@ -310,10 +310,18 @@
   font-size: 66px;
   line-height: 1;
   opacity: .8;
-  animation: flip-clock-colon 1s steps(1, end) infinite;
+  animation: flip-clock-colon 2s steps(1, end) infinite;
+}
+
+.hour-pane {
+  text-align: right;
+  transform: translateX(-8px);
 }
 
 .minute-pane {
+  flex: 0 0 124px;
+  width: 124px;
+  min-width: 124px;
   display: flex;
   align-items: baseline;
   justify-content: center;
