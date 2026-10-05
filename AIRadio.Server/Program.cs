@@ -104,17 +104,23 @@ builder.Configuration["Application:PromptsDirectory"] = Path.GetFullPath(Path.Co
 var app = builder.Build();
 
 app.UseWebSockets();
-app.Map("/ws/radio", async context =>
+app.Use(async (context, next) =>
 {
-    if (!context.WebSockets.IsWebSocketRequest)
+    if (context.Request.Path == "/ws/radio")
     {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        if (!context.WebSockets.IsWebSocketRequest)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var socket = await context.WebSockets.AcceptWebSocketAsync();
+        var notifications = context.RequestServices.GetRequiredService<IRadioNotificationService>();
+        await notifications.HandleWebSocketAsync(socket, context.RequestAborted);
         return;
     }
 
-    var socket = await context.WebSockets.AcceptWebSocketAsync();
-    var notifications = context.RequestServices.GetRequiredService<IRadioNotificationService>();
-    await notifications.HandleWebSocketAsync(socket, context.RequestAborted);
+    await next(context);
 });
 // Resolve the notification service before radio initialization so it observes all state changes.
 app.Services.GetRequiredService<IRadioNotificationService>();
