@@ -319,9 +319,9 @@
 }
 
 .minute-pane {
-  flex: 0 0 124px;
-  width: 124px;
-  min-width: 124px;
+  flex: 0 0 132px;
+  width: 132px;
+  min-width: 132px;
   display: flex;
   align-items: baseline;
   justify-content: center;
