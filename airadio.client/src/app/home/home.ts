@@ -250,17 +250,6 @@ export class Home implements OnInit, OnDestroy {
       return 'hidden';
     }
 
-    if (count <= 5) {
-      const relative = index - this.selectedIndex;
-
-      if (relative === -2) return 'far-previous';
-      if (relative === -1) return 'previous';
-      if (relative === 0) return 'active';
-      if (relative === 1) return 'next';
-      if (relative === 2) return 'far-next';
-      return 'hidden';
-    }
-
     let relative = index - this.selectedIndex;
 
     if (relative > count / 2) {
