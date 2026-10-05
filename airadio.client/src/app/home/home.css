@@ -293,8 +293,9 @@
 
 .flip-digit {
   position: relative;
-  min-width: 0;
+  flex: 0 0 108px;
   width: 108px;
+  min-width: 108px;
   padding: 8px 3px;
   border-radius: 8px;
   background: #1d2024;
@@ -309,24 +310,38 @@
   font-size: 66px;
   line-height: 1;
   opacity: .8;
+  animation: flip-clock-colon 1s steps(1, end) infinite;
 }
 
 .minute-pane {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .minute-value {
-  display: block;
+  display: inline-block;
 }
 
 .flip-period {
-  position: absolute;
-  right: 7px;
-  bottom: 6px;
+  position: static;
+  flex: 0 0 auto;
   font-size: 13px;
   line-height: 1;
   font-weight: 700;
   opacity: .9;
+}
+
+@keyframes flip-clock-colon {
+  0%,
+  49.999% {
+    opacity: .8;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
