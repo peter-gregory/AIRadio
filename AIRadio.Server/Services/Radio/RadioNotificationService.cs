@@ -17,6 +17,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
     private readonly ILogger<RadioNotificationService> _logger;
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
     private readonly object _snapshotLock = new();
+    private readonly SemaphoreSlim _broadcastLock = new(1, 1);
 
     private MpvStateSnapshot _previousSnapshot;
     private bool _disposed;
@@ -239,7 +240,11 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
             return;
         }
 
-        var json = JsonSerializer.Serialize(
+        await _broadcastLock.WaitAsync();
+
+        try
+        {
+            var json = JsonSerializer.Serialize(
             notification,
             new JsonSerializerOptions
             {
@@ -272,12 +277,17 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
             }
         }
 
-        foreach (var clientId in deadClients)
-        {
-            if (_clients.TryRemove(clientId, out var socket))
+            foreach (var clientId in deadClients)
             {
-                socket.Dispose();
+                if (_clients.TryRemove(clientId, out var socket))
+                {
+                    socket.Dispose();
+                }
             }
+        }
+        finally
+        {
+            _broadcastLock.Release();
         }
     }
 
@@ -297,6 +307,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         }
 
         _clients.Clear();
+        _broadcastLock.Dispose();
     }
 
     private sealed record RadioNotification(
