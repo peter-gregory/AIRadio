@@ -51,28 +51,34 @@
     </None>
   </ItemGroup>
 
-  <!-- Diagnostic: verify the Angular files are visible to the MSBuild publish pipeline. -->
-  <Target Name="AddAngularFilesToPublish"
-          AfterTargets="ComputeResolvedFilesToPublishList"
-          BeforeTargets="CopyFilesToPublishDirectory">
+  <!-- Visual Studio publishes to its PubTmp staging directory. Copy Angular
+       directly to the final ARM64 publish directory after the publish completes. -->
+  <Target Name="CopyAngularToFinalPublishDirectory"
+          AfterTargets="Publish">
 
     <ItemGroup>
       <AngularDistFiles Include="$(MSBuildProjectDirectory)\..\airadio.client\dist\airadio.client\browser\**\*" />
     </ItemGroup>
 
+    <PropertyGroup>
+      <AngularFinalPublishDir>$(MSBuildProjectDirectory)\bin\Release\net10.0\linux-arm64\</AngularFinalPublishDir>
+    </PropertyGroup>
+
     <Message Importance="High"
              Text="AIRADIO ANGULAR PUBLISH TARGET: PublishDir=$(PublishDir)" />
+    <Message Importance="High"
+             Text="AIRADIO ANGULAR PUBLISH TARGET: FinalPublishDir=$(AngularFinalPublishDir)" />
     <Message Importance="High"
              Text="AIRADIO ANGULAR PUBLISH TARGET: Source=$(MSBuildProjectDirectory)\..\airadio.client\dist\airadio.client\browser" />
     <Message Importance="High"
              Text="AIRADIO ANGULAR PUBLISH TARGET: Files found=@(AngularDistFiles)" />
 
-    <ItemGroup>
-      <ResolvedFileToPublish Include="@(AngularDistFiles)">
-        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
-        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </ResolvedFileToPublish>
-    </ItemGroup>
+    <MakeDir Directories="$(AngularFinalPublishDir)wwwroot" />
+
+    <Copy
+      SourceFiles="@(AngularDistFiles)"
+      DestinationFiles="@(AngularDistFiles->'$(AngularFinalPublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
