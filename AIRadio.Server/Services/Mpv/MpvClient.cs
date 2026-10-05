@@ -41,6 +41,10 @@ namespace AIRadio.Server.Services.Mpv
         Task<int> GetVolumeAsync(
             CancellationToken cancellationToken = default);
 
+        Task<string?> GetPropertyStringAsync(
+            string property,
+            CancellationToken cancellationToken = default);
+
         event EventHandler? PlaybackChanged;
 
         event EventHandler? MetadataChanged;
@@ -232,6 +236,28 @@ namespace AIRadio.Server.Services.Mpv
 
             VolumeChanged(
                 volume);
+        }
+
+        public async Task<string?> GetPropertyStringAsync(
+            string property,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            var result = await SendCommandAsync(
+                MpvCommand.GetProperty(property),
+                cancellationToken);
+
+            if (result is null ||
+                !result.Value.TryGetProperty("data", out var data) ||
+                data.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            return data.ValueKind == JsonValueKind.String
+                ? data.GetString()
+                : data.ToString();
         }
 
         public async Task<int> GetVolumeAsync(
