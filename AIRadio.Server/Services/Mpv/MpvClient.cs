@@ -45,6 +45,10 @@ namespace AIRadio.Server.Services.Mpv
             string property,
             CancellationToken cancellationToken = default);
 
+        Task<JsonElement?> GetPropertyAsync(
+            string property,
+            CancellationToken cancellationToken = default);
+
         event EventHandler? PlaybackChanged;
 
         event EventHandler? MetadataChanged;
@@ -268,6 +272,36 @@ namespace AIRadio.Server.Services.Mpv
             {
                 // Metadata entries are optional. MPV reports an absent
                 // metadata key as "property not found"; treat that as null.
+                return null;
+            }
+        }
+
+        public async Task<JsonElement?> GetPropertyAsync(
+            string property,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            try
+            {
+                var result = await SendCommandAsync(
+                    MpvCommand.GetProperty(property),
+                    cancellationToken);
+
+                if (result is null ||
+                    !result.Value.TryGetProperty("data", out var data) ||
+                    data.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                return data.Clone();
+            }
+            catch (InvalidOperationException ex)
+                when (ex.Message.Contains(
+                    "property not found",
+                    StringComparison.OrdinalIgnoreCase))
+            {
                 return null;
             }
         }
