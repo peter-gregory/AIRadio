@@ -517,7 +517,7 @@ namespace AIRadio.Server.Services.Mpv
                         update.Album = metadata[2];
                     });
 
-                _logger.LogDebug(
+                _logger.LogInformation(
                     "MPV metadata changed. Title={Title}, Artist={Artist}, Album={Album}.",
                     metadata[0],
                     metadata[1],
@@ -527,7 +527,7 @@ namespace AIRadio.Server.Services.Mpv
             {
                 _logger.LogWarning(
                     ex,
-                    "Unable to read MPV radio metadata.");
+                    "Unable to read MPV radio metadata after an MPV metadata event.");
             }
         }
 
