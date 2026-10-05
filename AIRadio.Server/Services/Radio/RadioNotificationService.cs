@@ -177,9 +177,16 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
                     currentStationId));
         }
 
-        if (!string.Equals(previous.Title, current.Title, StringComparison.Ordinal) ||
-            !string.Equals(previous.Artist, current.Artist, StringComparison.Ordinal) ||
-            !string.Equals(previous.Album, current.Album, StringComparison.Ordinal))
+        var hasCurrentMetadata =
+            !string.IsNullOrWhiteSpace(current.Title) ||
+            !string.IsNullOrWhiteSpace(current.Artist) ||
+            !string.IsNullOrWhiteSpace(current.Album);
+
+        if (current.IsPlaying &&
+            hasCurrentMetadata &&
+            (!string.Equals(previous.Title, current.Title, StringComparison.Ordinal) ||
+             !string.Equals(previous.Artist, current.Artist, StringComparison.Ordinal) ||
+             !string.Equals(previous.Album, current.Album, StringComparison.Ordinal)))
         {
             notifications.Add(
                 new RadioNotification(
