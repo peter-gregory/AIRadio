@@ -22,68 +22,92 @@
   width: 320px;
   height: 214px;
   overflow: hidden;
-  perspective: 700px;
-  perspective-origin: 50% 50%;
+  perspective: 850px;
+  perspective-origin: 50% 48%;
 }
 
 .station-card {
   position: absolute;
+  left: 50%;
   top: 12px;
+  width: 150px;
   height: 190px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 2px;
   overflow: hidden;
   color: #fff;
-  background: #25282d;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  background: #6f2dbd;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .28);
   padding: 8px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
   cursor: pointer;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  transition:
+    transform 280ms cubic-bezier(.2, .75, .25, 1),
+    opacity 220ms ease,
+    filter 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .station-card-active {
-  left: 16px;
-  width: 288px;
-  z-index: 3;
-  background: #212529;
-}
-
-.station-card-previous,
-.station-card-next {
-  top: 30px;
-  width: 82px;
-  height: 154px;
-  z-index: 1;
-  opacity: .62;
-  background: #343a40;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: normal;
+  z-index: 5;
+  opacity: 1;
+  transform: translateX(-50%) translateZ(0) rotateY(0deg) scale(1);
+  box-shadow: 0 7px 22px rgba(0, 0, 0, .38);
 }
 
 .station-card-previous {
-  left: -52px;
-  transform: rotateY(48deg) scale(.9);
+  z-index: 4;
+  opacity: .92;
+  transform: translateX(calc(-50% - 72px)) translateZ(-38px) rotateY(34deg) scale(.88);
   transform-origin: right center;
 }
 
 .station-card-next {
-  right: -52px;
-  transform: rotateY(-48deg) scale(.9);
+  z-index: 4;
+  opacity: .92;
+  transform: translateX(calc(-50% + 72px)) translateZ(-38px) rotateY(-34deg) scale(.88);
   transform-origin: left center;
 }
 
-.station-card-active:active {
-  transform: scale(.99);
+.station-card-far-previous {
+  z-index: 2;
+  opacity: .62;
+  transform: translateX(calc(-50% - 143px)) translateZ(-100px) rotateY(51deg) scale(.72);
+  transform-origin: right center;
 }
 
-.station-card-previous:active,
+.station-card-far-next {
+  z-index: 2;
+  opacity: .62;
+  transform: translateX(calc(-50% + 143px)) translateZ(-100px) rotateY(-51deg) scale(.72);
+  transform-origin: left center;
+}
+
+.station-card-hidden {
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateZ(-180px) scale(.5);
+}
+
+.station-card-active:active {
+  transform: translateX(-50%) translateZ(0) scale(.985);
+}
+
+.station-card-previous:active {
+  transform: translateX(calc(-50% - 72px)) translateZ(-38px) rotateY(34deg) scale(.86);
+}
+
 .station-card-next:active {
-  opacity: .8;
+  transform: translateX(calc(-50% + 72px)) translateZ(-38px) rotateY(-34deg) scale(.86);
 }
 
 .station-favicon {
@@ -96,7 +120,7 @@
 
 .station-name {
   width: 100%;
-  font-size: 27px;
+  font-size: 22px;
   line-height: 1.05;
   font-weight: 700;
   overflow: hidden;
@@ -107,7 +131,7 @@
 
 .station-subtitle {
   margin-top: 7px;
-  font-size: 11px;
+  font-size: 10px;
   opacity: .72;
 }
 
@@ -150,13 +174,13 @@
 }
 
 .artist {
-  font-size: 11px;
+  font-size: 10px;
   opacity: .72;
 }
 
 .song-title {
   margin-top: 2px;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -167,7 +191,7 @@
 }
 
 .station-empty .station-name {
-  font-size: 23px;
+  font-size: 20px;
 }
 
 .volume-overlay {
