@@ -51,18 +51,18 @@
     </None>
   </ItemGroup>
 
-  <!-- Copy the Angular production build directly into the final publish directory. -->
-  <Target Name="CopyAngularToPublishDirectory" AfterTargets="Publish">
+  <!-- Add the Angular production files after the publish item list has been resolved. -->
+  <Target Name="AddAngularFilesToPublish"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          BeforeTargets="CopyFilesToPublishDirectory">
     <ItemGroup>
       <AngularDistFiles Include="..\airadio.client\dist\airadio.client\browser\**\*" />
+
+      <ResolvedFileToPublish Include="@(AngularDistFiles)">
+        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
     </ItemGroup>
-
-    <MakeDir Directories="$(PublishDir)wwwroot" />
-
-    <Copy
-      SourceFiles="@(AngularDistFiles)"
-      DestinationFiles="@(AngularDistFiles->'$(PublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
-      SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
