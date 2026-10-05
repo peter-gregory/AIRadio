@@ -6,12 +6,14 @@
 
   @if (showScreensaver) {
     <div class="screensaver">
-      <div class="screensaver-date">{{ today | date:'EEEE, MMMM d, y' }}</div>
+      <div class="screensaver-date">{{ today | date:'EEEE, MMMM d' }}</div>
       <div class="flip-clock">
-        <span class="flip-digit">{{ clockHour }}</span>
+        <span class="flip-digit hour-pane">{{ clockHour }}</span>
         <span class="flip-separator">:</span>
-        <span class="flip-digit">{{ clockMinute }}</span>
-        <span class="flip-period">{{ clockPeriod }}</span>
+        <span class="flip-digit minute-pane">
+          <span class="minute-value">{{ clockMinute }}</span>
+          <span class="flip-period">{{ clockPeriod }}</span>
+        </span>
       </div>
     </div>
   } @else if (loading) {
@@ -42,17 +44,13 @@
             <div class="station-name">NO STATION</div>
             <div class="station-subtitle">Radio stopped</div>
           } @else {
+            <div class="station-name">{{ station.name }}</div>
+
             @if (station.favicon) {
               <img
                 class="station-favicon"
                 [src]="station.favicon"
                 [alt]="station.name">
-            }
-
-            <div class="station-name">{{ station.name }}</div>
-
-            @if (station.favoriteNumber) {
-              <div class="station-subtitle">{{ station.favoriteNumber }}</div>
             }
 
             @if (playing.playing && playing.stationId === station.id) {
