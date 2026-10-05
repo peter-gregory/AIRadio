@@ -105,21 +105,13 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         MpvStateChangedEventArgs e)
     {
         MpvStateSnapshot previous;
+        MpvStateSnapshot current;
 
         lock (_snapshotLock)
         {
             previous = _previousSnapshot;
-            _previousSnapshot = CreateSnapshot();
-        }
-
-        var current = (MpvStateSnapshot)e.State.CreateSnapshot();
-
-        if (!AreSameSnapshot(current, _previousSnapshot))
-        {
-            lock (_snapshotLock)
-            {
-                _previousSnapshot = current;
-            }
+            current = e.State.CreateSnapshot();
+            _previousSnapshot = current;
         }
 
         var notifications = BuildNotifications(previous, current);
@@ -245,37 +237,37 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         try
         {
             var json = JsonSerializer.Serialize(
-            notification,
-            new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+                notification,
+                new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
 
-        var bytes = Encoding.UTF8.GetBytes(json);
-        var deadClients = new List<Guid>();
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var deadClients = new List<Guid>();
 
-        foreach (var client in _clients)
-        {
-            if (client.Value.State != WebSocketState.Open)
+            foreach (var client in _clients)
             {
-                deadClients.Add(client.Key);
-                continue;
-            }
+                if (client.Value.State != WebSocketState.Open)
+                {
+                    deadClients.Add(client.Key);
+                    continue;
+                }
 
-            try
-            {
-                await client.Value.SendAsync(
-                    bytes,
-                    WebSocketMessageType.Text,
-                    endOfMessage: true,
-                    CancellationToken.None);
+                try
+                {
+                    await client.Value.SendAsync(
+                        bytes,
+                        WebSocketMessageType.Text,
+                        endOfMessage: true,
+                        CancellationToken.None);
+                }
+                catch (Exception ex) when (
+                    ex is WebSocketException or ObjectDisposedException)
+                {
+                    deadClients.Add(client.Key);
+                }
             }
-            catch (Exception ex) when (
-                ex is WebSocketException or ObjectDisposedException)
-            {
-                deadClients.Add(client.Key);
-            }
-        }
 
             foreach (var clientId in deadClients)
             {
