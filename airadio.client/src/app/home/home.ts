@@ -14,6 +14,14 @@ interface CarouselStation extends RadioStation {
   isEmpty?: boolean;
 }
 
+type CarouselPosition =
+  | 'far-previous'
+  | 'previous'
+  | 'active'
+  | 'next'
+  | 'far-next'
+  | 'hidden';
+
 @Component({
   selector: 'app-home',
   standalone: false,
@@ -233,6 +241,51 @@ export class Home implements OnInit, OnDestroy {
     }
 
     return this.stations[this.wrapIndex(this.selectedIndex + 1)];
+  }
+
+  getCarouselPosition(index: number): CarouselPosition {
+    const count = this.stations.length;
+
+    if (count === 0) {
+      return 'hidden';
+    }
+
+    if (count <= 5) {
+      const relative = index - this.selectedIndex;
+
+      if (relative === -2) return 'far-previous';
+      if (relative === -1) return 'previous';
+      if (relative === 0) return 'active';
+      if (relative === 1) return 'next';
+      if (relative === 2) return 'far-next';
+      return 'hidden';
+    }
+
+    let relative = index - this.selectedIndex;
+
+    if (relative > count / 2) {
+      relative -= count;
+    } else if (relative <= -count / 2) {
+      relative += count;
+    }
+
+    if (relative === -2) return 'far-previous';
+    if (relative === -1) return 'previous';
+    if (relative === 0) return 'active';
+    if (relative === 1) return 'next';
+    if (relative === 2) return 'far-next';
+
+    return 'hidden';
+  }
+
+  async selectCard(index: number): Promise<void> {
+    if (index < 0 || index >= this.stations.length) {
+      return;
+    }
+
+    this.resetIdleTimer();
+    this.selectedIndex = index;
+    await this.selectActiveStation();
   }
 
   async selectPrevious(): Promise<void> {
