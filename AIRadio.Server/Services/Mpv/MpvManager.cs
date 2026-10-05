@@ -49,17 +49,20 @@ namespace AIRadio.Server.Services.Mpv
         private readonly IMpvClient _mpv;
         private readonly IMpvState _state;
         private readonly IMpvVolumeStore _volumeStore;
+        private readonly IRadioMetadataTranslator _metadataTranslator;
 
         public MpvManager(
             ILogger<MpvManager> logger,
             IMpvClient mpv,
             IMpvState state,
-            IMpvVolumeStore volumeStore)
+            IMpvVolumeStore volumeStore,
+            IRadioMetadataTranslator metadataTranslator)
         {
             _logger = logger;
             _mpv = mpv;
             _state = state;
             _volumeStore = volumeStore;
+            _metadataTranslator = metadataTranslator;
 
             _mpv.PlaybackChanged +=
                 OnPlaybackChanged;
@@ -503,25 +506,34 @@ namespace AIRadio.Server.Services.Mpv
         {
             try
             {
-                var metadata = await Task.WhenAll(
-                    _mpv.GetPropertyStringAsync("metadata/by-key/title"),
-                    _mpv.GetPropertyStringAsync("metadata/by-key/artist"),
-                    _mpv.GetPropertyStringAsync("metadata/by-key/album"));
+                var metadata = await _mpv.GetPropertyAsync(
+                    "metadata");
+
+                if (metadata is null ||
+                    metadata.Value.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    _logger.LogDebug(
+                        "MPV metadata update did not contain a metadata object.");
+                    return;
+                }
+
+                var translated = _metadataTranslator.Translate(
+                    metadata.Value);
 
                 _state.Update(
                     update =>
                     {
                         update.MetadataChanged = true;
-                        update.Title = metadata[0];
-                        update.Artist = metadata[1];
-                        update.Album = metadata[2];
+                        update.Title = translated.Title;
+                        update.Artist = translated.Artist;
+                        update.Album = translated.Album;
                     });
 
                 _logger.LogInformation(
                     "MPV metadata changed. Title={Title}, Artist={Artist}, Album={Album}.",
-                    metadata[0],
-                    metadata[1],
-                    metadata[2]);
+                    translated.Title,
+                    translated.Artist,
+                    translated.Album);
             }
             catch (Exception ex)
             {
