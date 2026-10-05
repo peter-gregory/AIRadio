@@ -210,10 +210,11 @@ export class Home implements OnInit, OnDestroy {
   }
 
   get clockMinute(): string {
-    return new Intl.DateTimeFormat(undefined, {
-      minute: '2-digit',
-      hour12: true
-    }).formatToParts(new Date()).find(part => part.type === 'minute')?.value ?? '';
+    const minute = new Intl.DateTimeFormat(undefined, {
+      minute: 'numeric'
+    }).format(new Date());
+
+    return minute.padStart(2, '0');
   }
 
   get clockPeriod(): string {
