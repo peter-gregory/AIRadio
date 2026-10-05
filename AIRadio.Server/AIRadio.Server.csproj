@@ -51,18 +51,18 @@
     </None>
   </ItemGroup>
 
-  <!-- Inject Angular assets after the Angular project has built, before publish files are computed -->
-  <Target Name="AppendAngularToPublish"
-          AfterTargets="Build"
-          BeforeTargets="ComputeFilesToPublish">
+  <!-- Copy the Angular production build directly into the final publish directory. -->
+  <Target Name="CopyAngularToPublishDirectory" AfterTargets="Publish">
     <ItemGroup>
       <AngularDistFiles Include="..\airadio.client\dist\airadio.client\browser\**\*" />
-
-      <ResolvedFileToPublish Include="@(AngularDistFiles)">
-        <RelativePath>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
-        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </ResolvedFileToPublish>
     </ItemGroup>
+
+    <MakeDir Directories="$(PublishDir)wwwroot" />
+
+    <Copy
+      SourceFiles="@(AngularDistFiles)"
+      DestinationFiles="@(AngularDistFiles->'$(PublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
