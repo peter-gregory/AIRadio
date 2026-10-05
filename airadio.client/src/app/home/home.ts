@@ -4,6 +4,11 @@ import {
   Radio,
   RadioStation
 } from '../shared/services/radio/radio';
+import {
+  RadioNotification,
+  RadioNotifications
+} from '../shared/services/radio/radio-notifications';
+import { Subscription } from 'rxjs';
 
 interface CarouselStation extends RadioStation {
   isEmpty?: boolean;
@@ -24,6 +29,7 @@ export class Home implements OnInit, OnDestroy {
 
   private idleTimer?: ReturnType<typeof setTimeout>;
   private volumeTimer?: ReturnType<typeof setTimeout>;
+  private notificationSubscription?: Subscription;
   private touchStartX = 0;
   private touchStartY = 0;
 
@@ -38,17 +44,28 @@ export class Home implements OnInit, OnDestroy {
   showScreensaver = false;
   loading = true;
 
-  constructor(private radioService: Radio) {
+  constructor(
+    private radioService: Radio,
+    private radioNotifications: RadioNotifications
+  ) {
   }
 
   async ngOnInit(): Promise<void> {
+    this.notificationSubscription = this.radioNotifications.notifications$.subscribe(
+      notification => this.handleNotification(notification)
+    );
+
     await this.refresh();
+
+    this.radioNotifications.connect();
     this.resetIdleTimer();
   }
 
   ngOnDestroy(): void {
     this.clearTimer(this.idleTimer);
     this.clearTimer(this.volumeTimer);
+    this.notificationSubscription?.unsubscribe();
+    this.radioNotifications.disconnect();
   }
 
   async refresh(): Promise<void> {
@@ -72,6 +89,104 @@ export class Home implements OnInit, OnDestroy {
       this.selectedIndex = index >= 0 ? index : 0;
     } finally {
       this.loading = false;
+    }
+  }
+
+  private async handleNotification(notification: RadioNotification): Promise<void> {
+    this.resetIdleTimer();
+
+    switch (notification.type) {
+      case 'stationPlaylistChanged':
+        await this.refreshStations();
+        break;
+
+      case 'selectedStationChanged':
+        this.selectStationById(notification.stationId);
+        break;
+
+      case 'stationPlaybackStarted':
+        this.selectStationById(notification.stationId);
+        this.updatePlayingState(notification.stationId, true);
+        break;
+
+      case 'stationPlaybackStopped':
+        this.selectStationById(notification.stationId);
+        this.updatePlayingState(notification.stationId, false);
+        break;
+
+      case 'songMetadataChanged':
+        this.selectStationById(notification.stationId);
+        this.playing = {
+          ...this.playing,
+          stationId: notification.stationId ?? this.playing.stationId ?? null,
+          title: notification.title ?? null,
+          artist: notification.artist ?? null,
+          album: notification.album ?? null
+        };
+        break;
+
+      case 'volumeChanged':
+        this.volume = Math.max(0, Math.min(100, notification.volume));
+        break;
+    }
+  }
+
+  private async refreshStations(): Promise<void> {
+    const stations = await this.radioService.getStations();
+    const activeId = this.playing.stationId ?? this.activeStation.id;
+
+    this.stations = [this.emptyStation, ...stations];
+
+    const index = this.stations.findIndex(
+      station => station.id === activeId
+    );
+
+    if (index >= 0) {
+      this.selectedIndex = index;
+    } else {
+      this.selectedIndex = Math.min(
+        this.selectedIndex,
+        Math.max(0, this.stations.length - 1)
+      );
+    }
+  }
+
+  private selectStationById(stationId?: string | null): void {
+    if (!stationId) {
+      return;
+    }
+
+    const index = this.stations.findIndex(
+      station => station.id === stationId
+    );
+
+    if (index >= 0) {
+      this.selectedIndex = index;
+    }
+  }
+
+  private updatePlayingState(
+    stationId: string | null | undefined,
+    isPlaying: boolean
+  ): void {
+    const station = stationId
+      ? this.stations.find(item => item.id === stationId) ?? null
+      : null;
+
+    this.playing = {
+      ...this.playing,
+      stationId: stationId ?? this.playing.stationId ?? null,
+      station: station ?? this.playing.station,
+      playing: isPlaying
+    };
+
+    if (!isPlaying) {
+      this.playing = {
+        ...this.playing,
+        title: null,
+        artist: null,
+        album: null
+      };
     }
   }
 
