@@ -67,14 +67,14 @@
 .station-card-previous {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% - 126px)) translateZ(-38px) rotateY(30deg) scale(.88);
+  transform: translateX(calc(-50% - 105px)) translateZ(-38px) rotateY(30deg) scale(.88);
   transform-origin: right center;
 }
 
 .station-card-next {
   z-index: 4;
   opacity: .92;
-  transform: translateX(calc(-50% + 126px)) translateZ(-38px) rotateY(-30deg) scale(.88);
+  transform: translateX(calc(-50% + 105px)) translateZ(-38px) rotateY(-30deg) scale(.88);
   transform-origin: left center;
 }
 
@@ -104,11 +104,11 @@
 }
 
 .station-card-previous:active {
-  transform: translateX(calc(-50% - 105px)) translateZ(-38px) rotateY(30deg) scale(.86);
+  transform: translateX(calc(-50% - 84px)) translateZ(-38px) rotateY(30deg) scale(.86);
 }
 
 .station-card-next:active {
-  transform: translateX(calc(-50% + 105px)) translateZ(-38px) rotateY(-30deg) scale(.86);
+  transform: translateX(calc(-50% + 84px)) translateZ(-38px) rotateY(-30deg) scale(.86);
 }
 
 .station-favicon {
