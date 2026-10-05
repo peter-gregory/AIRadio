@@ -237,10 +237,12 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         }
 
         var shutdownToken = _shutdownCts.Token;
+        var lockTaken = false;
 
         try
         {
             await _broadcastLock.WaitAsync(shutdownToken);
+            lockTaken = true;
         }
         catch (OperationCanceledException)
         {
@@ -292,7 +294,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         }
         finally
         {
-            if (_broadcastLock.CurrentCount == 0)
+            if (lockTaken)
             {
                 _broadcastLock.Release();
             }
@@ -325,9 +327,10 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         }
 
         _clients.Clear();
-        _shutdownCts.Dispose();
 
-        // Do not dispose _broadcastLock here. BroadcastAsync calls are intentionally
+        // Do not dispose the cancellation source or broadcast lock here. The
+        // WebSocket handlers and fire-and-forget broadcasts may still be unwinding
+        // after cancellation; both will be collected with the service when complete.
         // fire-and-forget and may still be unwinding after cancellation.
 
     private sealed record RadioNotification(
