@@ -36,7 +36,7 @@
 
           @if (station.isEmpty) {
             <div class="empty-station-icon">
-              <i class="fa-solid fa-stop" aria-hidden="true"></i>
+              <i class="fa-solid fa-headphones" aria-hidden="true"></i>
             </div>
             <div class="station-name">NO STATION</div>
             <div class="station-subtitle">Radio stopped</div>
@@ -48,6 +48,10 @@
                 class="station-favicon"
                 [src]="station.favicon"
                 [alt]="station.name">
+            } @else {
+              <div class="empty-station-icon" aria-hidden="true">
+                <i class="fa-solid fa-headphones"></i>
+              </div>
             }
 
             @if (playing.playing && playing.stationId === station.id) {
