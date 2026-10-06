@@ -89,7 +89,7 @@ Important:
 - Never convert a number contained in a station name into a station ID. For example, "Lightning 100" and "Lightning One Hundred" are station names.
 - Do not turn a genre, style, mood, language, country, artist, or other descriptive term into stationName. For example, "light jazz" is a search criterion, not a station name.
 - If the user says "play the radio", "play some music", or "play my favorites" without naming a station, load the saved station list and start with its first station.
-- The saved list is ordered with the most recently favorited station first, followed by other saved stations.
+- The saved list is ordered with favorites first (favorite number order), then by play count, most recently played, and station name.
 - If the saved station list is empty, report that there are no saved stations.
 
 Examples:
