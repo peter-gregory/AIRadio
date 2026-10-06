@@ -8,16 +8,9 @@
     <div class="screensaver">
       <div class="screensaver-date">{{ today | date:'EEEE, MMMM d' }}</div>
       <div class="flip-clock" aria-label="Current time">
-        <div class="time-pane hour-pane">
-          <app-flip-digit [value]="clockHourTens"></app-flip-digit>
-          <app-flip-digit [value]="clockHourOnes"></app-flip-digit>
-        </div>
+        <app-flip-digit class="hour-pane" [value]="clockHourValue" [period]="clockPeriod"></app-flip-digit>
         <div class="flip-separator" aria-hidden="true">:</div>
-        <div class="time-pane minute-pane">
-          <app-flip-digit [value]="clockMinuteTens"></app-flip-digit>
-          <app-flip-digit [value]="clockMinuteOnes"></app-flip-digit>
-          <span class="flip-period">{{ clockPeriod }}</span>
-        </div>
+        <app-flip-digit class="minute-pane" [value]="clockMinuteValue"></app-flip-digit>
       </div>
     </div>
   } @else if (loading) {
