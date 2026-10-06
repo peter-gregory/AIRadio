@@ -13,13 +13,18 @@
   height: 100%;
   overflow: hidden;
   border-radius: 9px;
-  background: #25282c;
+  background: #17191b;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 3px #0b0c0d,
+    0 0 10px rgba(255, 214, 140, .22),
+    0 0 22px rgba(255, 184, 72, .12);
   transform-style: preserve-3d;
   box-shadow:
     0 5px 14px rgba(0, 0, 0, .48),
     inset 0 1px rgba(255, 255, 255, .055),
     inset 0 -2px rgba(0, 0, 0, .7);
-  font-family: "Nimbus Sans Narrow", sans-serif;
+  font-family: sans-serif;
   font-size: 128px;
   line-height: 1;
   font-weight: 700;
