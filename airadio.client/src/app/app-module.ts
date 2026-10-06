@@ -7,11 +7,13 @@ import { App } from './app';
 import { FormsModule } from '@angular/forms';
 import { NgSelectModule } from '@ng-select/ng-select';
 import { Home } from './home/home';
+import { FlipDigit } from './shared/components/flip-digit/flip-digit';
 
 @NgModule({
   declarations: [
     App,
-    Home
+    Home,
+    FlipDigit
   ],
   imports: [
     BrowserModule, HttpClientModule, FormsModule, NgSelectModule,
