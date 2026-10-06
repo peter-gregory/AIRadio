@@ -72,10 +72,13 @@
 }
 
 .pane-top .pane-text,
-.flap-top .pane-text,
+.flap-top .pane-text {
+  top: 0;
+}
+
 .pane-bottom .pane-text,
 .flap-bottom .pane-text {
-  top: 0;
+  top: -100%;
 }
 
 .pane-bottom,
