@@ -1698,6 +1698,38 @@ bool ParseNonNegativeFloat(
   return true;
 }
 
+bool ParseNonNegativeInt(
+    const std::string& value,
+    int* output) {
+
+  if (!output || value.empty()) {
+    return false;
+  }
+
+  try {
+    size_t consumed = 0;
+
+    const long parsed =
+        std::stol(value, &consumed);
+
+    if (consumed != value.size() ||
+        parsed < 0 ||
+        parsed >
+            std::numeric_limits<int>::max()) {
+
+      return false;
+    }
+
+    *output =
+        static_cast<int>(parsed);
+
+    return true;
+
+  } catch (...) {
+    return false;
+  }
+}
+
 bool ParsePositiveInt(
     const std::string& value,
     int* output) {
@@ -2257,7 +2289,7 @@ int main(int argc, char** argv) {
       }
 
       int value = 0;
-      if (!ParsePositiveInt(argv[++i], &value) || value < 0) {
+      if (!ParseNonNegativeInt(argv[++i], &value)) {
         std::cerr
             << "--vad-pre-roll-ms must be a non-negative integer\n";
 
@@ -2273,7 +2305,7 @@ int main(int argc, char** argv) {
       const std::string text =
           arg.substr(std::strlen("--vad-pre-roll-ms="));
 
-      if (!ParsePositiveInt(text, &value) || value < 0) {
+      if (!ParseNonNegativeInt(text, &value)) {
         std::cerr
             << "--vad-pre-roll-ms must be a non-negative integer\n";
 
