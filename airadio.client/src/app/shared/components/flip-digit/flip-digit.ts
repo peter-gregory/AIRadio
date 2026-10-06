@@ -8,6 +8,7 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 })
 export class FlipDigit implements OnChanges {
   @Input() value = '0';
+  @Input() period = '';
 
   currentValue = '0';
   nextValue = '0';
@@ -18,7 +19,7 @@ export class FlipDigit implements OnChanges {
       return;
     }
 
-    const next = String(this.value ?? '0').slice(-1);
+    const next = String(this.value ?? '0');
 
     if (changes['value'].firstChange) {
       this.currentValue = next;
@@ -27,9 +28,6 @@ export class FlipDigit implements OnChanges {
     }
 
     if (this.currentValue === next || this.isFlipping) {
-      if (!this.isFlipping) {
-        this.currentValue = next;
-      }
       return;
     }
 
