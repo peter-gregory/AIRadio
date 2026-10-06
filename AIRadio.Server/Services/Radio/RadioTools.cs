@@ -202,6 +202,15 @@ User: "Play WRLT"
                     JsonSerializer.Serialize(results));
             }
 
+            if (results.Count > 0)
+            {
+                // A station-name search creates a new playback playlist just
+                // like radioSearch. Keep the complete result set so Next and
+                // Previous operate on the stations the user just requested,
+                // rather than continuing to use the previous playlist.
+                Mpv.SetRadioPlaylist(results, RadioPlaylistSource.Search);
+            }
+
             station = results.FirstOrDefault();
         }
 
