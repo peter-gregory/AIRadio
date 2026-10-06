@@ -38,6 +38,7 @@ export class Home implements OnInit, OnDestroy {
   private idleTimer?: ReturnType<typeof setTimeout>;
   private volumeTimer?: ReturnType<typeof setTimeout>;
   private notificationSubscription?: Subscription;
+  private clockTimer?: ReturnType<typeof setInterval>;
   private touchStartX = 0;
   private touchStartY = 0;
 
@@ -51,6 +52,7 @@ export class Home implements OnInit, OnDestroy {
   showVolume = false;
   showScreensaver = false;
   loading = true;
+  clockNow = new Date();
 
   constructor(
     private radioService: Radio,
@@ -66,12 +68,18 @@ export class Home implements OnInit, OnDestroy {
     await this.refresh();
 
     this.radioNotifications.connect();
+    this.clockTimer = setInterval(() => {
+      this.clockNow = new Date();
+    }, 1000);
     this.resetIdleTimer();
   }
 
   ngOnDestroy(): void {
     this.clearTimer(this.idleTimer);
     this.clearTimer(this.volumeTimer);
+    if (this.clockTimer) {
+      clearInterval(this.clockTimer);
+    }
     this.notificationSubscription?.unsubscribe();
     this.radioNotifications.disconnect();
   }
@@ -199,29 +207,44 @@ export class Home implements OnInit, OnDestroy {
   }
 
   get today(): Date {
-    return new Date();
+    return this.clockNow;
   }
 
-  get clockHour(): string {
+  private get clockHourValue(): string {
     return new Intl.DateTimeFormat(undefined, {
       hour: 'numeric',
       hour12: true
-    }).formatToParts(new Date()).find(part => part.type === 'hour')?.value ?? '';
+    }).formatToParts(this.clockNow).find(part => part.type === 'hour')?.value ?? '';
   }
 
-  get clockMinute(): string {
-    const minute = new Intl.DateTimeFormat(undefined, {
-      minute: 'numeric'
-    }).format(new Date());
+  get clockHourTens(): string {
+    const hour = this.clockHourValue;
+    return hour.length > 1 ? hour.slice(0, -1) : '';
+  }
 
-    return minute.padStart(2, '0');
+  get clockHourOnes(): string {
+    return this.clockHourValue.slice(-1);
+  }
+
+  private get clockMinuteValue(): string {
+    return new Intl.DateTimeFormat(undefined, {
+      minute: '2-digit'
+    }).format(this.clockNow).padStart(2, '0');
+  }
+
+  get clockMinuteTens(): string {
+    return this.clockMinuteValue[0] ?? '0';
+  }
+
+  get clockMinuteOnes(): string {
+    return this.clockMinuteValue[1] ?? '0';
   }
 
   get clockPeriod(): string {
     return new Intl.DateTimeFormat(undefined, {
       hour: 'numeric',
       hour12: true
-    }).formatToParts(new Date()).find(part => part.type === 'dayPeriod')?.value ?? '';
+    }).formatToParts(this.clockNow).find(part => part.type === 'dayPeriod')?.value ?? '';
   }
 
   get activeStation(): CarouselStation {
