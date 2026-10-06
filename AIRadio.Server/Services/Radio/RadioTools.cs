@@ -310,11 +310,17 @@ User: "Go to the next station"
 
         var station = State.RadioPlaylist[(State.RadioPlaylistIndex + 1) % State.RadioPlaylist.Count];
         await Audio.PlayStationAsync(station, cancellationToken);
+        // PlayStationAsync updates the shared radio state asynchronously as
+        // playback changes. Use the station selected above for the immediate
+        // tool response so the announcement cannot race with the state update
+        // and speak a stale station (for example, the first playlist entry).
+        var spokenName = RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
         return ToolResult.Successful(
             Name,
-            $"Playing {State.RadioStation?.Name ?? "next station"}.",
-            new { Station = State.RadioStation },
-            $"Now playing {State.RadioStation?.Name ?? "the next station"}.",
+            $"Playing {station.Name}.",
+            new { Station = station },
+            $"Now playing {spokenName}.",
             true);
     }
 }
@@ -357,11 +363,16 @@ User: "Play the previous station"
 
         var station = State.RadioPlaylist[(State.RadioPlaylistIndex - 1 + State.RadioPlaylist.Count) % State.RadioPlaylist.Count];
         await Audio.PlayStationAsync(station, cancellationToken);
+        // Use the station selected above for the immediate response rather
+        // than reading shared state, which may still reflect the previous
+        // station until the playback state update is published.
+        var spokenName = RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+
         return ToolResult.Successful(
             Name,
-            $"Playing {State.RadioStation?.Name ?? "previous station"}.",
-            new { Station = State.RadioStation },
-            $"Now playing {State.RadioStation?.Name ?? "the previous station"}.",
+            $"Playing {station.Name}.",
+            new { Station = station },
+            $"Now playing {spokenName}.",
             true);
     }
 }
