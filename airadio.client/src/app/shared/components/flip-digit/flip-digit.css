@@ -64,12 +64,6 @@
   text-align: center;
 }
 
-/*
- * Both halves contain the complete, tall digit/string.
- * The upper half exposes only its top half.
- * The lower half shifts the same text upward so only its bottom half
- * is visible.
- */
 .pane-top,
 .flap-top {
   top: 0;
@@ -104,7 +98,6 @@
     inset 0 -1px rgba(255, 255, 255, .02);
 }
 
-/* The physical hinge line between the two cards. */
 .flip-pane::before {
   content: "";
   position: absolute;
