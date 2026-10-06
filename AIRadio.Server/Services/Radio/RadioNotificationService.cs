@@ -332,6 +332,7 @@ public sealed class RadioNotificationService : IRadioNotificationService, IDispo
         // WebSocket handlers and fire-and-forget broadcasts may still be unwinding
         // after cancellation; both will be collected with the service when complete.
         // fire-and-forget and may still be unwinding after cancellation.
+    }
 
     private sealed record RadioNotification(
         string Type,
