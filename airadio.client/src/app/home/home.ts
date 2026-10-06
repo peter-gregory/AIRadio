@@ -217,27 +217,10 @@ export class Home implements OnInit, OnDestroy {
     }).formatToParts(this.clockNow).find(part => part.type === 'hour')?.value ?? '';
   }
 
-  get clockHourTens(): string {
-    const hour = this.clockHourValue;
-    return hour.length > 1 ? hour.slice(0, -1) : '';
-  }
-
-  get clockHourOnes(): string {
-    return this.clockHourValue.slice(-1);
-  }
-
   private get clockMinuteValue(): string {
     return new Intl.DateTimeFormat(undefined, {
       minute: '2-digit'
     }).format(this.clockNow).padStart(2, '0');
-  }
-
-  get clockMinuteTens(): string {
-    return this.clockMinuteValue[0] ?? '0';
-  }
-
-  get clockMinuteOnes(): string {
-    return this.clockMinuteValue[1] ?? '0';
   }
 
   get clockPeriod(): string {
