@@ -1,108 +1,154 @@
 :host {
   display: block;
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: 1 1 0;
   min-width: 0;
-  perspective: 700px;
+  height: 100%;
+  perspective: 900px;
 }
 
-.flip-digit {
+.flip-pane {
   position: relative;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #25282c;
   transform-style: preserve-3d;
+  box-shadow:
+    0 5px 14px rgba(0, 0, 0, .48),
+    inset 0 1px rgba(255, 255, 255, .055),
+    inset 0 -2px rgba(0, 0, 0, .7);
   font-family: "Arial Narrow", "Segoe UI", sans-serif;
-  font-size: 72px;
+  font-size: 104px;
   line-height: 1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #f2f2f2;
+  color: #f0f0f0;
   text-align: center;
 }
 
-.half {
+.pane-half {
   position: absolute;
   left: 0;
   width: 100%;
   height: 50%;
   overflow: hidden;
   background:
-    linear-gradient(to bottom, #34383d 0%, #292d31 100%);
+    linear-gradient(to bottom, #35393e 0%, #292d31 100%);
   backface-visibility: hidden;
   transform-style: preserve-3d;
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, .055),
-    inset 0 -1px rgba(0, 0, 0, .65);
 }
 
-.half::after {
+.pane-half::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, .045),
-    transparent 38%,
-    rgba(0, 0, 0, .12)
-  );
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, .045),
+      transparent 38%,
+      rgba(0, 0, 0, .16)
+    );
 }
 
-.half span {
+.pane-text {
   position: absolute;
   left: 0;
   width: 100%;
   height: 200%;
   display: block;
-  text-align: center;
   line-height: 1;
+  text-align: center;
 }
 
-.static-top,
+/*
+ * Both halves contain the complete, tall digit/string.
+ * The upper half exposes only its top half.
+ * The lower half shifts the same text upward so only its bottom half
+ * is visible.
+ */
+.pane-top,
 .flap-top {
   top: 0;
-  border-radius: 7px 7px 0 0;
+  border-radius: 8px 8px 0 0;
 }
 
-.static-bottom,
-.flap-bottom {
-  bottom: 0;
-  border-radius: 0 0 7px 7px;
-}
-
-.static-top span,
-.flap-top span {
+.pane-top .pane-text,
+.flap-top .pane-text {
   top: 0;
 }
 
-.static-bottom span,
-.flap-bottom span {
+.pane-bottom,
+.flap-bottom {
+  bottom: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.pane-bottom .pane-text,
+.flap-bottom .pane-text {
   bottom: 0;
 }
 
-.static-top {
+.pane-top {
   z-index: 1;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .05);
 }
 
-.static-bottom {
+.pane-bottom {
   z-index: 2;
   box-shadow:
-    inset 0 1px rgba(0, 0, 0, .7),
-    inset 0 -1px rgba(255, 255, 255, .025);
+    inset 0 1px rgba(0, 0, 0, .78),
+    inset 0 -1px rgba(255, 255, 255, .02);
+}
+
+/* The physical hinge line between the two cards. */
+.flip-pane::before {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: rgba(0, 0, 0, .8);
+  box-shadow:
+    0 1px 2px rgba(255, 255, 255, .06),
+    0 -1px 2px rgba(0, 0, 0, .55);
+  pointer-events: none;
+}
+
+.period {
+  position: absolute;
+  z-index: 10;
+  left: 9px;
+  bottom: 7px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #d8dadd;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 .flap-top {
-  z-index: 5;
+  z-index: 6;
   transform-origin: center bottom;
-  animation: flip-top .24s cubic-bezier(.37, .01, .65, .98) forwards;
+  animation: flip-top .28s cubic-bezier(.37, .01, .65, .98) forwards;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, .85),
+    0 9px 14px rgba(0, 0, 0, .44);
 }
 
 .flap-bottom {
-  z-index: 4;
+  z-index: 5;
   transform-origin: center top;
   transform: rotateX(90deg);
-  animation: flip-bottom .24s .22s cubic-bezier(.35, .02, .65, .99) forwards;
+  animation: flip-bottom .28s .26s cubic-bezier(.35, .02, .65, .99) forwards;
 }
 
 .flap-top::before,
@@ -115,13 +161,7 @@
   background: rgba(0, 0, 0, .04);
 }
 
-.flap-top {
-  box-shadow:
-    0 1px 0 rgba(0, 0, 0, .8),
-    0 9px 13px rgba(0, 0, 0, .42);
-}
-
-.flipping .static-bottom {
+.flipping .pane-bottom {
   z-index: 1;
 }
 
@@ -137,14 +177,14 @@
 
   100% {
     transform: rotateX(-90deg);
-    filter: brightness(.55);
+    filter: brightness(.52);
   }
 }
 
 @keyframes flip-bottom {
   0% {
     transform: rotateX(90deg);
-    filter: brightness(.58);
+    filter: brightness(.55);
   }
 
   45% {
