@@ -7,13 +7,17 @@
   @if (showScreensaver) {
     <div class="screensaver">
       <div class="screensaver-date">{{ today | date:'EEEE, MMMM d' }}</div>
-      <div class="flip-clock">
-        <span class="flip-digit hour-pane">{{ clockHour }}</span>
-        <span class="flip-separator">:</span>
-        <span class="flip-digit minute-pane">
-          <span class="minute-value">{{ clockMinute }}</span>
+      <div class="flip-clock" aria-label="Current time">
+        <div class="time-pane hour-pane">
+          <app-flip-digit [value]="clockHourTens"></app-flip-digit>
+          <app-flip-digit [value]="clockHourOnes"></app-flip-digit>
+        </div>
+        <div class="flip-separator" aria-hidden="true">:</div>
+        <div class="time-pane minute-pane">
+          <app-flip-digit [value]="clockMinuteTens"></app-flip-digit>
+          <app-flip-digit [value]="clockMinuteOnes"></app-flip-digit>
           <span class="flip-period">{{ clockPeriod }}</span>
-        </span>
+        </div>
       </div>
     </div>
   } @else if (loading) {
