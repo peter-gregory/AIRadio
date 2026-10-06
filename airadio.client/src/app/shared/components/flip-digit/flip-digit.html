@@ -1,0 +1,19 @@
+<div class="flip-digit" [class.flipping]="isFlipping">
+  <div class="half static-top">
+    <span>{{ currentValue }}</span>
+  </div>
+
+  <div class="half static-bottom">
+    <span>{{ isFlipping ? nextValue : currentValue }}</span>
+  </div>
+
+  @if (isFlipping) {
+    <div class="half flap-top" (animationend)="onAnimationEnd()">
+      <span>{{ currentValue }}</span>
+    </div>
+
+    <div class="half flap-bottom">
+      <span>{{ nextValue }}</span>
+    </div>
+  }
+</div>
