@@ -300,34 +300,17 @@
   perspective: 900px;
 }
 
-.time-pane {
-  position: relative;
+.flip-clock app-flip-digit {
+  display: block;
   height: 151px;
-  padding: 5px;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  border-radius: 9px;
-  background: linear-gradient(180deg, #292d31 0%, #202327 100%);
-  box-shadow:
-    0 5px 14px rgba(0, 0, 0, .48),
-    inset 0 1px rgba(255, 255, 255, .055),
-    inset 0 -2px rgba(0, 0, 0, .65);
-  overflow: hidden;
 }
 
-.hour-pane {
-  width: 100px;
+.flip-clock .hour-pane {
+  flex: 0 0 91px;
 }
 
-.minute-pane {
-  width: 137px;
-  padding-right: 7px;
-}
-
-.time-pane app-flip-digit {
-  flex: 1 1 0;
-  min-width: 0;
+.flip-clock .minute-pane {
+  flex: 0 0 137px;
 }
 
 .flip-separator {
@@ -339,19 +322,6 @@
   font-weight: 700;
   color: #c7c9cb;
   animation: flip-clock-colon 2s steps(1, end) infinite;
-}
-
-.flip-period {
-  position: absolute;
-  left: 10px;
-  bottom: 7px;
-  z-index: 10;
-  font-size: 11px;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: .04em;
-  color: #d6d8da;
-  text-transform: uppercase;
 }
 
 @keyframes flip-clock-colon {
