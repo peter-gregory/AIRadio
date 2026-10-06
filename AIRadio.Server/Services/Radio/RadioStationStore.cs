@@ -12,6 +12,7 @@ public interface IRadioStationStore
     void SetFavorite(RadioStation station);
     IReadOnlyList<RadioStation> GetSavedStations();
     IReadOnlyList<RadioStation> GetFavoriteStations();
+    void RecordPlayed(string stationId);
 }
 
 public sealed class RadioStationStore : IRadioStationStore
@@ -118,6 +119,28 @@ public sealed class RadioStationStore : IRadioStationStore
     public IReadOnlyList<RadioStation> GetFavoriteStations()
     {
         lock (_sync) return _data.SavedStations.Where(x => x.IsFavorite).Select(x => x.Clone()).ToList();
+    }
+
+    public void RecordPlayed(string stationId)
+    {
+        if (string.IsNullOrWhiteSpace(stationId))
+            return;
+
+        var changed = false;
+
+        lock (_sync)
+        {
+            var station = Find(_data.SavedStations, stationId);
+            if (station is not null)
+            {
+                station.PlayCount++;
+                station.LastPlayed = DateTimeOffset.UtcNow;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            SaveToDisk();
     }
 
     private static RadioStation? Find(IEnumerable<RadioStation> stations, string stationId) =>
