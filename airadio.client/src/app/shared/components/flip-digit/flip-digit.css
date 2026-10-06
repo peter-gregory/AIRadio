@@ -73,12 +73,12 @@
 
 .pane-top .pane-text,
 .flap-top .pane-text {
-  top: 0;
+  top: 8px;
 }
 
 .pane-bottom .pane-text,
 .flap-bottom .pane-text {
-  top: -100%;
+  top: calc(-100% + 8px);
 }
 
 .pane-bottom,
