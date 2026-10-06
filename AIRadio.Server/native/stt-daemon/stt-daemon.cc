@@ -47,6 +47,7 @@ constexpr float kDefaultVadMaxSpeechDuration = 30.0f;
 // AIRadio's own paragraph-style endpoint detector.
 // The recognizer is finalized only after this much continuous silence.
 constexpr float kDefaultEndSilenceDuration = 1.5f;
+constexpr uint32_t kDefaultVadPreRollMs = 800;
 
 // -----------------------------------------------------------------------------
 // HTTP configuration.
@@ -72,6 +73,7 @@ struct AppConfig {
   float vad_min_silence_duration = kDefaultVadMinSilenceDuration;
   float vad_min_speech_duration = kDefaultVadMinSpeechDuration;
   float vad_max_speech_duration = kDefaultVadMaxSpeechDuration;
+  uint32_t vad_pre_roll_ms = kDefaultVadPreRollMs;
 
   // AIRadio paragraph endpoint.
   float end_silence_duration = kDefaultEndSilenceDuration;
@@ -1253,6 +1255,14 @@ class SpeechProcessor {
   }
 
  private:
+  uint64_t PreRollSamples() const {
+    const double samples =
+        static_cast<double>(g_config.vad_pre_roll_ms) *
+        static_cast<double>(kRecognizerSampleRate) / 1000.0;
+
+    return static_cast<uint64_t>(std::ceil(samples));
+  }
+
   uint64_t EndSilenceSamples() const {
     const double samples =
         static_cast<double>(
@@ -1310,7 +1320,7 @@ class SpeechProcessor {
 
         const uint64_t pre_roll =
             std::min<uint64_t>(
-                kRecognizerPreRollSamples,
+                PreRollSamples(),
                 window_start);
 
         utterance_start_sample_ =
@@ -1604,9 +1614,6 @@ class SpeechProcessor {
     }
   }
 
-  static constexpr uint64_t kRecognizerPreRollSamples =
-      1600;  // 100 ms
-
   static constexpr size_t kAsrChunkSamples =
       1600;  // 100 ms
 
@@ -1740,6 +1747,7 @@ void PrintUsage(const char* argv0) {
       << "  [--vad-min-silence FLOAT]\n"
       << "  [--vad-min-speech FLOAT]\n"
       << "  [--vad-max-speech FLOAT]\n"
+      << "  [--vad-pre-roll-ms N]\n"
       << "  [--end-silence FLOAT]\n"
       << "  [--encoder FILE]\n"
       << "  [--decoder FILE]\n"
@@ -1761,6 +1769,9 @@ void PrintUsage(const char* argv0) {
       << "  --vad-max-speech    "
       << kDefaultVadMaxSpeechDuration
       << " sec\n"
+      << "  --vad-pre-roll-ms   "
+      << kDefaultVadPreRollMs
+      << " ms\n"
       << "  --end-silence       "
       << kDefaultEndSilenceDuration
       << " sec\n"
@@ -1889,6 +1900,10 @@ int Run() {
       << "VAD max speech:     "
       << g_config.vad_max_speech_duration
       << " sec\n"
+
+      << "VAD pre-roll:       "
+      << g_config.vad_pre_roll_ms
+      << " ms\n"
 
       << "Endpoint silence:   "
       << g_config.end_silence_duration
@@ -2230,6 +2245,44 @@ int main(int argc, char** argv) {
       }
 
     // -------------------------------------------------------------------------
+    // VAD pre-roll.
+    // -------------------------------------------------------------------------
+
+    } else if (arg == "--vad-pre-roll-ms") {
+      if (i + 1 >= argc) {
+        std::cerr
+            << "--vad-pre-roll-ms requires a value\n";
+
+        return EXIT_FAILURE;
+      }
+
+      int value = 0;
+      if (!ParsePositiveInt(argv[++i], &value) || value < 0) {
+        std::cerr
+            << "--vad-pre-roll-ms must be a non-negative integer\n";
+
+        return EXIT_FAILURE;
+      }
+
+      g_config.vad_pre_roll_ms = static_cast<uint32_t>(value);
+
+    } else if (
+        arg.rfind("--vad-pre-roll-ms=", 0) == 0) {
+
+      int value = 0;
+      const std::string text =
+          arg.substr(std::strlen("--vad-pre-roll-ms="));
+
+      if (!ParsePositiveInt(text, &value) || value < 0) {
+        std::cerr
+            << "--vad-pre-roll-ms must be a non-negative integer\n";
+
+        return EXIT_FAILURE;
+      }
+
+      g_config.vad_pre_roll_ms = static_cast<uint32_t>(value);
+
+    // -------------------------------------------------------------------------
     // AIRadio paragraph endpoint.
     // -------------------------------------------------------------------------
 
@@ -2472,6 +2525,10 @@ int main(int argc, char** argv) {
       << "VAD max speech:     "
       << g_config.vad_max_speech_duration
       << " sec\n"
+
+      << "VAD pre-roll:       "
+      << g_config.vad_pre_roll_ms
+      << " ms\n"
 
       << "Endpoint silence:   "
       << g_config.end_silence_duration
