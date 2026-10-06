@@ -1,19 +1,23 @@
-<div class="flip-digit" [class.flipping]="isFlipping">
-  <div class="half static-top">
-    <span>{{ currentValue }}</span>
+<div class="flip-pane" [class.flipping]="isFlipping">
+  <div class="pane-half pane-top">
+    <span class="pane-text">{{ currentValue }}</span>
   </div>
 
-  <div class="half static-bottom">
-    <span>{{ isFlipping ? nextValue : currentValue }}</span>
+  <div class="pane-half pane-bottom">
+    <span class="pane-text">{{ isFlipping ? nextValue : currentValue }}</span>
   </div>
+
+  @if (period) {
+    <span class="period">{{ period }}</span>
+  }
 
   @if (isFlipping) {
-    <div class="half flap-top" (animationend)="onAnimationEnd()">
-      <span>{{ currentValue }}</span>
+    <div class="pane-half flap-top" (animationend)="onAnimationEnd()">
+      <span class="pane-text">{{ currentValue }}</span>
     </div>
 
-    <div class="half flap-bottom">
-      <span>{{ nextValue }}</span>
+    <div class="pane-half flap-bottom">
+      <span class="pane-text">{{ nextValue }}</span>
     </div>
   }
 </div>
