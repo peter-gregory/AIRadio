@@ -306,11 +306,11 @@
 }
 
 .flip-clock .hour-pane {
-  flex: 0 0 96px;
+  flex: 0 0 104px;
 }
 
 .flip-clock .minute-pane {
-  flex: 0 0 137px;
+  flex: 0 0 145px;
 }
 
 .flip-separator {
