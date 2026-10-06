@@ -20,6 +20,12 @@ export class FlipDigit implements OnChanges {
 
     const next = String(this.value ?? '0').slice(-1);
 
+    if (changes['value'].firstChange) {
+      this.currentValue = next;
+      this.nextValue = next;
+      return;
+    }
+
     if (this.currentValue === next || this.isFlipping) {
       if (!this.isFlipping) {
         this.currentValue = next;
