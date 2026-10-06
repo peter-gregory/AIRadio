@@ -102,7 +102,17 @@ public sealed class RadioStationStore : IRadioStationStore
 
     public IReadOnlyList<RadioStation> GetSavedStations()
     {
-        lock (_sync) return _data.SavedStations.Select(x => x.Clone()).ToList();
+        lock (_sync)
+        {
+            return _data.SavedStations
+                .OrderByDescending(x => x.IsFavorite)
+                .ThenBy(x => x.IsFavorite ? x.FavoriteNumber ?? int.MaxValue : int.MaxValue)
+                .ThenByDescending(x => x.PlayCount)
+                .ThenByDescending(x => x.LastPlayed)
+                .ThenBy(x => x.Name)
+                .Select(x => x.Clone())
+                .ToList();
+        }
     }
 
     public IReadOnlyList<RadioStation> GetFavoriteStations()
