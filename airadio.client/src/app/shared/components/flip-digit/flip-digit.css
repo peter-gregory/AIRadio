@@ -1,0 +1,166 @@
+:host {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  perspective: 700px;
+}
+
+.flip-digit {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  font-family: "Arial Narrow", "Segoe UI", sans-serif;
+  font-size: 72px;
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #f2f2f2;
+  text-align: center;
+}
+
+.half {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  overflow: hidden;
+  background:
+    linear-gradient(to bottom, #34383d 0%, #292d31 100%);
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .055),
+    inset 0 -1px rgba(0, 0, 0, .65);
+}
+
+.half::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, .045),
+    transparent 38%,
+    rgba(0, 0, 0, .12)
+  );
+}
+
+.half span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 200%;
+  display: block;
+  text-align: center;
+  line-height: 1;
+}
+
+.static-top,
+.flap-top {
+  top: 0;
+  border-radius: 7px 7px 0 0;
+}
+
+.static-bottom,
+.flap-bottom {
+  bottom: 0;
+  border-radius: 0 0 7px 7px;
+}
+
+.static-top span,
+.flap-top span {
+  top: 0;
+}
+
+.static-bottom span,
+.flap-bottom span {
+  bottom: 0;
+}
+
+.static-top {
+  z-index: 1;
+}
+
+.static-bottom {
+  z-index: 2;
+  box-shadow:
+    inset 0 1px rgba(0, 0, 0, .7),
+    inset 0 -1px rgba(255, 255, 255, .025);
+}
+
+.flap-top {
+  z-index: 5;
+  transform-origin: center bottom;
+  animation: flip-top .24s cubic-bezier(.37, .01, .65, .98) forwards;
+}
+
+.flap-bottom {
+  z-index: 4;
+  transform-origin: center top;
+  transform: rotateX(90deg);
+  animation: flip-bottom .24s .22s cubic-bezier(.35, .02, .65, .99) forwards;
+}
+
+.flap-top::before,
+.flap-bottom::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(0, 0, 0, .04);
+}
+
+.flap-top {
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, .8),
+    0 9px 13px rgba(0, 0, 0, .42);
+}
+
+.flipping .static-bottom {
+  z-index: 1;
+}
+
+@keyframes flip-top {
+  0% {
+    transform: rotateX(0deg);
+    filter: brightness(1);
+  }
+
+  55% {
+    filter: brightness(.72);
+  }
+
+  100% {
+    transform: rotateX(-90deg);
+    filter: brightness(.55);
+  }
+}
+
+@keyframes flip-bottom {
+  0% {
+    transform: rotateX(90deg);
+    filter: brightness(.58);
+  }
+
+  45% {
+    filter: brightness(.72);
+  }
+
+  100% {
+    transform: rotateX(0deg);
+    filter: brightness(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flap-top,
+  .flap-bottom {
+    animation-duration: .01ms;
+    animation-delay: 0ms;
+  }
+}
