@@ -134,16 +134,65 @@ var promptsDirectory = configuration["Application:PromptsDirectory"] ?? throw ne
 if (!Directory.Exists(soundsDirectory)) throw new DirectoryNotFoundException($"Sound effects directory was not found: {soundsDirectory}");
 if (!Directory.Exists(promptsDirectory)) throw new DirectoryNotFoundException($"Prompt directory was not found: {promptsDirectory}");
 
-await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(soundsDirectory);
-await app.Services.GetRequiredService<ILocationService>().InitializeAsync();
-await app.Services.GetRequiredService<IMpvManager>().InitializeAsync();
-await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
-await app.Services.GetRequiredService<IConversationLlamaClient>().InitializeAsync();
-app.Services.GetRequiredService<IStaticEventCalendar>();
-
 app.UseDefaultFiles();
 app.MapStaticAssets();
 app.MapControllers();
 app.MapFallbackToFile("/index.html");
 
-await app.RunAsync();
+// Populate the initial playlist from the persistent saved-station store before
+// starting Kestrel. This is in-memory work only, so the web API is immediately
+// able to return the user's stations without waiting for audio or LLM startup.
+var stationStore = app.Services.GetRequiredService<IRadioStationStore>();
+var savedStations = stationStore.GetSavedStations();
+
+if (savedStations.Count > 0)
+{
+    app.Services
+        .GetRequiredService<IMpvManager>()
+        .SetRadioPlaylist(savedStations, RadioPlaylistSource.SavedStations);
+
+    Log.Information(
+        "Loaded {Count} saved radio stations into the startup playlist.",
+        savedStations.Count);
+}
+else
+{
+    Log.Information("No saved radio stations found for the startup playlist.");
+}
+
+// Start the HTTP listener before performing the slower appliance initialization.
+// This allows the kiosk browser to load the Angular application immediately.
+await app.StartAsync();
+
+// These services can initialize after the HTTP listener is available.
+await app.Services.GetRequiredService<ISoundEffectManager>().InitializeAsync(soundsDirectory);
+await app.Services.GetRequiredService<ILocationService>().InitializeAsync();
+await app.Services.GetRequiredService<IMpvManager>().InitializeAsync();
+await app.Services.GetRequiredService<IPipeWireAudioClient>().InitializeAsync();
+app.Services.GetRequiredService<IStaticEventCalendar>();
+
+// Llama warm-up is deliberately not part of the HTTP startup critical path.
+// It primes the intent prompt while the web UI is already available.
+_ = WarmLlamaAsync(
+    app.Services.GetRequiredService<IConversationLlamaClient>(),
+    app.Lifetime.ApplicationStopping);
+
+await app.WaitForShutdownAsync();
+
+static async Task WarmLlamaAsync(
+    IConversationLlamaClient llama,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        await llama.InitializeAsync(cancellationToken);
+        Log.Information("Llama intent prompt warm-up completed.");
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Llama intent prompt warm-up failed.");
+    }
+}
