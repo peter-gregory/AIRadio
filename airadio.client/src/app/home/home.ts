@@ -210,14 +210,14 @@ export class Home implements OnInit, OnDestroy {
     return this.clockNow;
   }
 
-  private get clockHourValue(): string {
+  public get clockHourValue(): string {
     return new Intl.DateTimeFormat(undefined, {
       hour: 'numeric',
       hour12: true
     }).formatToParts(this.clockNow).find(part => part.type === 'hour')?.value ?? '';
   }
 
-  private get clockMinuteValue(): string {
+  public get clockMinuteValue(): string {
     return new Intl.DateTimeFormat(undefined, {
       minute: '2-digit'
     }).format(this.clockNow).padStart(2, '0');
