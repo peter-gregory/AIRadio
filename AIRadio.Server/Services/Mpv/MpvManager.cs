@@ -50,19 +50,22 @@ namespace AIRadio.Server.Services.Mpv
         private readonly IMpvState _state;
         private readonly IMpvVolumeStore _volumeStore;
         private readonly IRadioMetadataTranslator _metadataTranslator;
+        private readonly IRadioStationStore _stationStore;
 
         public MpvManager(
             ILogger<MpvManager> logger,
             IMpvClient mpv,
             IMpvState state,
             IMpvVolumeStore volumeStore,
-            IRadioMetadataTranslator metadataTranslator)
+            IRadioMetadataTranslator metadataTranslator,
+            IRadioStationStore stationStore)
         {
             _logger = logger;
             _mpv = mpv;
             _state = state;
             _volumeStore = volumeStore;
             _metadataTranslator = metadataTranslator;
+            _stationStore = stationStore;
 
             _mpv.PlaybackChanged +=
                 OnPlaybackChanged;
@@ -167,6 +170,8 @@ namespace AIRadio.Server.Services.Mpv
                             playlistIndex;
                     }
                 });
+
+            _stationStore.RecordPlayed(station.Id);
 
             _logger.LogInformation(
                 "Playing radio station {StationName} ({StationId}).",
