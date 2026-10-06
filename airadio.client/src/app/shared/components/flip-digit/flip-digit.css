@@ -19,10 +19,11 @@
     0 5px 14px rgba(0, 0, 0, .48),
     inset 0 1px rgba(255, 255, 255, .055),
     inset 0 -2px rgba(0, 0, 0, .7);
-  font-family: "Liberation Sans Narrow", sans-serif;
-  font-size: 128px;
+  font-family: "Nimbus Sans Narrow", sans-serif;
+  font-size: 136px;
   line-height: 1;
   font-weight: 700;
+  font-stretch: normal;
   font-variant-numeric: tabular-nums;
   color: #f0f0f0;
   text-align: center;
