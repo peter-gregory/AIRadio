@@ -17,6 +17,32 @@
   touch-action: pan-y;
 }
 
+.no-station-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190px;
+  height: 120px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  background: #4a1d7f;
+  color: #fff;
+  box-shadow: 0 7px 22px rgba(0, 0, 0, .38);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+
+.no-station-badge i {
+  font-size: 34px;
+  opacity: .8;
+}
+
 .carousel-viewport {
   position: relative;
   width: 100%;
