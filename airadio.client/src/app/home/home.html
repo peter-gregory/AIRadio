@@ -18,29 +18,27 @@
       <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
     </div>
   } @else {
-    <div class="carousel-viewport">
+    @if (stations.length === 0) {
+      <div class="no-station-badge">
+        <i class="fa-solid fa-headphones" aria-hidden="true"></i>
+        <span>NO STATION</span>
+      </div>
+    } @else {
+      <div class="carousel-viewport">
 
-      @for (station of stations; track station.id; let i = $index) {
-        <button
-          type="button"
-          class="station-card"
-          [class.station-card-far-previous]="getCarouselPosition(i) === 'far-previous'"
-          [class.station-card-previous]="getCarouselPosition(i) === 'previous'"
-          [class.station-card-active]="getCarouselPosition(i) === 'active'"
-          [class.station-card-next]="getCarouselPosition(i) === 'next'"
-          [class.station-card-far-next]="getCarouselPosition(i) === 'far-next'"
-          [class.station-card-hidden]="getCarouselPosition(i) === 'hidden'"
-          [class.station-empty]="station.isEmpty"
-          (click)="selectCard(i); $event.stopPropagation()"
-          [attr.aria-label]="'Select ' + station.name">
+        @for (station of stations; track station.id; let i = $index) {
+          <button
+            type="button"
+            class="station-card"
+            [class.station-card-far-previous]="getCarouselPosition(i) === 'far-previous'"
+            [class.station-card-previous]="getCarouselPosition(i) === 'previous'"
+            [class.station-card-active]="getCarouselPosition(i) === 'active'"
+            [class.station-card-next]="getCarouselPosition(i) === 'next'"
+            [class.station-card-far-next]="getCarouselPosition(i) === 'far-next'"
+            [class.station-card-hidden]="getCarouselPosition(i) === 'hidden'"
+            (click)="selectCard(i); $event.stopPropagation()"
+            [attr.aria-label]="'Accept ' + station.name">
 
-          @if (station.isEmpty) {
-            <div class="empty-station-icon">
-              <i class="fa-solid fa-headphones" aria-hidden="true"></i>
-            </div>
-            <div class="station-name">NO STATION</div>
-            <div class="station-subtitle">Radio stopped</div>
-          } @else {
             <div class="station-name">{{ station.name }}</div>
 
             @if (station.favicon) {
@@ -55,32 +53,32 @@
             }
 
             @if (playing.playing && playing.stationId === station.id) {
-              <div class="playing-indicator">
-                <span class="playing-dot"></span>
-                PLAYING
-              </div>
-
               <div class="song-info">
                 @if (playing.artist) {
                   <div class="artist">{{ playing.artist }}</div>
                 }
-                <div class="song-title">
-                  {{ playing.title || 'Now Playing' }}
-                </div>
+                @if (playing.title) {
+                  <div class="song-title">{{ playing.title }}</div>
+                }
               </div>
-            } @else {
-              <div class="station-subtitle">Tap or swipe to play</div>
             }
-          }
-        </button>
-      }
-    </div>
+          </button>
+        }
+      </div>
+    }
 
     @if (showVolume) {
       <div class="volume-overlay" (click)="$event.stopPropagation()">
         <div class="volume-value">{{ volume }}</div>
         <div class="volume-label">VOLUME</div>
-        <div class="progress volume-progress" role="progressbar" [attr.aria-valuenow]="volume" aria-valuemin="0" aria-valuemax="100">
+        <div
+          class="progress volume-progress"
+          role="progressbar"
+          tabindex="0"
+          [attr.aria-valuenow]="volume"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          (click)="setVolumeFromPointer($event)">
           <div class="progress-bar" [style.width.%]="volume"></div>
         </div>
       </div>
