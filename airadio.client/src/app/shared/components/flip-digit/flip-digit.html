@@ -12,11 +12,11 @@
   }
 
   @if (isFlipping) {
-    <div class="pane-half flap-top" (animationend)="onAnimationEnd()">
+    <div class="pane-half flap-top" (animationend)="onTopAnimationEnd($event)">
       <span class="pane-text">{{ currentValue }}</span>
     </div>
 
-    <div class="pane-half flap-bottom">
+    <div class="pane-half flap-bottom" [class.flipping]="isBottomFlipping" (animationend)="onBottomAnimationEnd($event)">
       <span class="pane-text">{{ nextValue }}</span>
     </div>
   }
