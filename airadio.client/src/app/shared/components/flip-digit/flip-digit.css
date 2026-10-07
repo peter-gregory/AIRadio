@@ -146,7 +146,7 @@
   z-index: 5;
   transform-origin: center top;
   transform: rotateX(90deg);
-  animation: flip-bottom .28s .26s cubic-bezier(.35, .02, .65, .99) forwards;
+  animation: none;
 }
 
 .flap-top::before,
@@ -161,6 +161,10 @@
 
 .flipping .pane-bottom {
   z-index: 1;
+}
+
+.flap-bottom.flipping {
+  animation: flip-bottom .28s cubic-bezier(.35, .02, .65, .99) forwards;
 }
 
 @keyframes flip-top {
