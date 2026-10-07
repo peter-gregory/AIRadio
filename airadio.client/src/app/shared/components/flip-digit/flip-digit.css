@@ -22,7 +22,7 @@
     inset 0 1px rgba(255, 255, 255, .055),
     inset 0 -2px rgba(0, 0, 0, .7);
   transform-style: preserve-3d;
-  font-family: sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 128px;
   line-height: 1;
   font-weight: 700;
