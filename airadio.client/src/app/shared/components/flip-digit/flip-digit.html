@@ -1,10 +1,10 @@
 <div class="flip-pane" [class.flipping]="isFlipping">
   <div class="pane-half pane-top">
-    <span class="pane-text">{{ currentValue }}</span>
+    <span class="pane-text">{{ isFlipping ? nextValue : currentValue }}</span>
   </div>
 
   <div class="pane-half pane-bottom">
-    <span class="pane-text">{{ isFlipping ? nextValue : currentValue }}</span>
+    <span class="pane-text">{{ currentValue }}</span>
   </div>
 
   @if (period) {
