@@ -13,6 +13,7 @@ export class FlipDigit implements OnChanges {
   currentValue = '0';
   nextValue = '0';
   isFlipping = false;
+  isBottomFlipping = false;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['value']) {
@@ -32,11 +33,17 @@ export class FlipDigit implements OnChanges {
     }
 
     this.nextValue = next;
+    this.isBottomFlipping = false;
     this.isFlipping = true;
   }
 
-  onAnimationEnd(): void {
+  onTopAnimationEnd(): void {
+    this.isBottomFlipping = true;
+  }
+
+  onBottomAnimationEnd(): void {
     this.currentValue = this.nextValue;
+    this.isBottomFlipping = false;
     this.isFlipping = false;
   }
 }
