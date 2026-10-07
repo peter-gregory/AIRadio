@@ -140,7 +140,7 @@ export class Home implements OnInit, OnDestroy {
 
   private async refreshStations(): Promise<void> {
     const stations = await this.radioService.getStations();
-    const activeId = this.playing.stationId ?? this.activeStation.id;
+    const activeId = this.playing.stationId ?? this.activeStation?.id ?? '';
 
     this.stations = stations;
 
@@ -273,6 +273,7 @@ export class Home implements OnInit, OnDestroy {
       return;
     }
 
+    this.focusTarget = 'carousel';
     this.selectedIndex = this.wrapIndex(this.selectedIndex + 1);
   }
 
@@ -411,12 +412,14 @@ export class Home implements OnInit, OnDestroy {
         break;
 
       case 'Tab':
-      case 'ArrowDown':
         event.preventDefault();
         this.focusTarget = 'carousel';
         break;
 
-      case 'Shift':
+      case 'ArrowUp':
+      case 'ArrowDown':
+        event.preventDefault();
+        this.focusTarget = 'carousel';
         break;
 
       case 'PageUp':
