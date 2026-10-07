@@ -10,10 +10,6 @@ import {
 } from '../shared/services/radio/radio-notifications';
 import { Subscription } from 'rxjs';
 
-interface CarouselStation extends RadioStation {
-  isEmpty?: boolean;
-}
-
 type CarouselPosition =
   | 'far-previous'
   | 'previous'
@@ -29,12 +25,6 @@ type CarouselPosition =
   styleUrl: './home.css',
 })
 export class Home implements OnInit, OnDestroy {
-  private readonly emptyStation: CarouselStation = {
-    id: '',
-    name: 'No Station',
-    isEmpty: true
-  };
-
   private idleTimer?: ReturnType<typeof setTimeout>;
   private volumeTimer?: ReturnType<typeof setTimeout>;
   private notificationSubscription?: Subscription;
@@ -42,7 +32,7 @@ export class Home implements OnInit, OnDestroy {
   private touchStartX = 0;
   private touchStartY = 0;
 
-  stations: CarouselStation[] = [];
+  stations: RadioStation[] = [];
   selectedIndex = 0;
   playing: PlayingRadioState = {
     playing: false,
@@ -50,6 +40,7 @@ export class Home implements OnInit, OnDestroy {
   };
   volume = 50;
   showVolume = false;
+  private focusTarget: 'carousel' | 'volume' = 'carousel';
   showScreensaver = false;
   loading = true;
   clockNow = new Date();
@@ -94,7 +85,7 @@ export class Home implements OnInit, OnDestroy {
         this.radioService.getVolume()
       ]);
 
-      this.stations = [this.emptyStation, ...stations];
+      this.stations = stations;
 
       this.playing = playing;
       this.volume = Math.max(0, Math.min(100, volume));
@@ -151,7 +142,7 @@ export class Home implements OnInit, OnDestroy {
     const stations = await this.radioService.getStations();
     const activeId = this.playing.stationId ?? this.activeStation.id;
 
-    this.stations = [this.emptyStation, ...stations];
+    this.stations = stations;
 
     const index = this.stations.findIndex(
       station => station.id === activeId
@@ -230,24 +221,8 @@ export class Home implements OnInit, OnDestroy {
     }).formatToParts(this.clockNow).find(part => part.type === 'dayPeriod')?.value ?? '';
   }
 
-  get activeStation(): CarouselStation {
-    return this.stations[this.selectedIndex] ?? this.emptyStation;
-  }
-
-  get previousStation(): CarouselStation {
-    if (this.stations.length <= 1) {
-      return this.emptyStation;
-    }
-
-    return this.stations[this.wrapIndex(this.selectedIndex - 1)];
-  }
-
-  get nextStation(): CarouselStation {
-    if (this.stations.length <= 1) {
-      return this.emptyStation;
-    }
-
-    return this.stations[this.wrapIndex(this.selectedIndex + 1)];
+  get activeStation(): RadioStation | null {
+    return this.stations[this.selectedIndex] ?? null;
   }
 
   getCarouselPosition(index: number): CarouselPosition {
@@ -281,7 +256,7 @@ export class Home implements OnInit, OnDestroy {
 
     this.resetIdleTimer();
     this.selectedIndex = index;
-    await this.selectActiveStation();
+    await this.acceptSelection();
   }
 
   async selectPrevious(): Promise<void> {
@@ -289,8 +264,8 @@ export class Home implements OnInit, OnDestroy {
       return;
     }
 
+    this.focusTarget = 'carousel';
     this.selectedIndex = this.wrapIndex(this.selectedIndex - 1);
-    await this.selectActiveStation();
   }
 
   async selectNext(): Promise<void> {
@@ -299,20 +274,19 @@ export class Home implements OnInit, OnDestroy {
     }
 
     this.selectedIndex = this.wrapIndex(this.selectedIndex + 1);
-    await this.selectActiveStation();
   }
 
-  async selectActiveStation(): Promise<void> {
+  async acceptSelection(): Promise<void> {
     this.resetIdleTimer();
 
     const station = this.activeStation;
+    if (!station) {
+      return;
+    }
 
-    if (station.isEmpty) {
-      await this.radioService.playStation('');
-      this.playing = {
-        playing: false,
-        station: null
-      };
+    if (this.playing.playing && this.playing.stationId === station.id) {
+      this.focusTarget = 'volume';
+      this.showVolumeOverlay();
       return;
     }
 
@@ -339,6 +313,7 @@ export class Home implements OnInit, OnDestroy {
 
   async changeVolume(delta: number): Promise<void> {
     this.resetIdleTimer();
+    this.focusTarget = 'volume';
 
     const nextVolume = Math.max(0, Math.min(100, this.volume + delta));
     if (nextVolume === this.volume) {
@@ -350,14 +325,17 @@ export class Home implements OnInit, OnDestroy {
     this.showVolumeOverlay();
 
     await this.radioService.setVolume(this.volume);
+    this.showVolumeOverlay();
   }
 
   showVolumeOverlay(): void {
     this.showVolume = true;
+    this.focusTarget = 'volume';
     this.clearTimer(this.volumeTimer);
     this.volumeTimer = setTimeout(() => {
       this.showVolume = false;
-    }, 2500);
+      this.focusTarget = 'carousel';
+    }, 2000);
   }
 
   onTouchStart(event: TouchEvent): void {
@@ -394,6 +372,28 @@ export class Home implements OnInit, OnDestroy {
 
   @HostListener('document:keydown', ['$event'])
   async onKeyDown(event: KeyboardEvent): Promise<void> {
+    if (this.focusTarget === 'volume') {
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault();
+          await this.volumeDown();
+          return;
+        case 'ArrowRight':
+          event.preventDefault();
+          await this.volumeUp();
+          return;
+        case 'Enter':
+        case 'Escape':
+          event.preventDefault();
+          this.dismissVolume();
+          return;
+        case 'Tab':
+          event.preventDefault();
+          this.dismissVolume();
+          return;
+      }
+    }
+
     switch (event.key) {
       case 'ArrowLeft':
         event.preventDefault();
@@ -405,14 +405,18 @@ export class Home implements OnInit, OnDestroy {
         await this.selectNext();
         break;
 
-      case 'ArrowUp':
+      case 'Enter':
         event.preventDefault();
-        await this.volumeUp();
+        await this.acceptSelection();
         break;
 
+      case 'Tab':
       case 'ArrowDown':
         event.preventDefault();
-        await this.volumeDown();
+        this.focusTarget = 'carousel';
+        break;
+
+      case 'Shift':
         break;
 
       case 'PageUp':
@@ -425,6 +429,31 @@ export class Home implements OnInit, OnDestroy {
         await this.selectNext();
         break;
     }
+  }
+
+  dismissVolume(): void {
+    this.clearTimer(this.volumeTimer);
+    this.showVolume = false;
+    this.focusTarget = 'carousel';
+  }
+
+  async setVolumeFromPointer(event: MouseEvent): Promise<void> {
+    event.stopPropagation();
+    this.resetIdleTimer();
+    this.focusTarget = 'volume';
+
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const percentage = Math.round(
+      Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * 100
+    );
+
+    if (percentage !== this.volume) {
+      this.volume = percentage;
+      await this.radioService.setVolume(this.volume);
+    }
+
+    this.showVolumeOverlay();
   }
 
   wake(): void {
@@ -441,7 +470,7 @@ export class Home implements OnInit, OnDestroy {
 
   private wrapIndex(index: number): number {
     const count = this.stations.length;
-    return ((index % count) + count) % count;
+    return count > 0 ? ((index % count) + count) % count : 0;
   }
 
   private clearTimer(timer?: ReturnType<typeof setTimeout>): void {
