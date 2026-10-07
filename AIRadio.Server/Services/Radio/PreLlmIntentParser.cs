@@ -204,8 +204,13 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
             "play radio" or
             "play some music" or
             "play my favorites" or
+            "play saved stations" or
+            "play the saved stations" or
+            "play saved radio stations" or
             "play my saved stations" or
-            "play my saved radio stations";
+            "play my saved radio stations" or
+            "play my playlist" or
+            "play my stations";
 
     /// <summary>
     /// Deterministically separates station-name requests from radio searches.
