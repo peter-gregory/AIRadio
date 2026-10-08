@@ -25,8 +25,8 @@ public sealed class WeatherTool : ITool
     }
 
     public bool HasParameters => true;
-    public string GetLlmRequestTemplate() => "{tool:weather-current,City=<optional>}";
-    public string Name => "weather-current";
+    public string GetLlmRequestTemplate() => "{tool:weatherCurrent,City=<optional>}";
+    public string Name => "weatherCurrent";
     public string Intent => "Get the current weather conditions.";
 
     public string GetLlmInstructions() => """
@@ -37,16 +37,16 @@ Parameters:
 - If City is omitted, use the radio's persistent current location.
 Use for what the weather is like now. Future weather belongs to forecast.
 Examples:
-"What's the weather?" -> {tool:weather-current}
-"What's the weather in Miami?" -> {tool:weather-current,City="Miami, Florida"}
-"Give me a weather report" -> {tool:weather-current}
+"What's the weather?" -> {tool:weatherCurrent}
+"What's the weather in Miami?" -> {tool:weatherCurrent,City="Miami, Florida"}
+"Give me a weather report" -> {tool:weatherCurrent}
 """;
 
     public string GetLlmResponseInstructions() => string.Empty;
 
     public async Task<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Start execute tool weather-current");
+        _logger.LogInformation("Start execute tool weatherCurrent");
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
