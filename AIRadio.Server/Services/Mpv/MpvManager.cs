@@ -26,6 +26,8 @@ namespace AIRadio.Server.Services.Mpv
             IReadOnlyList<RadioStation> stations,
             RadioPlaylistSource source);
 
+        RadioStation? RemoveCurrentRadioPlaylistStation();
+
         Task StopAsync(
             CancellationToken cancellationToken = default);
 
@@ -268,13 +270,6 @@ namespace AIRadio.Server.Services.Mpv
             ArgumentNullException.ThrowIfNull(
                 stations);
 
-            if (stations.Count == 0)
-            {
-                throw new ArgumentException(
-                    "Radio playlist must contain at least one station.",
-                    nameof(stations));
-            }
-
             var playlist =
                 stations.ToList();
 
@@ -295,6 +290,41 @@ namespace AIRadio.Server.Services.Mpv
                 "Radio playlist set to {Count} stations from {Source}.",
                 playlist.Count,
                 source);
+        }
+
+        public RadioStation? RemoveCurrentRadioPlaylistStation()
+        {
+            var playlist = _state.RadioPlaylist.ToList();
+            if (playlist.Count == 0)
+                return null;
+
+            var index = Math.Clamp(
+                _state.RadioPlaylistIndex,
+                0,
+                playlist.Count - 1);
+
+            playlist.RemoveAt(index);
+
+            var nextStation = playlist.Count > 0
+                ? playlist[index % playlist.Count]
+                : null;
+
+            _state.Update(
+                update =>
+                {
+                    update.RadioPlaylist = playlist;
+                    update.RadioPlaylistSource = _state.RadioPlaylistSource;
+                    update.RadioPlaylistIndex =
+                        playlist.Count == 0
+                            ? 0
+                            : index % playlist.Count;
+                });
+
+            _logger.LogInformation(
+                "Removed current station from radio playlist; {Count} station(s) remain.",
+                playlist.Count);
+
+            return nextStation;
         }
 
         // ============================================================
