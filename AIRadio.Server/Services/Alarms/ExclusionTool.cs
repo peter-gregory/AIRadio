@@ -20,7 +20,7 @@ Exclude an occurrence or recurrence from an existing alarm.
 
 Important:
 - This tool is only for alarms and scheduled alarm occurrences.
-- Never use this tool for radio requests. A request to remove, delete, or get rid of a radio station belongs to the radio-remove tool.
+- Never use this tool for radio requests. A request to remove, delete, or get rid of a radio station belongs to the radioRemove tool.
 Format: {tool:exclude,alarmId=<alarm id>,when=<complete date/time or recurrence expression>}
 The when value is the complete human expression. Do not split it into date, recurrence, weekday, or other fields.
 Examples:
