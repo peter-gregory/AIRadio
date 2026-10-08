@@ -2029,6 +2029,10 @@ int Run() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // Flush stdout after each insertion so diagnostic output is visible immediately
+  // when the daemon is running under systemd/journald as well as interactively.
+  std::cout << std::unitbuf;
+
   std::signal(SIGINT, SignalHandler);
   std::signal(SIGTERM, SignalHandler);
 
