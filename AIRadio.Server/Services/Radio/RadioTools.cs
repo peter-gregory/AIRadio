@@ -754,8 +754,8 @@ User: "Remove this one from my favorites"
         var station = State.RadioStation;
         if (station is null)
         {
-            const string speech = "There isn't a radio station playing right now.";
-            return Task.FromResult(ToolResult.Successful(Name, speech, new { Unfavorited = false }, speech, true));
+            const string speechEmpty = "There isn't a radio station playing right now.";
+            return Task.FromResult(ToolResult.Successful(Name, speechEmpty, new { Unfavorited = false }, speechEmpty, true));
         }
 
         var changed = _stationStore.Unfavorite(station.Id);
@@ -910,12 +910,12 @@ User: "Remove this station from my saved stations"
         var current = State.RadioStation;
         if (current is null)
         {
-            const string speech = "There isn't a radio station playing right now.";
+            const string speechEmpty = "There isn't a radio station playing right now.";
             return ToolResult.Successful(
                 Name,
-                speech,
+                speechEmpty,
                 new { Removed = false },
-                speech,
+                speechEmpty,
                 true);
         }
 
