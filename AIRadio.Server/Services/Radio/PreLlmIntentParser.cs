@@ -32,7 +32,7 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
             return Request("news");
 
         if (IsWeatherCommand(normalized))
-            return Request("weather-current");
+            return Request("weatherCurrent");
 
         if (IsEventsCommand(normalized))
             return Request("events");
@@ -54,6 +54,33 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
 
         if (IsRadioPreviousCommand(normalized))
             return Request("radioPrevious");
+
+        if (IsRadioCurrentCommand(normalized))
+            return Request("radioCurrent");
+
+        if (IsRadioSongCommand(normalized))
+            return Request("radioSong");
+
+        if (IsRadioSaveCommand(normalized))
+            return Request("radioSave");
+
+        if (IsRadioFavoriteCommand(normalized))
+            return Request("radioFavorite");
+
+        if (IsRadioUnfavoriteCommand(normalized))
+            return Request("radioUnfavorite");
+
+        if (IsRadioRemoveCommand(normalized))
+            return Request("radioRemove");
+
+        if (IsRadioStatusCommand(normalized))
+            return Request("radioStatus");
+
+        if (IsRadioPlaylistCommand(normalized))
+            return Request("radioPlaylist");
+
+        if (IsLocationGetCommand(normalized))
+            return Request("locationGet");
 
         if (IsSavedRadioPlaybackCommand(normalized))
             return Request("radioPlay");
@@ -188,6 +215,101 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
             "play the next station" or
             "go to the next station" or
             "skip to the next station";
+
+    private static bool IsRadioCurrentCommand(string text) =>
+        text is
+            "what station is this" or
+            "what radio station is this" or
+            "what station am i listening to" or
+            "what radio station am i listening to" or
+            "which station is this" or
+            "which radio station is this" or
+            "what's the current station" or
+            "what is the current station";
+
+    private static bool IsRadioSongCommand(string text) =>
+        text is
+            "what song is playing" or
+            "what song is playing right now" or
+            "what's playing right now" or
+            "what is playing right now" or
+            "what track is playing" or
+            "who is the current song by";
+
+    private static bool IsRadioSaveCommand(string text) =>
+        text is
+            "save this station" or
+            "save the station" or
+            "remember this station" or
+            "remember the station" or
+            "keep this station";
+
+    private static bool IsRadioFavoriteCommand(string text) =>
+        text is
+            "favorite this station" or
+            "favorite the station" or
+            "make this a favorite" or
+            "make the station a favorite" or
+            "add this station to favorites" or
+            "add the station to my favorites";
+
+    private static bool IsRadioUnfavoriteCommand(string text) =>
+        text is
+            "unfavorite this station" or
+            "unfavorite the station" or
+            "i don't like this station anymore" or
+            "i do not like this station anymore" or
+            "remove this one from my favorites" or
+            "remove this station from my favorites" or
+            "remove the station from my favorites";
+
+    private static bool IsRadioRemoveCommand(string text) =>
+        text is
+            "remove" or
+            "remove station" or
+            "remove this station" or
+            "remove this one" or
+            "delete station" or
+            "delete this station" or
+            "delete this one" or
+            "get rid of this station" or
+            "get rid of this one" or
+            "forget this station" or
+            "forget this one" or
+            "unsave this station" or
+            "remove this station from my saved stations";
+
+    private static bool IsRadioStatusCommand(string text) =>
+        text is
+            "radio status" or
+            "what's the radio status" or
+            "what is the radio status" or
+            "is the radio playing" or
+            "is the radio stopped" or
+            "is the radio paused" or
+            "is the radio muted" or
+            "what is the radio volume" or
+            "what's the radio volume";
+
+    private static bool IsRadioPlaylistCommand(string text) =>
+        text is
+            "radio playlist" or
+            "what stations are available" or
+            "what radio stations are available" or
+            "show me the radio stations" or
+            "show me the stations" or
+            "which stations can i play" or
+            "what stations can i play" or
+            "what stations are in the playlist";
+
+    private static bool IsLocationGetCommand(string text) =>
+        text is
+            "where am i" or
+            "what is my location" or
+            "what's my location" or
+            "where is the radio located" or
+            "what is the radio location" or
+            "what's the radio location";
 
     private static bool IsRadioPreviousCommand(string text) =>
         text is
