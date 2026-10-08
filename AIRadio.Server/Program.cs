@@ -70,6 +70,7 @@ builder.Services.AddSingleton<ITool, RadioForgetTool>();
 builder.Services.AddSingleton<ITool, RadioFavoriteTool>();
 builder.Services.AddSingleton<ITool, RadioStatusTool>();
 builder.Services.AddSingleton<ITool, RadioPlaylistTool>();
+builder.Services.AddSingleton<ITool, RadioRemoveTool>();
 builder.Services.AddSingleton<ITool, RadioSearchTool>();
 
 builder.Services.AddSingleton<ITool, LocationGetTool>();
