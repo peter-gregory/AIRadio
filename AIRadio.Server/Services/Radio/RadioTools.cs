@@ -450,7 +450,7 @@ public sealed class RadioSongTool : RadioToolBase
     public RadioSongTool(IMpvManager mpv, IMpvState state, IAudioManager audio)
         : base(mpv, state, audio) { }
 
-    public override string Name => "radio-song";
+    public override string Name => "radioSong";
     public override string Intent => "Get the song currently playing on the radio.";
     public override string GetLlmInstructions() => """
 RADIO SONG
@@ -464,10 +464,10 @@ Use this tool when the user asks what song is playing, what track is playing, or
 
 Examples:
 User: "What song is playing?"
-{tool:radio-song}
+{tool:radioSong}
 
 User: "What's playing right now?"
-{tool:radio-song}
+{tool:radioSong}
 """;
 
     public override Task<ToolResult> ExecuteAsync(
@@ -514,7 +514,7 @@ public sealed class RadioCurrentTool : RadioToolBase
     public RadioCurrentTool(IMpvManager mpv, IMpvState state, IAudioManager audio)
         : base(mpv, state, audio) { }
 
-    public override string Name => "radio-current";
+    public override string Name => "radioCurrent";
     public override string Intent => "Get the name of the currently playing radio station.";
     public override string GetLlmInstructions() => """
 RADIO CURRENT
@@ -528,10 +528,10 @@ Use this tool only for questions about which radio station is currently playing.
 
 Examples:
 User: "What station is this?"
-{tool:radio-current}
+{tool:radioCurrent}
 
 User: "What radio station am I listening to?"
-{tool:radio-current}
+{tool:radioCurrent}
 """;
 
     public override Task<ToolResult> ExecuteAsync(
@@ -581,7 +581,7 @@ public sealed class RadioSaveTool : RadioToolBase
         _stationStore = stationStore;
     }
 
-    public override string Name => "radio-save";
+    public override string Name => "radioSave";
     public override string Intent => "Save the currently playing radio station.";
     public override string GetLlmInstructions() => """
 RADIO SAVE
@@ -595,10 +595,10 @@ Use this tool when the user asks to save, remember, or keep the current station.
 
 Examples:
 User: "Save this station"
-{tool:radio-save}
+{tool:radioSave}
 
 User: "Remember this station"
-{tool:radio-save}
+{tool:radioSave}
 """;
 
     public override Task<ToolResult> ExecuteAsync(
@@ -650,7 +650,7 @@ public sealed class RadioFavoriteTool : RadioToolBase
         _stationStore = stationStore;
     }
 
-    public override string Name => "radio-favorite";
+    public override string Name => "radioFavorite";
     public override string Intent => "Mark the currently playing radio station as a favorite station.";
     public override string GetLlmInstructions() => """
 RADIO FAVORITE
@@ -664,10 +664,10 @@ Use this tool when the user asks to favorite, mark as a favorite, or add the cur
 
 Examples:
 User: "Favorite this station"
-{tool:radio-favorite}
+{tool:radioFavorite}
 
 User: "Make this a favorite"
-{tool:radio-favorite}
+{tool:radioFavorite}
 """;
 
     public override Task<ToolResult> ExecuteAsync(
@@ -718,7 +718,7 @@ public sealed class RadioUnfavoriteTool : RadioToolBase
         _stationStore = stationStore;
     }
 
-    public override string Name => "radio-unfavorite";
+    public override string Name => "radioUnfavorite";
     public override string Intent => "Remove the currently playing radio station from favorites without removing it from the active playlist or saved stations.";
     public override string GetLlmInstructions() => """
 RADIO UNFAVORITE
@@ -731,18 +731,18 @@ Parameters:
 Use this tool when the user says unfavorite, remove from favorites, or indicates they no longer like the station.
 - This does NOT remove the station from the active radio playlist.
 - This does NOT remove the station from saved stations.
-- Do NOT use radio-remove for favorite-only requests.
+- Do NOT use radioRemove for favorite-only requests.
 - "unfavorite", "I don't like this station anymore", and "remove this one from my favorites" are favorite-only requests.
 
 Examples:
 User: "Unfavorite this station"
-{tool:radio-unfavorite}
+{tool:radioUnfavorite}
 
 User: "I don't like this station anymore"
-{tool:radio-unfavorite}
+{tool:radioUnfavorite}
 
 User: "Remove this one from my favorites"
-{tool:radio-unfavorite}
+{tool:radioUnfavorite}
 """;
 
     public override Task<ToolResult> ExecuteAsync(
@@ -857,7 +857,7 @@ public sealed class RadioRemoveTool : RadioToolBase
         _stationStore = stationStore;
     }
 
-    public override string Name => "radio-remove";
+    public override string Name => "radioRemove";
     public override string Intent => "Remove the currently playing radio station from the active playlist and saved stations.";
     public override string GetLlmInstructions() => """
 RADIO REMOVE
@@ -871,34 +871,34 @@ This is the single removal operation for radio stations.
 - Remove the current station from the active radio playlist.
 - Also remove the same station from the saved station list, if it is saved.
 - Matching the saved station uses the station ID, not the spoken station name.
-- "Remove", "delete", "get rid of", "forget", and "unsave" all mean radio-remove.
+- "Remove", "delete", "get rid of", "forget", and "unsave" all mean radioRemove.
 - "this station", "this one", and "the current station" refer to the station currently playing.
-- IMPORTANT: Do NOT use radio-remove for favorite-only requests. "Unfavorite", "I don't like this station anymore", and "remove this one from my favorites" mean radio-unfavorite.
-- radio-remove removes from BOTH the active playlist and saved stations. radio-unfavorite removes ONLY the favorite flag.
+- IMPORTANT: Do NOT use radioRemove for favorite-only requests. "Unfavorite", "I don't like this station anymore", and "remove this one from my favorites" mean radioUnfavorite.
+- radioRemove removes from BOTH the active playlist and saved stations. radioUnfavorite removes ONLY the favorite flag.
 - Do NOT use the alarm exclude tool. A radio station removal is not an alarm exclusion.
 - There is no separate radio-forget tool.
 
 Examples:
 User: "Remove"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Remove station"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Delete this station"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Get rid of this station"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Forget this station"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Unsave this station"
-{tool:radio-remove}
+{tool:radioRemove}
 
 User: "Remove this station from my saved stations"
-{tool:radio-remove}
+{tool:radioRemove}
 """;
 
     public override async Task<ToolResult> ExecuteAsync(
