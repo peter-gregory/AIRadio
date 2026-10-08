@@ -636,74 +636,6 @@ User: "Remember this station"
     }
 }
 
-public sealed class RadioForgetTool : RadioToolBase
-{
-    private readonly IRadioStationStore _stationStore;
-
-    public RadioForgetTool(
-        IMpvManager mpv,
-        IMpvState state,
-        IAudioManager audio,
-        IRadioStationStore stationStore)
-        : base(mpv, state, audio)
-    {
-        _stationStore = stationStore;
-    }
-
-    public override string Name => "radio-forget";
-    public override string Intent => "Unsave the currently playing radio station from the saved station list.";
-    public override string GetLlmInstructions() => """
-RADIO FORGET
-
-Remove the currently playing radio station from the saved station list.
-
-Parameters:
-- None.
-
-Use this tool only when the user asks to forget or unsave the current station, or explicitly says it should be removed from saved stations.
-- Do NOT use this tool for "remove station", "delete this station", or other requests to remove the station from the current radio playlist.
-- A plain request to remove/delete/get rid of the current station is a radio-remove request.
-
-Examples:
-User: "Forget this station"
-{tool:radio-forget}
-
-User: "Remove this station from my saved stations"
-{tool:radio-forget}
-""";
-
-    public override Task<ToolResult> ExecuteAsync(
-        ToolRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        Validate(request, cancellationToken);
-
-        var station = State.RadioStation;
-        if (station is null)
-        {
-            const string noStationSpeech = "There isn't a radio station playing right now.";
-            return Task.FromResult(
-                ToolResult.Successful(Name, noStationSpeech, new { Removed = false }, noStationSpeech, true));
-        }
-
-        var removed = _stationStore.Forget(station.Id);
-        var spokenName =
-            RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
-
-        var speech = removed
-            ? $"I've removed {spokenName} from your saved stations."
-            : $"{spokenName} isn't in your saved stations.";
-
-        return Task.FromResult(
-            ToolResult.Successful(
-                Name,
-                speech,
-                new { Station = station, Removed = removed },
-                speech,
-                true));
-    }
-}
-
 public sealed class RadioFavoriteTool : RadioToolBase
 {
     private readonly IRadioStationStore _stationStore;
@@ -844,31 +776,41 @@ User: "Which stations can I play?"
 
 public sealed class RadioRemoveTool : RadioToolBase
 {
+    private readonly IRadioStationStore _stationStore;
+
     public RadioRemoveTool(
         IMpvManager mpv,
         IMpvState state,
-        IAudioManager audio)
+        IAudioManager audio,
+        IRadioStationStore stationStore)
         : base(mpv, state, audio)
     {
+        _stationStore = stationStore;
     }
 
     public override string Name => "radio-remove";
-    public override string Intent => "Remove the currently playing radio station from the current radio playlist.";
+    public override string Intent => "Remove the currently playing radio station from the active playlist and saved stations.";
     public override string GetLlmInstructions() => """
 RADIO REMOVE
 
-Remove the currently playing station from the current radio playlist.
+Remove the currently playing radio station.
 
 Parameters:
 - None.
 
-Use this tool when the user explicitly asks to remove, delete, get rid of, or take the current station out of the radio playlist.
+This is the single removal operation for radio stations.
+- Remove the current station from the active radio playlist.
+- Also remove the same station from the saved station list, if it is saved.
+- Matching the saved station uses the station ID, not the spoken station name.
+- "Remove", "delete", "get rid of", "forget", and "unsave" all mean radio-remove.
 - "this station", "this one", and "the current station" refer to the station currently playing.
-- This changes the current playback playlist only. It does not remove the station from the saved station list or favorites.
-- Do NOT use radio-forget unless the user explicitly asks to remove or unsave the station from their saved stations.
-- Do NOT use the alarm exclude tool. "Remove this station" is a radio playlist request, not an alarm exclusion.
+- Do NOT use the alarm exclude tool. A radio station removal is not an alarm exclusion.
+- There is no separate radio-forget tool.
 
 Examples:
+User: "Remove"
+{tool:radio-remove}
+
 User: "Remove station"
 {tool:radio-remove}
 
@@ -878,10 +820,13 @@ User: "Delete this station"
 User: "Get rid of this station"
 {tool:radio-remove}
 
-User: "Remove this one from the playlist"
+User: "Forget this station"
 {tool:radio-remove}
 
-User: "Remove this station from the radio playlist"
+User: "Unsave this station"
+{tool:radio-remove}
+
+User: "Remove this station from my saved stations"
 {tool:radio-remove}
 """;
 
@@ -903,17 +848,23 @@ User: "Remove this station from the radio playlist"
                 true);
         }
 
+        // Remove the station from persistent saved stations first. Forget()
+        // matches by the stable station ID, so the saved copy can be removed
+        // even when the active playlist came from a search result.
+        var removedFromSaved = _stationStore.Forget(current.Id);
         var nextStation = Mpv.RemoveCurrentRadioPlaylistStation();
 
         if (nextStation is null)
         {
             await Mpv.StopAsync(cancellationToken);
             var spokenName = RadioSpeechFormatter.FormatStationNameForSpeech(current.Name);
-            var emptySpeech = $"I've removed {spokenName}. The radio playlist is now empty.";
+            var emptySpeech = removedFromSaved
+                ? $"I've removed {spokenName} from the radio playlist and your saved stations. The radio playlist is now empty."
+                : $"I've removed {spokenName} from the radio playlist. The radio playlist is now empty.";
             return ToolResult.Successful(
                 Name,
-                $"Removed {current.Name}; the radio playlist is empty.",
-                new { Station = current, Removed = true, Remaining = 0 },
+                $"Removed {current.Name}; saved={removedFromSaved}; the radio playlist is empty.",
+                new { Station = current, Removed = true, RemovedFromSaved = removedFromSaved, Remaining = 0 },
                 emptySpeech,
                 true);
         }
@@ -922,15 +873,18 @@ User: "Remove this station from the radio playlist"
 
         var currentSpokenName = RadioSpeechFormatter.FormatStationNameForSpeech(current.Name);
         var nextSpokenName = RadioSpeechFormatter.FormatStationNameForSpeech(nextStation.Name);
-        var speech = $"I've removed {currentSpokenName}. Now playing {nextSpokenName}.";
+        var speech = removedFromSaved
+            ? $"I've removed {currentSpokenName} from the radio playlist and your saved stations. Now playing {nextSpokenName}."
+            : $"I've removed {currentSpokenName} from the radio playlist. It wasn't in your saved stations. Now playing {nextSpokenName}.";
 
         return ToolResult.Successful(
             Name,
-            $"Removed {current.Name}; playing {nextStation.Name}.",
+            $"Removed {current.Name}; saved={removedFromSaved}; playing {nextStation.Name}.",
             new
             {
                 Station = current,
                 Removed = true,
+                RemovedFromSaved = removedFromSaved,
                 NextStation = nextStation,
                 Remaining = State.RadioPlaylist.Count
             },
