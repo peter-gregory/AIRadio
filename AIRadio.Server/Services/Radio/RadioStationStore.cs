@@ -10,6 +10,7 @@ public interface IRadioStationStore
     bool Forget(string stationId);
     bool IsFavorite(string stationId);
     void SetFavorite(RadioStation station);
+    bool Unfavorite(string stationId);
     IReadOnlyList<RadioStation> GetSavedStations();
     IReadOnlyList<RadioStation> GetFavoriteStations();
     void RecordPlayed(string stationId);
@@ -80,6 +81,23 @@ public sealed class RadioStationStore : IRadioStationStore
     public bool IsFavorite(string stationId)
     {
         lock (_sync) return Find(_data.SavedStations, stationId)?.IsFavorite == true;
+    }
+
+    public bool Unfavorite(string stationId)
+    {
+        bool changed;
+        lock (_sync)
+        {
+            var station = Find(_data.SavedStations, stationId);
+            changed = station?.IsFavorite == true;
+            if (changed)
+                station!.IsFavorite = false;
+        }
+
+        if (changed)
+            SaveToDisk();
+
+        return changed;
     }
 
     public void SetFavorite(RadioStation station)
