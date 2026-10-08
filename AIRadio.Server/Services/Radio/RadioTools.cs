@@ -840,6 +840,103 @@ User: "Which stations can I play?"
     }
 }
 
+public sealed class RadioRemoveTool : RadioToolBase
+{
+    public RadioRemoveTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio)
+        : base(mpv, state, audio)
+    {
+    }
+
+    public override string Name => "radio-remove";
+    public override string Intent => "Remove the currently playing radio station from the current radio playlist.";
+    public override string GetLlmInstructions() => """
+RADIO REMOVE
+
+Remove the currently playing station from the current radio playlist.
+
+Parameters:
+- None.
+
+Use this tool when the user explicitly asks to remove, delete, get rid of, or take the current station out of the radio playlist.
+- "this station", "this one", and "the current station" refer to the station currently playing.
+- This changes the current playback playlist only. It does not remove the station from the saved station list or favorites.
+- Do NOT use radio-forget unless the user explicitly asks to remove or unsave the station from their saved stations.
+- Do NOT use the alarm exclude tool. "Remove this station" is a radio playlist request, not an alarm exclusion.
+
+Examples:
+User: "Remove station"
+{tool:radio-remove}
+
+User: "Delete this station"
+{tool:radio-remove}
+
+User: "Get rid of this station"
+{tool:radio-remove}
+
+User: "Remove this one from the playlist"
+{tool:radio-remove}
+
+User: "Remove this station from the radio playlist"
+{tool:radio-remove}
+""";
+
+    public override async Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
+        var current = State.RadioStation;
+        if (current is null)
+        {
+            const string speech = "There isn't a radio station playing right now.";
+            return ToolResult.Successful(
+                Name,
+                speech,
+                new { Removed = false },
+                speech,
+                true);
+        }
+
+        var nextStation = Mpv.RemoveCurrentRadioPlaylistStation();
+
+        if (nextStation is null)
+        {
+            await Mpv.StopAsync(cancellationToken);
+            var spokenName = RadioSpeechFormatter.FormatStationNameForSpeech(current.Name);
+            var emptySpeech = $"I've removed {spokenName}. The radio playlist is now empty.";
+            return ToolResult.Successful(
+                Name,
+                $"Removed {current.Name}; the radio playlist is empty.",
+                new { Station = current, Removed = true, Remaining = 0 },
+                emptySpeech,
+                true);
+        }
+
+        await Audio.PlayStationAsync(nextStation, cancellationToken);
+
+        var currentSpokenName = RadioSpeechFormatter.FormatStationNameForSpeech(current.Name);
+        var nextSpokenName = RadioSpeechFormatter.FormatStationNameForSpeech(nextStation.Name);
+        var speech = $"I've removed {currentSpokenName}. Now playing {nextSpokenName}.";
+
+        return ToolResult.Successful(
+            Name,
+            $"Removed {current.Name}; playing {nextStation.Name}.",
+            new
+            {
+                Station = current,
+                Removed = true,
+                NextStation = nextStation,
+                Remaining = State.RadioPlaylist.Count
+            },
+            speech,
+            true);
+    }
+}
+
 public sealed class RadioSearchTool : ITool
 {
     private readonly IRadioSearchClient _search;
