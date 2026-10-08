@@ -704,6 +704,75 @@ User: "Make this a favorite"
     }
 }
 
+public sealed class RadioUnfavoriteTool : RadioToolBase
+{
+    private readonly IRadioStationStore _stationStore;
+
+    public RadioUnfavoriteTool(
+        IMpvManager mpv,
+        IMpvState state,
+        IAudioManager audio,
+        IRadioStationStore stationStore)
+        : base(mpv, state, audio)
+    {
+        _stationStore = stationStore;
+    }
+
+    public override string Name => "radio-unfavorite";
+    public override string Intent => "Remove the currently playing radio station from favorites without removing it from the active playlist or saved stations.";
+    public override string GetLlmInstructions() => """
+RADIO UNFAVORITE
+
+Remove the currently playing station from favorites only.
+
+Parameters:
+- None.
+
+Use this tool when the user says unfavorite, remove from favorites, or indicates they no longer like the station.
+- This does NOT remove the station from the active radio playlist.
+- This does NOT remove the station from saved stations.
+- Do NOT use radio-remove for favorite-only requests.
+- "unfavorite", "I don't like this station anymore", and "remove this one from my favorites" are favorite-only requests.
+
+Examples:
+User: "Unfavorite this station"
+{tool:radio-unfavorite}
+
+User: "I don't like this station anymore"
+{tool:radio-unfavorite}
+
+User: "Remove this one from my favorites"
+{tool:radio-unfavorite}
+""";
+
+    public override Task<ToolResult> ExecuteAsync(
+        ToolRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(request, cancellationToken);
+
+        var station = State.RadioStation;
+        if (station is null)
+        {
+            const string speech = "There isn't a radio station playing right now.";
+            return Task.FromResult(ToolResult.Successful(Name, speech, new { Unfavorited = false }, speech, true));
+        }
+
+        var changed = _stationStore.Unfavorite(station.Id);
+        var spokenName = RadioSpeechFormatter.FormatStationNameForSpeech(station.Name);
+        var speech = changed
+            ? $"I've removed {spokenName} from your favorites."
+            : $"{spokenName} isn't one of your favorites.";
+
+        return Task.FromResult(ToolResult.Successful(
+            Name,
+            speech,
+            new { Station = station, Unfavorited = changed },
+            speech,
+            true));
+    }
+}
+
 public sealed class RadioStatusTool : RadioToolBase
 {
     public RadioStatusTool(IMpvManager mpv, IMpvState state, IAudioManager audio) : base(mpv, state, audio) { }
@@ -804,6 +873,8 @@ This is the single removal operation for radio stations.
 - Matching the saved station uses the station ID, not the spoken station name.
 - "Remove", "delete", "get rid of", "forget", and "unsave" all mean radio-remove.
 - "this station", "this one", and "the current station" refer to the station currently playing.
+- IMPORTANT: Do NOT use radio-remove for favorite-only requests. "Unfavorite", "I don't like this station anymore", and "remove this one from my favorites" mean radio-unfavorite.
+- radio-remove removes from BOTH the active playlist and saved stations. radio-unfavorite removes ONLY the favorite flag.
 - Do NOT use the alarm exclude tool. A radio station removal is not an alarm exclusion.
 - There is no separate radio-forget tool.
 
