@@ -67,6 +67,7 @@ builder.Services.AddSingleton<ITool, RadioSongTool>();
 builder.Services.AddSingleton<ITool, RadioCurrentTool>();
 builder.Services.AddSingleton<ITool, RadioSaveTool>();
 builder.Services.AddSingleton<ITool, RadioFavoriteTool>();
+builder.Services.AddSingleton<ITool, RadioUnfavoriteTool>();
 builder.Services.AddSingleton<ITool, RadioStatusTool>();
 builder.Services.AddSingleton<ITool, RadioPlaylistTool>();
 builder.Services.AddSingleton<ITool, RadioRemoveTool>();
