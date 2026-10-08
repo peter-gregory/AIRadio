@@ -651,7 +651,7 @@ public sealed class RadioForgetTool : RadioToolBase
     }
 
     public override string Name => "radio-forget";
-    public override string Intent => "Remove the currently playing radio station from the saved station list.";
+    public override string Intent => "Unsave the currently playing radio station from the saved station list.";
     public override string GetLlmInstructions() => """
 RADIO FORGET
 
@@ -660,7 +660,9 @@ Remove the currently playing radio station from the saved station list.
 Parameters:
 - None.
 
-Use this tool when the user asks to forget, remove, or unsave the current station.
+Use this tool only when the user asks to forget or unsave the current station, or explicitly says it should be removed from saved stations.
+- Do NOT use this tool for "remove station", "delete this station", or other requests to remove the station from the current radio playlist.
+- A plain request to remove/delete/get rid of the current station is a radio-remove request.
 
 Examples:
 User: "Forget this station"
