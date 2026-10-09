@@ -214,6 +214,22 @@ export class Home implements OnInit, OnDestroy {
     }).format(this.clockNow).padStart(2, '0');
   }
 
+  public get clockWeekday(): string {
+    return new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+      .format(this.clockNow)
+      .slice(0, 3);
+  }
+
+  public get clockMonthDay(): string {
+    const parts = new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric'
+    }).formatToParts(this.clockNow);
+    const month = parts.find(part => part.type === 'month')?.value.slice(0, 3) ?? '';
+    const day = parts.find(part => part.type === 'day')?.value ?? '';
+    return `${month} ${day}`;
+  }
+
   get clockPeriod(): string {
     return new Intl.DateTimeFormat(undefined, {
       hour: 'numeric',
