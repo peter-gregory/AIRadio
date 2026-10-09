@@ -149,7 +149,7 @@
   right: 0;
   top: calc(100% - 30px);
   bottom: auto;
-  text-align: center;
+  text-align: left;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 22px;
   line-height: 1;
