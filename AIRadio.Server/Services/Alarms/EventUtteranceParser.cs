@@ -18,8 +18,7 @@ public static class EventUtteranceParser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
-        var input = StripWakePhrase(Normalize(text));
-        input = StripCommandPrefix(input);
+        var input = NormalizeSpokenDateOrdinals(Normalize(text));
 
         if (string.IsNullOrWhiteSpace(input))
             return new(null, null);
@@ -37,7 +36,7 @@ public static class EventUtteranceParser
         if (string.IsNullOrWhiteSpace(text))
             return null;
 
-        var input = StripWakePhrase(Normalize(text));
+        var input = NormalizeSpokenDateOrdinals(Normalize(text));
         var date = FindDateExpression(input, now);
 
         if (date is not null)
@@ -132,6 +131,12 @@ public static class EventUtteranceParser
 
         value = Regex.Replace(
             value,
+            @"^(?:and\s+)?say\s+",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+
+        value = Regex.Replace(
+            value,
             @"^and\s+",
             string.Empty,
             RegexOptions.IgnoreCase);
@@ -145,30 +150,31 @@ public static class EventUtteranceParser
         return value.Trim();
     }
 
-    private static string StripCommandPrefix(string text)
+    private static string NormalizeSpokenDateOrdinals(string text)
     {
-        var value = text.Trim();
+        var ordinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["first"] = 1, ["second"] = 2, ["third"] = 3, ["fourth"] = 4,
+            ["fifth"] = 5, ["sixth"] = 6, ["seventh"] = 7, ["eighth"] = 8,
+            ["ninth"] = 9, ["tenth"] = 10, ["eleventh"] = 11, ["twelfth"] = 12,
+            ["thirteenth"] = 13, ["fourteenth"] = 14, ["fifteenth"] = 15,
+            ["sixteenth"] = 16, ["seventeenth"] = 17, ["eighteenth"] = 18,
+            ["nineteenth"] = 19, ["twentieth"] = 20, ["twenty-first"] = 21,
+            ["twenty-second"] = 22, ["twenty-third"] = 23, ["twenty-fourth"] = 24,
+            ["twenty-fifth"] = 25, ["twenty-sixth"] = 26, ["twenty-seventh"] = 27,
+            ["twenty-eighth"] = 28, ["twenty-ninth"] = 29, ["thirtieth"] = 30,
+            ["thirty-first"] = 31
+        };
 
-        value = Regex.Replace(
-            value,
-            @"^(?:please\s+)?(?:(?:add|create|schedule)\s+(?:an?\s+)?event\s*(?:for)?|remember(?:\s+this)?|remind\s+me)\s*",
-            string.Empty,
+        var ordinalPattern = string.Join("|", ordinals.Keys
+            .OrderByDescending(value => value.Length)
+            .Select(Regex.Escape));
+
+        return Regex.Replace(
+            text,
+            $@"\b(?<month>{MonthPattern})\s+(?<day>{ordinalPattern})\b",
+            match => $"{match.Groups["month"].Value} {ordinals[match.Groups["day"].Value]}",
             RegexOptions.IgnoreCase);
-
-        return value.Trim();
-    }
-
-    private static string StripWakePhrase(string text)
-    {
-        var value = text.Trim();
-
-        value = Regex.Replace(
-            value,
-            @"^(?:hey|hello|okay|ok)\s+radio\b[\s,:-]*",
-            string.Empty,
-            RegexOptions.IgnoreCase);
-
-        return value.Trim();
     }
 
     private static string Normalize(string value) =>

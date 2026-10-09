@@ -5,6 +5,7 @@ using AIRadio.Server.Services.Alarms;
 using AIRadio.Server.Services.Audio;
 using AIRadio.Server.Services.Events;
 using Newtonsoft.Json.Linq;
+using System.Text.RegularExpressions;
 
 namespace AIRadio.Server.Services.Radio
 {
@@ -420,7 +421,10 @@ namespace AIRadio.Server.Services.Radio
                             // Never send event argument extraction through the LLM.
                             if (string.Equals(selected.Name, "event", StringComparison.OrdinalIgnoreCase))
                             {
-                                var parsed = EventUtteranceParser.Parse(request.Text);
+                                // Tool selection is already complete. Remove invocation wording here,
+                                // before passing only event arguments to the deterministic parser.
+                                var eventArguments = NormalizeEventCommand(request.Text);
+                                var parsed = EventUtteranceParser.Parse(eventArguments);
 
                                 _logger.LogInformation(
                                     "Tool {ToolName} parsed deterministically: When={When}, Content={Content}.",
@@ -648,6 +652,27 @@ namespace AIRadio.Server.Services.Radio
 
             var response = await _llama.ContinueAsync([handling.Result], cancellationToken);
             return await ProcessLlamaResponseAsync(response, cancellationToken);
+        }
+
+        private static string NormalizeEventCommand(string text)
+        {
+            var value = Regex.Replace(text.Trim(), @"\s+", " ");
+
+            // Invocation wording belongs to intent handling, not argument parsing.
+            // "At an event" is a common speech-recognition error for "add an event".
+            value = Regex.Replace(
+                value,
+                @"^(?:(?:hey|hello|okay|ok)\s+radio\b[\s,:-]*)",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+
+            value = Regex.Replace(
+                value,
+                @"^(?:please\s+)?(?:(?:add|at|create|schedule)\s+(?:an?\s+)?event(?:\s+for)?|remember(?:\s+this)?|remind\s+me)\s*",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+
+            return value.Trim();
         }
 
         private ToolRequest ApplyPendingToolInput(string text)
