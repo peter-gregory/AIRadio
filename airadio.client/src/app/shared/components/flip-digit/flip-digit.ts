@@ -9,31 +9,47 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 export class FlipDigit implements OnChanges {
   @Input() value = '0';
   @Input() topLabel = '';
+  @Input() topRightLabel = '';
   @Input() period = '';
 
   currentValue = '0';
   nextValue = '0';
+  currentTopLabel = '';
+  nextTopLabel = '';
+  currentTopRightLabel = '';
+  nextTopRightLabel = '';
+  currentPeriod = '';
+  nextPeriod = '';
   isFlipping = false;
   isBottomFlipping = false;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (!changes['value']) {
+    const nextValue = String(this.value ?? '0');
+    const nextTopLabel = String(this.topLabel ?? '');
+    const nextTopRightLabel = String(this.topRightLabel ?? '');
+    const nextPeriod = String(this.period ?? '');
+
+    if (changes['value']?.firstChange) {
+      this.currentValue = this.nextValue = nextValue;
+      this.currentTopLabel = this.nextTopLabel = nextTopLabel;
+      this.currentTopRightLabel = this.nextTopRightLabel = nextTopRightLabel;
+      this.currentPeriod = this.nextPeriod = nextPeriod;
       return;
     }
 
-    const next = String(this.value ?? '0');
+    const changed = this.currentValue !== nextValue
+      || this.currentTopLabel !== nextTopLabel
+      || this.currentTopRightLabel !== nextTopRightLabel
+      || this.currentPeriod !== nextPeriod;
 
-    if (changes['value'].firstChange) {
-      this.currentValue = next;
-      this.nextValue = next;
+    if (!changed || this.isFlipping) {
       return;
     }
 
-    if (this.currentValue === next || this.isFlipping) {
-      return;
-    }
-
-    this.nextValue = next;
+    this.nextValue = nextValue;
+    this.nextTopLabel = nextTopLabel;
+    this.nextTopRightLabel = nextTopRightLabel;
+    this.nextPeriod = nextPeriod;
     this.isBottomFlipping = false;
     this.isFlipping = true;
   }
@@ -44,6 +60,9 @@ export class FlipDigit implements OnChanges {
 
   onBottomAnimationEnd(): void {
     this.currentValue = this.nextValue;
+    this.currentTopLabel = this.nextTopLabel;
+    this.currentTopRightLabel = this.nextTopRightLabel;
+    this.currentPeriod = this.nextPeriod;
     this.isBottomFlipping = false;
     this.isFlipping = false;
   }
