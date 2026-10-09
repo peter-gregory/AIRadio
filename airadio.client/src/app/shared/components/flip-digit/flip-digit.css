@@ -129,7 +129,7 @@
   white-space: nowrap;
   overflow: hidden;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 26px;
   line-height: 1;
   font-weight: 800;
   letter-spacing: .01em;
@@ -146,7 +146,7 @@
   bottom: 8px;
   text-align: center;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 11px;
+  font-size: 22px;
   line-height: 1;
   font-weight: 800;
   letter-spacing: .08em;
