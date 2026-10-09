@@ -16,7 +16,8 @@
         <app-flip-digit
           class="minute-pane"
           [value]="clockMinuteValue"
-          [topLabel]="clockMonthDay"></app-flip-digit>
+          [topLabel]="clockMonth"
+          [topRightLabel]="clockDay"></app-flip-digit>
       </div>
     </div>
   } @else if (loading) {
