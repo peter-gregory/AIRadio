@@ -220,14 +220,15 @@ export class Home implements OnInit, OnDestroy {
       .slice(0, 3);
   }
 
-  public get clockMonthDay(): string {
-    const parts = new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric'
-    }).formatToParts(this.clockNow);
-    const month = parts.find(part => part.type === 'month')?.value.slice(0, 3) ?? '';
-    const day = parts.find(part => part.type === 'day')?.value ?? '';
-    return `${month} ${day}`;
+  public get clockMonth(): string {
+    return new Intl.DateTimeFormat(undefined, { month: 'short' })
+      .format(this.clockNow)
+      .slice(0, 3);
+  }
+
+  public get clockDay(): string {
+    return new Intl.DateTimeFormat(undefined, { day: 'numeric' })
+      .format(this.clockNow);
   }
 
   get clockPeriod(): string {
