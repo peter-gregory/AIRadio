@@ -303,50 +303,27 @@
   box-sizing: border-box;
 }
 
-.screensaver-date {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  text-align: center;
-  white-space: nowrap;
-  font-size: 24px;
-  line-height: 28px;
-  font-weight: 700;
-  letter-spacing: -.03em;
-  overflow: hidden;
-}
-
 .flip-clock {
   flex: 1;
   min-height: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 9px 11px;
+  padding: 10px 7px;
   box-sizing: border-box;
-  border: 3px solid #24c8ff;
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, #075b8f 0%, #01365c 52%, #001d35 100%);
-  box-shadow:
-    inset 0 0 0 2px rgba(151, 235, 255, .22),
-    inset 0 0 20px rgba(0, 185, 255, .42),
-    0 0 0 2px #00101d;
   perspective: 900px;
 }
 
 .flip-clock app-flip-digit {
   display: block;
-  height: 151px;
+  height: 184px;
 }
 
-.flip-clock .hour-pane {
-  flex: 0 0 125px;
-}
-
+.flip-clock .hour-pane,
 .flip-clock .minute-pane {
-  flex: 0 0 125px;
+  flex: 0 0 132px;
 }
 
 .flip-separator {
