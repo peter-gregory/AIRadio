@@ -7,6 +7,10 @@
     <span class="pane-text">{{ currentValue }}</span>
   </div>
 
+  @if (topLabel) {
+    <span class="date-label">{{ topLabel }}</span>
+  }
+
   @if (period) {
     <span class="period">{{ period }}</span>
   }
