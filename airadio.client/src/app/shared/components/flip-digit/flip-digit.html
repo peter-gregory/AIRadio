@@ -1,27 +1,33 @@
 <div class="flip-pane" [class.flipping]="isFlipping">
   <div class="pane-half pane-top">
     <span class="pane-text">{{ isFlipping ? nextValue : currentValue }}</span>
+    <span class="date-label">
+      <span>{{ isFlipping ? nextTopLabel : currentTopLabel }}</span>
+      @if (isFlipping ? nextTopRightLabel : currentTopRightLabel) {
+        <span>{{ isFlipping ? nextTopRightLabel : currentTopRightLabel }}</span>
+      }
+    </span>
   </div>
 
   <div class="pane-half pane-bottom">
     <span class="pane-text">{{ currentValue }}</span>
+    <span class="period">{{ currentPeriod }}</span>
   </div>
-
-  @if (topLabel) {
-    <span class="date-label">{{ topLabel }}</span>
-  }
-
-  @if (period) {
-    <span class="period">{{ period }}</span>
-  }
 
   @if (isFlipping) {
     <div class="pane-half flap-top" (animationend)="onTopAnimationEnd()">
       <span class="pane-text">{{ currentValue }}</span>
+      <span class="date-label">
+        <span>{{ currentTopLabel }}</span>
+        @if (currentTopRightLabel) {
+          <span>{{ currentTopRightLabel }}</span>
+        }
+      </span>
     </div>
 
     <div class="pane-half flap-bottom" [class.flipping]="isBottomFlipping" (animationend)="onBottomAnimationEnd()">
       <span class="pane-text">{{ nextValue }}</span>
+      <span class="period">{{ nextPeriod }}</span>
     </div>
   }
 </div>
