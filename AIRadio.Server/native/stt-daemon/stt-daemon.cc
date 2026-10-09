@@ -219,6 +219,10 @@ class PcmFrameRing {
     cv_.notify_all();
   }
 
+  // The capture producer updates atomic cursors without taking mutex_ so it
+  // never blocks on this consumer. A notification can therefore race with a
+  // waiter entering sleep; timed waits ensure a missed notification cannot
+  // stall the audio pipeline indefinitely.
   // Copy the VAD window starting at the current tail without advancing tail.
   // The caller advances tail only after it has processed the window.  This is
   // important when speech starts: recognizer_index can be set while the
@@ -237,7 +241,7 @@ class PcmFrameRing {
 
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait(lock, [&] {
+    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
       return
           AvailableFromTail() >= sample_count ||
           !g_running.load(
@@ -326,7 +330,7 @@ class PcmFrameRing {
   bool WaitForSample(uint64_t sample_index) {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait(lock, [&] {
+    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
       return
           head_.load(std::memory_order_acquire) >
               sample_index ||
@@ -343,7 +347,7 @@ class PcmFrameRing {
   bool WaitForRecognizerStart() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait(lock, [&] {
+    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
       return
           recognizer_index_.load(
               std::memory_order_acquire) >= 0 ||
