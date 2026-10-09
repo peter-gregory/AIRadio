@@ -241,12 +241,10 @@ class PcmFrameRing {
 
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
-      return
-          AvailableFromTail() >= sample_count ||
-          !g_running.load(
-              std::memory_order_relaxed);
-    });
+    while (AvailableFromTail() < sample_count &&
+           g_running.load(std::memory_order_relaxed)) {
+      cv_.wait_for(lock, std::chrono::milliseconds(100));
+    }
 
     if (AvailableFromTail() < sample_count) {
       return false;
@@ -330,13 +328,10 @@ class PcmFrameRing {
   bool WaitForSample(uint64_t sample_index) {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
-      return
-          head_.load(std::memory_order_acquire) >
-              sample_index ||
-          !g_running.load(
-              std::memory_order_relaxed);
-    });
+    while (head_.load(std::memory_order_acquire) <= sample_index &&
+           g_running.load(std::memory_order_relaxed)) {
+      cv_.wait_for(lock, std::chrono::milliseconds(100));
+    }
 
     return
         head_.load(std::memory_order_acquire) >
@@ -347,13 +342,10 @@ class PcmFrameRing {
   bool WaitForRecognizerStart() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    cv_.wait_for(lock, std::chrono::milliseconds(100), [&] {
-      return
-          recognizer_index_.load(
-              std::memory_order_acquire) >= 0 ||
-          !g_running.load(
-              std::memory_order_relaxed);
-    });
+    while (recognizer_index_.load(std::memory_order_acquire) < 0 &&
+           g_running.load(std::memory_order_relaxed)) {
+      cv_.wait_for(lock, std::chrono::milliseconds(100));
+    }
 
     return
         recognizer_index_.load(
