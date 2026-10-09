@@ -23,7 +23,7 @@
     inset 0 -2px rgba(0, 0, 0, .7);
   transform-style: preserve-3d;
   font-family: "Roboto Condensed", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: 124px;
+  font-size: 112px;
   line-height: 1;
   font-weight: 700;
   font-stretch: normal;
@@ -78,12 +78,12 @@
 
 .pane-top .pane-text,
 .flap-top .pane-text {
-  top: 8px;
+  top: 32px;
 }
 
 .pane-bottom .pane-text,
 .flap-bottom .pane-text {
-  top: calc(-100% + 8px);
+  top: calc(-100% + 32px);
 }
 
 .pane-bottom,
@@ -119,16 +119,37 @@
   pointer-events: none;
 }
 
+.date-label {
+  position: absolute;
+  z-index: 10;
+  top: 7px;
+  left: 4px;
+  right: 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: #d8dadd;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .period {
   position: absolute;
   z-index: 10;
-  left: 9px;
-  bottom: 7px;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  text-align: center;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   font-weight: 800;
-  letter-spacing: .04em;
+  letter-spacing: .08em;
   color: #d8dadd;
   text-shadow: none;
   text-transform: uppercase;
