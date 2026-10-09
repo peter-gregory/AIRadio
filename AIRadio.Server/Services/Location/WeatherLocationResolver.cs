@@ -1,4 +1,4 @@
-﻿using AIRadio.Server.Models.Location;
+using AIRadio.Server.Models.Location;
 using Newtonsoft.Json;
 
 namespace AIRadio.Server.Services.Location
@@ -119,9 +119,77 @@ namespace AIRadio.Server.Services.Location
                     ", ",
                     parts);
 
-            return string.IsNullOrWhiteSpace(result)
-                ? location.Raw
-                : result;
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                return result;
+            }
+
+            return NormalizeRawLocation(location.Raw);
+        }
+
+        private static string? NormalizeRawLocation(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return raw;
+            }
+
+            var value = raw.Trim();
+
+            // Preserve locations that already use comma-separated formatting.
+            if (value.Contains(','))
+            {
+                return value;
+            }
+
+            // Open-Meteo handles "City, State" more reliably than a raw
+            // value such as "Palm City Florida".
+            var states = new[]
+            {
+                ("Alabama", "AL"), ("Alaska", "AK"), ("Arizona", "AZ"),
+                ("Arkansas", "AR"), ("California", "CA"), ("Colorado", "CO"),
+                ("Connecticut", "CT"), ("Delaware", "DE"), ("Florida", "FL"),
+                ("Georgia", "GA"), ("Hawaii", "HI"), ("Idaho", "ID"),
+                ("Illinois", "IL"), ("Indiana", "IN"), ("Iowa", "IA"),
+                ("Kansas", "KS"), ("Kentucky", "KY"), ("Louisiana", "LA"),
+                ("Maine", "ME"), ("Maryland", "MD"), ("Massachusetts", "MA"),
+                ("Michigan", "MI"), ("Minnesota", "MN"), ("Mississippi", "MS"),
+                ("Missouri", "MO"), ("Montana", "MT"), ("Nebraska", "NE"),
+                ("Nevada", "NV"), ("New Hampshire", "NH"), ("New Jersey", "NJ"),
+                ("New Mexico", "NM"), ("New York", "NY"), ("North Carolina", "NC"),
+                ("North Dakota", "ND"), ("Ohio", "OH"), ("Oklahoma", "OK"),
+                ("Oregon", "OR"), ("Pennsylvania", "PA"), ("Rhode Island", "RI"),
+                ("South Carolina", "SC"), ("South Dakota", "SD"), ("Tennessee", "TN"),
+                ("Texas", "TX"), ("Utah", "UT"), ("Vermont", "VT"),
+                ("Virginia", "VA"), ("Washington", "WA"), ("West Virginia", "WV"),
+                ("Wisconsin", "WI"), ("Wyoming", "WY"), ("District of Columbia", "DC")
+            };
+
+            foreach (var (stateName, abbreviation) in states)
+            {
+                if (value.EndsWith(stateName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var city = value[..^stateName.Length].TrimEnd();
+
+                    if (city.Length > 0)
+                    {
+                        return $"{city}, {value[^stateName.Length..]}";
+                    }
+                }
+
+                if (value.EndsWith(abbreviation, StringComparison.OrdinalIgnoreCase))
+                {
+                    var city = value[..^abbreviation.Length].TrimEnd();
+
+                    if (city.Length > 0 &&
+                        char.IsWhiteSpace(value[value.Length - abbreviation.Length - 1]))
+                    {
+                        return $"{city}, {value[^abbreviation.Length..]}";
+                    }
+                }
+            }
+
+            return value;
         }
     }
 
