@@ -8,6 +8,7 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 })
 export class FlipDigit implements OnChanges {
   @Input() value = '0';
+  @Input() topLabel = '';
   @Input() period = '';
 
   currentValue = '0';
