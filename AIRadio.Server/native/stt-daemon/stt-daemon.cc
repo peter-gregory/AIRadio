@@ -983,6 +983,10 @@ class PipeWireCapture {
       enum pw_stream_state state,
       const char* error) {
 
+    (void)old_state;
+    (void)state;
+    (void)error;
+
     // PipeWire invokes this on its loop thread. Avoid synchronous stdout
     // logging here: with systemd, a full journal socket can block the loop.
     // State is intentionally not logged from this callback.
