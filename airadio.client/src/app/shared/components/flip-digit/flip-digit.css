@@ -125,6 +125,10 @@
   top: 7px;
   left: 4px;
   right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -143,7 +147,8 @@
   z-index: 10;
   left: 0;
   right: 0;
-  bottom: 8px;
+  top: calc(100% - 30px);
+  bottom: auto;
   text-align: center;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 22px;
