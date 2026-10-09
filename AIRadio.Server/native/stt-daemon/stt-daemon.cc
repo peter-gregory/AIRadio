@@ -197,15 +197,9 @@ class PcmFrameRing {
             dropped,
             std::memory_order_relaxed);
 
-        Trace(
-            "RING full: dropping ",
-            dropped,
-            " samples head=",
-            head,
-            " tail=",
-            tail,
-            " recognizer=",
-            recognizer);
+        // This code runs on the PipeWire capture thread. Never log here:
+        // stdout/stderr may block under systemd, and Trace takes a shared
+        // mutex. The dropped-sample counter records this condition instead.
 
         return;
       }
@@ -989,28 +983,9 @@ class PipeWireCapture {
       enum pw_stream_state state,
       const char* error) {
 
-    std::cout
-        << "[PIPEWIRE] state "
-        << pw_stream_state_as_string(old_state)
-        << " -> "
-        << pw_stream_state_as_string(state);
-
-    if (stream_ &&
-        (state == PW_STREAM_STATE_PAUSED ||
-         state == PW_STREAM_STATE_STREAMING)) {
-
-      std::cout
-          << " stream_node_id="
-          << pw_stream_get_node_id(stream_);
-    }
-
-    if (error) {
-      std::cout
-          << " error="
-          << error;
-    }
-
-    std::cout << '\n';
+    // PipeWire invokes this on its loop thread. Avoid synchronous stdout
+    // logging here: with systemd, a full journal socket can block the loop.
+    // State is intentionally not logged from this callback.
   }
 
   void Process() {
@@ -1078,11 +1053,8 @@ class PipeWireCapture {
       const size_t samples =
           bytes / kSampleStride;
 
-      Trace(
-          "PIPEWIRE process samples=",
-          samples,
-          " bytes=",
-          bytes);
+      // Do not log from the PipeWire process callback. Keep this path free
+      // of logger locks and stdout/stderr I/O.
 
       temp_samples_.resize(samples);
 
@@ -2029,9 +2001,9 @@ int Run() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  // Flush stdout after each insertion so diagnostic output is visible immediately
-  // when the daemon is running under systemd/journald as well as interactively.
-  std::cout << std::unitbuf;
+  // Keep prompt systemd/journald diagnostics. This is safe because PipeWire
+  // callbacks (including the capture callback and state-change callback) never
+  // write to stdout/stderr or call Trace; only non-real-time threads log.
 
   std::signal(SIGINT, SignalHandler);
   std::signal(SIGTERM, SignalHandler);
