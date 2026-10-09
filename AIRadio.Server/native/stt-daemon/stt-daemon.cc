@@ -2005,9 +2005,11 @@ int Run() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  // Keep prompt systemd/journald diagnostics. This is safe because PipeWire
-  // callbacks (including the capture callback and state-change callback) never
-  // write to stdout/stderr or call Trace; only non-real-time threads log.
+  // Flush each insertion so diagnostics appear promptly under systemd.
+  // This is safe only because PipeWire callbacks (including capture and state
+  // change) never write to stdout/stderr or call Trace; only non-real-time
+  // threads log. Keep all synchronous output outside the PipeWire loop.
+  std::cout << std::unitbuf;
 
   std::signal(SIGINT, SignalHandler);
   std::signal(SIGTERM, SignalHandler);
