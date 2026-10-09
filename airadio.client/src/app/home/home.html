@@ -10,13 +10,13 @@
         <app-flip-digit
           class="hour-pane"
           [value]="clockHourValue"
-          [topLabel]="clockWeekday"></app-flip-digit>
+          [topLabel]="clockWeekday"
+          [period]="clockPeriod"></app-flip-digit>
         <div class="flip-separator" aria-hidden="true">:</div>
         <app-flip-digit
           class="minute-pane"
           [value]="clockMinuteValue"
-          [topLabel]="clockMonthDay"
-          [period]="clockPeriod"></app-flip-digit>
+          [topLabel]="clockMonthDay"></app-flip-digit>
       </div>
     </div>
   } @else if (loading) {
