@@ -240,6 +240,10 @@ public sealed partial class PreLlmIntentParser : IPreLlmIntentParser
         text is
             "save this station" or
             "save the station" or
+            "save station" or
+            "safe this station" or
+            "safe the station" or
+            "safe station" or
             "remember this station" or
             "remember the station" or
             "keep this station";
