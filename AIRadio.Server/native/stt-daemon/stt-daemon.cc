@@ -31,9 +31,9 @@ namespace {
 
 constexpr int kRecognizerSampleRate = 16000;
 
-constexpr size_t kFrameSamples = 1600;   // 100 ms @ 16 kHz
+constexpr size_t kAudioFrameSampleCount = 1600;   // 100 ms @ 16 kHz
 constexpr size_t kVadWindowSize = 512;   // 32 ms @ 16 kHz
-constexpr size_t kRingFrameCount = 128;  // 12.8 seconds
+constexpr size_t kAudioRingFrameCount = 128;  // 12.8 seconds
 
 // -----------------------------------------------------------------------------
 // Default VAD configuration.
@@ -148,8 +148,8 @@ void SignalHandler(int) {
 
 class PcmFrameRing {
  public:
-  static constexpr uint64_t kCapacitySamples =
-      204800;  // 12.8 seconds @ 16 kHz
+  static constexpr uint64_t kRingCapacitySamples =
+      kAudioFrameSampleCount * kAudioRingFrameCount;  // 12.8 seconds @ 16 kHz
 
   // The ring deliberately leaves one sample unused, just like a conventional
   // circular buffer.  The producer never blocks.  If advancing head would
@@ -168,18 +168,18 @@ class PcmFrameRing {
 
     for (size_t i = 0; i < sample_count; ++i) {
       const uint64_t head =
-          head_.load(std::memory_order_relaxed);
+          published_sample_count_.load(std::memory_order_relaxed);
 
       const int64_t recognizer =
-          recognizer_index_.load(
+          recognizer_start_index_.load(
               std::memory_order_acquire);
 
       const int64_t recognizer_read =
-          recognizer_read_index_.load(
+          recognizer_next_read_index_.load(
               std::memory_order_acquire);
 
       const uint64_t tail =
-          tail_.load(std::memory_order_acquire);
+          vad_read_index_.load(std::memory_order_acquire);
 
       uint64_t protected_index = tail;
 
@@ -198,7 +198,7 @@ class PcmFrameRing {
 
       // Advancing head by one would make the ring full.
       if (head - protected_index >=
-          kCapacitySamples - 1) {
+          kRingCapacitySamples - 1) {
 
         const size_t dropped =
             sample_count - i;
@@ -214,10 +214,10 @@ class PcmFrameRing {
         return;
       }
 
-      samples_[head % kCapacitySamples] =
+      samples_[head % kRingCapacitySamples] =
           static_cast<float>(src[i]) / 32768.0f;
 
-      head_.store(
+      published_sample_count_.store(
           head + 1,
           std::memory_order_release);
 
@@ -229,14 +229,14 @@ class PcmFrameRing {
     cv_.notify_all();
   }
 
-  // The capture producer updates atomic cursors without taking mutex_ so it
+  // The capture producer updates atomic sample positions without taking mutex_ so it
   // never blocks on this consumer. A notification can therefore race with a
   // waiter entering sleep; timed waits ensure a missed notification cannot
   // stall the audio pipeline indefinitely.
-  // Copy the VAD window starting at the current tail without advancing tail.
+  // Copy the VAD window starting at vad_read_index_ without advancing it.
   // The caller advances tail only after it has processed the window.  This is
   // important when speech starts: recognizer_index can be set while the
-  // detected audio is still protected by tail.
+  // detected audio is still protected by vad_read_index_.
   bool CopyVadWindow(
       float* destination,
       size_t sample_count,
@@ -261,9 +261,9 @@ class PcmFrameRing {
     }
 
     const uint64_t start =
-        tail_.load(std::memory_order_relaxed);
+        vad_read_index_.load(std::memory_order_relaxed);
 
-    CopySamplesUnchecked(
+    CopyRingSamplesUnchecked(
         start,
         destination,
         sample_count);
@@ -273,15 +273,15 @@ class PcmFrameRing {
     return true;
   }
 
-  void AdvanceTail(size_t sample_count) {
+  void AdvanceVadReadIndex(size_t sample_count) {
     if (sample_count == 0) {
       return;
     }
 
     const uint64_t tail =
-        tail_.load(std::memory_order_relaxed);
+        vad_read_index_.load(std::memory_order_relaxed);
 
-    tail_.store(
+    vad_read_index_.store(
         tail + sample_count,
         std::memory_order_release);
 
@@ -292,33 +292,33 @@ class PcmFrameRing {
     cv_.notify_all();
   }
 
-  int64_t RecognizerIndex() const {
-    return recognizer_index_.load(
+  int64_t RecognizerStartIndex() const {
+    return recognizer_start_index_.load(
         std::memory_order_acquire);
   }
 
-  void SetRecognizerIndex(
+  void SetRecognizerStartIndex(
       uint64_t sample_index) {
 
     // Initialize the moving read cursor before publishing the active
     // utterance, so the producer never sees an active recognizer with an
     // uninitialized retention position.
-    recognizer_read_index_.store(
+    recognizer_next_read_index_.store(
         static_cast<int64_t>(sample_index),
         std::memory_order_release);
 
-    recognizer_index_.store(
+    recognizer_start_index_.store(
         static_cast<int64_t>(sample_index),
         std::memory_order_release);
 
     cv_.notify_all();
   }
 
-  // Called only after CopySamples has copied the requested data into the
+  // Called only after CopyPublishedSamples has copied the requested data into the
   // recognizer worker's private chunk buffer. The ring may then reuse those
   // sample slots while Sherpa processes the private copy.
-  void SetRecognizerReadIndex(uint64_t sample_index) {
-    recognizer_read_index_.store(
+  void SetRecognizerNextReadIndex(uint64_t sample_index) {
+    recognizer_next_read_index_.store(
         static_cast<int64_t>(sample_index),
         std::memory_order_release);
   }
@@ -345,11 +345,11 @@ class PcmFrameRing {
 
     // Clear the moving cursor first. Keep the utterance identity published
     // until both state transitions are safe for the producer/VAD.
-    recognizer_read_index_.store(
+    recognizer_next_read_index_.store(
         -1,
         std::memory_order_release);
 
-    recognizer_index_.store(
+    recognizer_start_index_.store(
         -1,
         std::memory_order_release);
 
@@ -357,37 +357,37 @@ class PcmFrameRing {
   }
 
   // Wait until the requested sample is published, or shutdown occurs.
-  bool WaitForSample(uint64_t sample_index) {
+  bool WaitForPublishedSample(uint64_t sample_index) {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    while (head_.load(std::memory_order_acquire) <= sample_index &&
+    while (published_sample_count_.load(std::memory_order_acquire) <= sample_index &&
            g_running.load(std::memory_order_relaxed)) {
       cv_.wait_for(lock, std::chrono::milliseconds(100));
     }
 
     return
-        head_.load(std::memory_order_acquire) >
+        published_sample_count_.load(std::memory_order_acquire) >
         sample_index;
   }
 
-  // Wait for VAD to announce a new utterance.
-  bool WaitForRecognizerStart() {
+  // Wait until the VAD publishes an active utterance start.
+  bool WaitForActiveUtterance() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    while (recognizer_index_.load(std::memory_order_acquire) < 0 &&
+    while (recognizer_start_index_.load(std::memory_order_acquire) < 0 &&
            g_running.load(std::memory_order_relaxed)) {
       cv_.wait_for(lock, std::chrono::milliseconds(100));
     }
 
     return
-        recognizer_index_.load(
+        recognizer_start_index_.load(
             std::memory_order_acquire) >= 0;
   }
 
   // Copy already-published samples. The producer retains unread samples
   // until this copy completes; the caller advances the read cursor only after
   // the samples are in its private chunk buffer.
-  bool CopySamples(
+  bool CopyPublishedSamples(
       uint64_t sample_index,
       float* destination,
       size_t sample_count) const {
@@ -399,7 +399,7 @@ class PcmFrameRing {
     }
 
     const uint64_t head =
-        head_.load(std::memory_order_acquire);
+        published_sample_count_.load(std::memory_order_acquire);
 
     if (sample_index > head ||
         sample_count > head - sample_index) {
@@ -408,23 +408,23 @@ class PcmFrameRing {
     }
 
     const int64_t recognizer =
-        recognizer_index_.load(
+        recognizer_start_index_.load(
             std::memory_order_acquire);
 
     const int64_t recognizer_read =
-        recognizer_read_index_.load(
+        recognizer_next_read_index_.load(
             std::memory_order_acquire);
 
     const uint64_t tail =
-        tail_.load(std::memory_order_acquire);
+        vad_read_index_.load(std::memory_order_acquire);
 
     const uint64_t oldest =
-        head > (kCapacitySamples - 1)
-            ? head - (kCapacitySamples - 1)
+        head > (kRingCapacitySamples - 1)
+            ? head - (kRingCapacitySamples - 1)
             : 0;
 
     // Validate against the same moving cursor used by the producer. The
-    // fixed utterance start is retained separately for diagnostics/finalize.
+    // fixed utterance start is retained separately for diagnostics/finalization.
     const uint64_t protected_index =
         recognizer_read >= 0
             ? static_cast<uint64_t>(recognizer_read)
@@ -448,7 +448,7 @@ class PcmFrameRing {
       destination[i] =
           samples_[
               (sample_index + i) %
-              kCapacitySamples];
+              kRingCapacitySamples];
     }
 
     return true;
@@ -481,17 +481,17 @@ class PcmFrameRing {
  private:
   uint64_t AvailableFromTail() const {
     const uint64_t head =
-        head_.load(std::memory_order_acquire);
+        published_sample_count_.load(std::memory_order_acquire);
 
     const uint64_t tail =
-        tail_.load(std::memory_order_relaxed);
+        vad_read_index_.load(std::memory_order_relaxed);
 
     return head >= tail
         ? head - tail
         : 0;
   }
 
-  void CopySamplesUnchecked(
+  void CopyRingSamplesUnchecked(
       uint64_t sample_index,
       float* destination,
       size_t sample_count) const {
@@ -500,22 +500,24 @@ class PcmFrameRing {
       destination[i] =
           samples_[
               (sample_index + i) %
-              kCapacitySamples];
+              kRingCapacitySamples];
     }
   }
 
-  std::array<float, kCapacitySamples> samples_{};
+  std::array<float, kRingCapacitySamples> samples_{};
 
-  // All three cursors are monotonically increasing sample indices.
-  std::atomic<uint64_t> head_{0};
-  std::atomic<uint64_t> tail_{0};
+  // Absolute sample positions: published_sample_count_ is the producer's next
+  // write position, vad_read_index_ is the VAD consumer position, and the
+  // recognizer indices track the active utterance and its next unread sample.
+  std::atomic<uint64_t> published_sample_count_{0};
+  std::atomic<uint64_t> vad_read_index_{0};
 
   // Fixed start sample for the active utterance. Used as identity/metadata.
-  std::atomic<int64_t> recognizer_index_{-1};
+  std::atomic<int64_t> recognizer_start_index_{-1};
 
   // Next sample the recognizer still needs copied from the ring. This moves
   // forward after each successful copy into the recognizer's private buffer.
-  std::atomic<int64_t> recognizer_read_index_{-1};
+  std::atomic<int64_t> recognizer_next_read_index_{-1};
 
   // -1 means the VAD has not detected the end of the active utterance.
   std::atomic<int64_t> utterance_end_{-1};
@@ -1330,7 +1332,7 @@ class SpeechProcessor {
       // point back into this retained audio.
       if (detected &&
           !utterance_active_ &&
-          ring_->RecognizerIndex() < 0) {
+          ring_->RecognizerStartIndex() < 0) {
 
         utterance_active_ = true;
         ++utterance_id_;
@@ -1343,7 +1345,7 @@ class SpeechProcessor {
         utterance_start_sample_ =
             window_start - pre_roll;
 
-        ring_->SetRecognizerIndex(
+        ring_->SetRecognizerStartIndex(
             utterance_start_sample_);
 
         silence_samples_ = 0;
@@ -1406,7 +1408,7 @@ class SpeechProcessor {
         }
       }
 
-      ring_->AdvanceTail(
+      ring_->AdvanceVadReadIndex(
           kVadWindowSize);
     }
   }
@@ -1461,10 +1463,10 @@ class SpeechProcessor {
         std::memory_order_relaxed)) {
 
       const int64_t recognizer_index =
-          ring_->RecognizerIndex();
+          ring_->RecognizerStartIndex();
 
       if (recognizer_index < 0) {
-        if (!ring_->WaitForRecognizerStart()) {
+        if (!ring_->WaitForActiveUtterance()) {
           break;
         }
 
@@ -1489,7 +1491,7 @@ class SpeechProcessor {
           std::memory_order_relaxed)) {
 
         const int64_t current_start =
-            ring_->RecognizerIndex();
+            ring_->RecognizerStartIndex();
 
         if (current_start < 0) {
           aborted = true;
@@ -1516,7 +1518,7 @@ class SpeechProcessor {
             ring_->PublishedSamples();
 
         if (sample_index >= head) {
-          if (!ring_->WaitForSample(
+          if (!ring_->WaitForPublishedSample(
                   sample_index)) {
 
             aborted = true;
@@ -1547,7 +1549,7 @@ class SpeechProcessor {
           continue;
         }
 
-        if (!ring_->CopySamples(
+        if (!ring_->CopyPublishedSamples(
                 sample_index,
                 chunk.data(),
                 count)) {
@@ -1567,7 +1569,7 @@ class SpeechProcessor {
         // slots before inference/decode so a long utterance cannot pin its
         // original pre-roll region and fill the ring.
         sample_index += count;
-        ring_->SetRecognizerReadIndex(sample_index);
+        ring_->SetRecognizerNextReadIndex(sample_index);
 
         stream.AcceptWaveform(
             kRecognizerSampleRate,
@@ -1617,7 +1619,7 @@ class SpeechProcessor {
       }
 
       const int64_t active_start =
-          ring_->RecognizerIndex();
+          ring_->RecognizerStartIndex();
 
       if (active_start < 0) {
         continue;
@@ -1934,7 +1936,7 @@ int Run() {
       << " samples / 100 ms\n"
 
       << "Ring capacity:      "
-      << PcmFrameRing::kCapacitySamples
+      << PcmFrameRing::kRingCapacitySamples
       << " samples / 12.8 sec\n"
 
       << "VAD window:         "
