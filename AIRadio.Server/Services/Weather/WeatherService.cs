@@ -410,8 +410,14 @@ namespace AIRadio.Server.Services.Weather
                 45 or 48 =>
                     "Foggy",
 
-                51 or 53 or 55 =>
-                    "Drizzle",
+                51 =>
+                    "Light drizzle",
+
+                53 =>
+                    "Moderate drizzle",
+
+                55 =>
+                    "Dense drizzle",
 
                 56 or 57 =>
                     "Freezing drizzle",
