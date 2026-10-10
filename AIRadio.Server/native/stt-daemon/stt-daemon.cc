@@ -174,16 +174,26 @@ class PcmFrameRing {
           recognizer_index_.load(
               std::memory_order_acquire);
 
+      const int64_t recognizer_read =
+          recognizer_read_index_.load(
+              std::memory_order_acquire);
+
       const uint64_t tail =
           tail_.load(std::memory_order_acquire);
 
       uint64_t protected_index = tail;
 
       if (recognizer >= 0) {
+        // Protect only audio the recognizer has not copied into its own
+        // chunk buffer yet. The utterance start is metadata, not a permanent
+        // retention cursor; pinning it for the full utterance fills the ring.
+        const uint64_t read_index =
+            recognizer_read >= 0
+                ? static_cast<uint64_t>(recognizer_read)
+                : static_cast<uint64_t>(recognizer);
+
         protected_index =
-            std::min(
-                protected_index,
-                static_cast<uint64_t>(recognizer));
+            std::min(protected_index, read_index);
       }
 
       // Advancing head by one would make the ring full.
@@ -290,11 +300,27 @@ class PcmFrameRing {
   void SetRecognizerIndex(
       uint64_t sample_index) {
 
+    // Initialize the moving read cursor before publishing the active
+    // utterance, so the producer never sees an active recognizer with an
+    // uninitialized retention position.
+    recognizer_read_index_.store(
+        static_cast<int64_t>(sample_index),
+        std::memory_order_release);
+
     recognizer_index_.store(
         static_cast<int64_t>(sample_index),
         std::memory_order_release);
 
     cv_.notify_all();
+  }
+
+  // Called only after CopySamples has copied the requested data into the
+  // recognizer worker's private chunk buffer. The ring may then reuse those
+  // sample slots while Sherpa processes the private copy.
+  void SetRecognizerReadIndex(uint64_t sample_index) {
+    recognizer_read_index_.store(
+        static_cast<int64_t>(sample_index),
+        std::memory_order_release);
   }
 
   int64_t UtteranceEnd() const {
@@ -314,6 +340,12 @@ class PcmFrameRing {
 
   void ClearRecognizerState() {
     utterance_end_.store(
+        -1,
+        std::memory_order_release);
+
+    // Clear the moving cursor first. Keep the utterance identity published
+    // until both state transitions are safe for the producer/VAD.
+    recognizer_read_index_.store(
         -1,
         std::memory_order_release);
 
@@ -352,8 +384,9 @@ class PcmFrameRing {
             std::memory_order_acquire) >= 0;
   }
 
-  // Copy already-published samples.  The recognizer index protects this
-  // region from being overwritten while the recognizer is using it.
+  // Copy already-published samples. The producer retains unread samples
+  // until this copy completes; the caller advances the read cursor only after
+  // the samples are in its private chunk buffer.
   bool CopySamples(
       uint64_t sample_index,
       float* destination,
@@ -378,6 +411,10 @@ class PcmFrameRing {
         recognizer_index_.load(
             std::memory_order_acquire);
 
+    const int64_t recognizer_read =
+        recognizer_read_index_.load(
+            std::memory_order_acquire);
+
     const uint64_t tail =
         tail_.load(std::memory_order_acquire);
 
@@ -386,14 +423,18 @@ class PcmFrameRing {
             ? head - (kCapacitySamples - 1)
             : 0;
 
-    // Once an utterance is active, recognizer_index is protected by the
-    // producer.  Outside an utterance, this is simply a normal retained
-    // history check.
+    // Validate against the same moving cursor used by the producer. The
+    // fixed utterance start is retained separately for diagnostics/finalize.
+    const uint64_t protected_index =
+        recognizer_read >= 0
+            ? static_cast<uint64_t>(recognizer_read)
+            : (recognizer >= 0
+                ? static_cast<uint64_t>(recognizer)
+                : tail);
+
     const uint64_t protected_oldest =
         recognizer >= 0
-            ? std::min(
-                  tail,
-                  static_cast<uint64_t>(recognizer))
+            ? std::min(tail, protected_index)
             : tail;
 
     const uint64_t available_oldest =
@@ -469,8 +510,12 @@ class PcmFrameRing {
   std::atomic<uint64_t> head_{0};
   std::atomic<uint64_t> tail_{0};
 
-  // -1 means there is no active recognizer utterance.
+  // Fixed start sample for the active utterance. Used as identity/metadata.
   std::atomic<int64_t> recognizer_index_{-1};
+
+  // Next sample the recognizer still needs copied from the ring. This moves
+  // forward after each successful copy into the recognizer's private buffer.
+  std::atomic<int64_t> recognizer_read_index_{-1};
 
   // -1 means the VAD has not detected the end of the active utterance.
   std::atomic<int64_t> utterance_end_{-1};
@@ -1516,6 +1561,12 @@ class SpeechProcessor {
           break;
         }
 
+        // The data is now in chunk, owned by this worker. Release the ring
+        // slots before inference/decode so a long utterance cannot pin its
+        // original pre-roll region and fill the ring.
+        sample_index += count;
+        ring_->SetRecognizerReadIndex(sample_index);
+
         stream.AcceptWaveform(
             kRecognizerSampleRate,
             chunk.data(),
@@ -1539,7 +1590,6 @@ class SpeechProcessor {
             " decode_count=",
             decode_count);
 
-        sample_index += count;
       }
 
       if (aborted ||
