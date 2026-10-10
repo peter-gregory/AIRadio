@@ -4,7 +4,7 @@
       "Name": "WakeUp",
       "Intent": "WakeUp",
       "Priority": 1000,
-      "Expression": "(?:hey|okay|ok|a)\\s+(?:there\\s+)?(?:radio|rodeo)\\b"
+      "Expression": "(?:hey|okay|ok|o\\s*k|a)\\s+(?:there\\s+)?(?:radio|rodeo)\\b"
     },
     {
       "Name": "BargeInStop",
