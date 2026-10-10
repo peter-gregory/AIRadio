@@ -1561,6 +1561,8 @@ class SpeechProcessor {
           break;
         }
 
+        const uint64_t chunk_start = sample_index;
+
         // The data is now in chunk, owned by this worker. Release the ring
         // slots before inference/decode so a long utterance cannot pin its
         // original pre-roll region and fill the ring.
@@ -1584,9 +1586,9 @@ class SpeechProcessor {
 
         Trace(
             "ASR samples=",
-            sample_index,
+            chunk_start,
             "..",
-            sample_index + count,
+            chunk_start + count,
             " decode_count=",
             decode_count);
 
