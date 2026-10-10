@@ -46,10 +46,15 @@ public static class WeatherReportFormatter
 
         if (today is not null)
         {
-            var forecastCondition = GetConditionSpeech(today.Condition);
+            var forecastCondition = GetForecastConditionSpeech(today.Condition);
+            var forecastSentence =
+                $"Today's forecast is {forecastCondition}, with a high of {Temperature(today.High)}.";
 
-            sentences.Add(
-                $"Today's forecast is {forecastCondition}, with a high of {Temperature(today.High)}.");
+            var forecastConditionTag = GetConditionSoundTag(today.Condition);
+            if (!string.IsNullOrWhiteSpace(forecastConditionTag))
+                forecastSentence += $" {forecastConditionTag}";
+
+            sentences.Add(forecastSentence);
 
             sentences.Add(
                 today.RainChance <= LowRainChanceThreshold
@@ -93,6 +98,9 @@ public static class WeatherReportFormatter
             "overcast" => "overcast",
             "foggy" => "foggy",
             "drizzle" => "drizzling",
+            "light drizzle" => "light drizzle",
+            "moderate drizzle" => "moderate drizzle",
+            "dense drizzle" => "dense drizzle",
             "freezing drizzle" => "freezing drizzle",
             "rain" => "raining",
             "freezing rain" => "freezing rain",
@@ -102,6 +110,17 @@ public static class WeatherReportFormatter
             "thunderstorms" => "thunderstorms",
             "thunderstorms with hail" => "thunderstorms with hail",
             _ => string.IsNullOrWhiteSpace(condition) ? "experiencing mixed conditions" : condition.ToLowerInvariant()
+        };
+    }
+
+    private static string GetForecastConditionSpeech(string condition)
+    {
+        return condition.Trim().ToLowerInvariant() switch
+        {
+            "light drizzle" => "light drizzle",
+            "moderate drizzle" => "moderate drizzle",
+            "dense drizzle" => "dense drizzle",
+            _ => GetConditionSpeech(condition)
         };
     }
 
@@ -142,7 +161,7 @@ public static class WeatherReportFormatter
         if (normalized == "rain")
             return "{sound:weather-rain}";
 
-        if (normalized == "drizzle")
+        if (normalized.Contains("drizzle"))
             return "{sound:weather-drizzle}";
 
         if (normalized == "foggy")
