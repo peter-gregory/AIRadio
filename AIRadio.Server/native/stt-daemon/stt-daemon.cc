@@ -45,7 +45,7 @@ constexpr float kDefaultVadMinSpeechDuration = 0.25f;
 constexpr float kDefaultVadMaxSpeechDuration = 30.0f;
 
 // AIRadio's own paragraph-style endpoint detector.
-// The recognizer_start is finalized only after this much continuous silence.
+// The active utterance is finalized only after this much continuous silence.
 constexpr float kDefaultEndSilenceDuration = 1.5f;
 constexpr uint32_t kDefaultVadPreRollMs = 800;
 
@@ -184,7 +184,7 @@ class PcmFrameRing {
       uint64_t protected_index = vad_read_index;
 
       if (recognizer_start >= 0) {
-        // Protect only audio the recognizer_start has not copied into its own
+        // Protect only audio the recognizer has not copied into its own
         // chunk buffer yet. The utterance start is metadata, not a permanent
         // retention cursor; pinning it for the full utterance fills the ring.
         const uint64_t read_index =
@@ -315,7 +315,7 @@ class PcmFrameRing {
   }
 
   // Called only after CopyPublishedSamples has copied the requested data into the
-  // recognizer_start worker's private chunk buffer. The ring may then reuse those
+  // recognizer worker's private chunk buffer. The ring may then reuse those
   // sample slots while Sherpa processes the private copy.
   void SetRecognizerNextReadIndex(uint64_t sample_index) {
     recognizer_next_read_index_.store(
@@ -516,7 +516,7 @@ class PcmFrameRing {
   std::atomic<int64_t> recognizer_start_index_{-1};
 
   // Next sample the recognizer_start still needs copied from the ring. This moves
-  // forward after each successful copy into the recognizer_start's private buffer.
+  // forward after each successful copy into the recognizer's private buffer.
   std::atomic<int64_t> recognizer_next_read_index_{-1};
 
   // -1 means the VAD has not detected the end of the active utterance.
